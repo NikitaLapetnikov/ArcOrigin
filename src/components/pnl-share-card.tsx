@@ -46,7 +46,77 @@ function roundedRect(context: CanvasRenderingContext2D, x: number, y: number, wi
   context.fill();
 }
 
-function drawShareCard(token: TokenData, metrics: PnlMetrics, wallet?: string) {
+function loadTokenImage(source?: string): Promise<HTMLImageElement | null> {
+  if (!source) return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    const image = new Image();
+    let settled = false;
+    const finish = (result: HTMLImageElement | null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      resolve(result);
+    };
+    const timeout = window.setTimeout(() => finish(null), 8_000);
+
+    image.crossOrigin = "anonymous";
+    image.decoding = "async";
+    image.onload = () => finish(image);
+    image.onerror = () => finish(null);
+    image.src = source;
+  });
+}
+
+function drawTokenAvatar(
+  context: CanvasRenderingContext2D,
+  token: TokenData,
+  image: HTMLImageElement | null,
+  accent: string,
+  accentRgb: string,
+) {
+  const x = 84;
+  const y = 162;
+  const size = 94;
+  const radius = 24;
+
+  if (image?.naturalWidth && image.naturalHeight) {
+    const cropSize = Math.min(image.naturalWidth, image.naturalHeight);
+    const sourceX = (image.naturalWidth - cropSize) / 2;
+    const sourceY = (image.naturalHeight - cropSize) / 2;
+
+    context.save();
+    context.beginPath();
+    context.roundRect(x, y, size, size, radius);
+    context.clip();
+    context.drawImage(image, sourceX, sourceY, cropSize, cropSize, x, y, size, size);
+    context.restore();
+
+    context.save();
+    context.strokeStyle = `rgba(${accentRgb},.28)`;
+    context.lineWidth = 2;
+    context.beginPath();
+    context.roundRect(x, y, size, size, radius);
+    context.stroke();
+    context.restore();
+    return;
+  }
+
+  context.fillStyle = `rgba(${accentRgb},.14)`;
+  roundedRect(context, x, y, size, size, radius);
+  context.fillStyle = accent;
+  context.font = "700 30px Inter, sans-serif";
+  context.textAlign = "center";
+  context.fillText(token.icon.slice(0, 3).toUpperCase(), x + size / 2, y + 58);
+  context.textAlign = "left";
+}
+
+function drawShareCard(
+  token: TokenData,
+  metrics: PnlMetrics,
+  wallet?: string,
+  tokenImage: HTMLImageElement | null = null,
+) {
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
   canvas.height = 630;
@@ -96,13 +166,7 @@ function drawShareCard(token: TokenData, metrics: PnlMetrics, wallet?: string) {
   context.font = "500 17px ui-monospace, monospace";
   context.fillText("ARC TESTNET · VERIFIED ONCHAIN", 84, 123);
 
-  context.fillStyle = `rgba(${accentRgb},.14)`;
-  roundedRect(context, 84, 162, 94, 94, 24);
-  context.fillStyle = accent;
-  context.font = "700 30px Inter, sans-serif";
-  context.textAlign = "center";
-  context.fillText(token.icon.slice(0, 3).toUpperCase(), 131, 220);
-  context.textAlign = "left";
+  drawTokenAvatar(context, token, tokenImage, accent, accentRgb);
 
   context.fillStyle = "#f7faf9";
   context.font = "700 35px Inter, sans-serif";
@@ -174,7 +238,8 @@ export function PnlShareCard({ token, snapshot }: { token: TokenData; snapshot: 
     setNotice("");
     try {
       if (!metrics) throw new Error("No confirmed wallet trades are available for a PnL card.");
-      const blob = await canvasBlob(drawShareCard(token, metrics, address));
+      const tokenImage = await loadTokenImage(token.image);
+      const blob = await canvasBlob(drawShareCard(token, metrics, address, tokenImage));
       if (mode === "copy" && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
         try {
           await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
@@ -228,7 +293,14 @@ export function PnlShareCard({ token, snapshot }: { token: TokenData; snapshot: 
               </div>
               <div className="mt-auto">
                 <div className="flex items-center gap-3">
-                  <div className="grid size-11 place-items-center rounded-xl bg-cyan/10 font-mono text-xs font-semibold text-cyan sm:size-14">{token.icon}</div>
+                  <div className="relative grid size-11 shrink-0 place-items-center overflow-hidden rounded-xl border border-white/10 bg-cyan/10 font-mono text-xs font-semibold text-cyan sm:size-14">
+                    {token.image ? <span
+                      aria-label={`${token.name} logo`}
+                      className="absolute inset-0 bg-cover bg-center"
+                      role="img"
+                      style={{ backgroundImage: `url("${token.image}")` }}
+                    /> : token.icon}
+                  </div>
                   <div><p className="text-sm font-semibold text-white sm:text-xl">{token.name}</p><p className="font-mono text-[8px] text-slate-500 sm:text-[10px]">{token.ticker}</p></div>
                 </div>
                 <p className="mt-5 font-mono text-[7px] uppercase tracking-[.15em] text-slate-500 sm:text-[9px]">Estimated onchain PnL</p>
