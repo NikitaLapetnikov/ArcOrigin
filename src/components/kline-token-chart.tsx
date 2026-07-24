@@ -68,20 +68,6 @@ function periodFor(timeframe: ChartTimeframe): Period {
   return { type: "day", span: 1 };
 }
 
-function toolLabel(tool: Tool) {
-  switch (tool) {
-    case "straightLine": return "Trend line";
-    case "horizontalStraightLine": return "Horizontal line";
-    case "verticalStraightLine": return "Vertical line";
-    case "rayLine": return "Ray";
-    case "parallelStraightLine": return "Parallel channel";
-    case "fibonacciLine": return "Fibonacci retracement";
-    case "brush": return "Brush";
-    case "arcMeasure": return "Price and time measurement";
-    default: return "Cursor";
-  }
-}
-
 /**
  * Professional K-line terminal powered exclusively by ArcOrigin's onchain candles.
  * No exchange or simulated market data is sent to the chart library.
@@ -195,7 +181,7 @@ export function KLineTokenChart({
               upWickColor: "#28c6b8", downWickColor: "#fa6374", noChangeWickColor: "#7d8b91",
               compareRule: "current_open",
             },
-            tooltip: { showRule: "follow_cross", showType: "standard" },
+            tooltip: { showRule: "none", showType: "standard" },
           },
           xAxis: { axisLine: { show: true, color: "#273138", size: 1 }, tickLine: { show: false, color: "#273138", size: 1, length: 0 }, tickText: { show: true, color: "#87939b", size: 10, family: "ui-monospace, SFMono-Regular, monospace", weight: "normal", marginStart: 4, marginEnd: 4 } },
           yAxis: { axisLine: { show: true, color: "#273138", size: 1 }, tickLine: { show: false, color: "#273138", size: 1, length: 0 }, tickText: { show: true, color: "#87939b", size: 10, family: "ui-monospace, SFMono-Regular, monospace", weight: "normal", marginStart: 4, marginEnd: 6 } },
@@ -435,14 +421,17 @@ export function KLineTokenChart({
         <IconButton label="Clear drawings" onClick={clearDrawings}><Trash2 className="size-4" /></IconButton>
       </aside>
       <div className="relative min-w-0">
-        <div className="pointer-events-none absolute left-4 top-3 z-10 max-w-[calc(100%-32px)] text-xs">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><b className="text-sm text-white">{tokenName} · {timeframe}</b><span className="text-slate-500">ArcOrigin onchain terminal</span>{latest && <><span className="font-mono text-slate-400">O {formatPrice(latest.open, displayMode)}</span><span className="font-mono text-emerald-300">H {formatPrice(latest.high, displayMode)}</span><span className="font-mono text-rose-300">L {formatPrice(latest.low, displayMode)}</span><span className="font-mono text-white">C {formatPrice(latest.close, displayMode)}</span><span className={activeChange >= 0 ? "text-emerald-300" : "text-rose-300"}>{activeChange >= 0 ? "+" : ""}{activeChange.toFixed(2)}%</span></>}</div>
-          <div className="mt-1 font-mono text-[10px] text-slate-500">{showMarkers ? `${trades.length} verified onchain trades` : "Trade markers hidden"} · {tool === "cursor" ? "Select a drawing tool" : `${toolLabel(tool)}: click chart to draw`}</div>
-        </div>
-        <div ref={containerRef} className={isFullscreen ? "h-[calc(100vh-112px)] min-h-[480px] w-full" : "h-[480px] w-full"} aria-label="ArcOrigin onchain candlestick chart" />
+        {latest && <div className="pointer-events-none absolute left-4 top-3 z-10 flex max-w-[calc(100%-32px)] flex-wrap items-center gap-x-2 font-mono text-[10px]">
+          <span className="text-slate-400">O {formatPrice(latest.open, displayMode)}</span>
+          <span className="text-emerald-300">H {formatPrice(latest.high, displayMode)}</span>
+          <span className="text-rose-300">L {formatPrice(latest.low, displayMode)}</span>
+          <span className="text-white">C {formatPrice(latest.close, displayMode)}</span>
+          <span className={activeChange >= 0 ? "text-emerald-300" : "text-rose-300"}>{activeChange >= 0 ? "+" : ""}{activeChange.toFixed(2)}%</span>
+        </div>}
+        <div ref={containerRef} className={isFullscreen ? "h-[calc(100vh-112px)] min-h-[480px] w-full" : "h-[480px] w-full"} aria-label={`${tokenName} onchain candlestick chart`} />
       </div>
     </div>
-    <div className="flex min-h-10 items-center justify-between border-t border-line bg-[#0e1114] px-3 py-1"><span className="font-mono text-[10px] text-slate-500">Verified Arc Testnet data · drawings saved on this device</span><div className="flex items-center gap-1"><ChartButton onClick={moveToLatest}>Latest</ChartButton><IconButton label="Reset chart" onClick={fit}><Focus className="size-3.5" /></IconButton></div></div>
+    <div className="flex min-h-10 items-center justify-end border-t border-line bg-[#0e1114] px-3 py-1"><div className="flex items-center gap-1"><ChartButton onClick={moveToLatest}>Latest</ChartButton><IconButton label="Reset chart" onClick={fit}><Focus className="size-3.5" /></IconButton></div></div>
     {snapshot && <div role="dialog" aria-label="Chart screenshot preview" className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4">
       <div className="w-full max-w-5xl rounded-2xl border border-line bg-[#11161a] p-4">
         <div className="mb-3 flex justify-between"><b className="text-white">{ticker} chart</b><button type="button" onClick={() => setSnapshot("")} className="text-xs text-slate-400">Close</button></div>
