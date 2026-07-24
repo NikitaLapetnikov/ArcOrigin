@@ -18,6 +18,7 @@ export const ARC_TESTNET_LEGACY_FACTORY = "0xA4DbA45B199287d3163199A86B4618968d8
 export const ARC_TESTNET_V2_FACTORY = "0xc5FB127934782D5A147d5EE67Be741EC233036D2" as Address;
 export const ARC_TESTNET_V3_FACTORY = "0x54382b7329FAB9BA0532f607b73027ee0AFB04Ba" as Address;
 export const ARC_TESTNET_V4_FACTORY = "0x09e8b251392dc289e94B2242A12949aAbC722045" as Address;
+export const ARCORIGIN_V4_GRADUATION_TARGET_USDC = 10_000;
 
 function configuredAddress(value: string | undefined, fallback: Address): Address {
   return value && isAddress(value) ? value : fallback;

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createPublicClient, formatUnits, http } from "viem";
-import { arcTestnet } from "@/lib/chains";
+import { ARCORIGIN_V4_GRADUATION_TARGET_USDC, ARC_TESTNET_V4_FACTORY, arcTestnet } from "@/lib/chains";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
 import { getFactoryLaunchIndex, type FactoryLaunch } from "@/lib/onchain/holder-snapshot";
 import { calculateRiskScore } from "@/lib/scoring";
@@ -209,13 +209,16 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
 
 async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot> {
   const { launches, indexedBlock } = await getFactoryLaunchIndex(forceRefresh);
-  if (launches.length === 0) throw new Error("Arc RPC returned no Factory launches for the configured index range.");
+  const v4Launches = launches.filter(
+    (launch) => launch.factory.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase(),
+  );
+  if (v4Launches.length === 0) throw new Error("Arc RPC returned no V4 Factory launches for the configured index range.");
   const creatorCounts = new Map<string, number>();
-  for (const launch of launches) {
+  for (const launch of v4Launches) {
     const creator = launch.creator.toLowerCase();
     creatorCounts.set(creator, (creatorCounts.get(creator) ?? 0) + 1);
   }
-  const reversedLaunches = launches.slice().reverse();
+  const reversedLaunches = v4Launches.slice().reverse();
   const tokens: TokenData[] = [];
   for (let index = 0; index < reversedLaunches.length; index += 2) {
     tokens.push(...await Promise.all(reversedLaunches.slice(index, index + 2).map((launch) => hydrateLaunch(
@@ -223,7 +226,13 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
       creatorCounts.get(launch.creator.toLowerCase()) ?? 1,
     ))));
   }
-  return { tokens, indexedBlock: indexedBlock.toString(), generatedAt: new Date().toISOString() };
+  return {
+    tokens: tokens.filter(
+      (token) => Math.abs(token.targetUSDC - ARCORIGIN_V4_GRADUATION_TARGET_USDC) < 0.000001,
+    ),
+    indexedBlock: indexedBlock.toString(),
+    generatedAt: new Date().toISOString(),
+  };
 }
 
 export async function getTokenIndexSnapshot(forceRefresh = false) {

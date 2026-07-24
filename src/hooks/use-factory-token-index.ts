@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ARCORIGIN_V4_GRADUATION_TARGET_USDC, ARC_TESTNET_V4_FACTORY } from "@/lib/chains";
 import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
@@ -13,6 +14,15 @@ const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
 
 type CachedIndex = { savedAt: number; tokens: TokenData[] };
 type TokenIndexSnapshot = { tokens: TokenData[]; indexedBlock: string; generatedAt: string };
+
+function isCurrentV4Token(token: TokenData) {
+  return token.factoryAddress?.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase()
+    && Math.abs(token.targetUSDC - ARCORIGIN_V4_GRADUATION_TARGET_USDC) < 0.000001;
+}
+
+function currentV4Tokens(tokens: TokenData[]) {
+  return tokens.filter(isCurrentV4Token);
+}
 
 function isAddress(value: unknown): value is string {
   return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
@@ -47,7 +57,8 @@ function readCachedIndex(): CachedIndex | null {
     const parsed = JSON.parse(raw) as Partial<CachedIndex>;
     if (typeof parsed.savedAt !== "number" || Date.now() - parsed.savedAt > TOKEN_INDEX_CACHE_TTL) return null;
     if (!Array.isArray(parsed.tokens) || parsed.tokens.length === 0 || parsed.tokens.length > 100 || !parsed.tokens.every(isCachedToken)) return null;
-    return { savedAt: parsed.savedAt, tokens: parsed.tokens };
+    const tokens = currentV4Tokens(parsed.tokens);
+    return tokens.length > 0 ? { savedAt: parsed.savedAt, tokens } : null;
   } catch {
     return null;
   }
@@ -55,7 +66,7 @@ function readCachedIndex(): CachedIndex | null {
 
 function writeCachedIndex(tokens: TokenData[]) {
   try {
-    const snapshot: CachedIndex = { savedAt: Date.now(), tokens };
+    const snapshot: CachedIndex = { savedAt: Date.now(), tokens: currentV4Tokens(tokens) };
     window.localStorage.setItem(TOKEN_INDEX_CACHE_KEY, JSON.stringify(snapshot));
     return snapshot.savedAt;
   } catch {
@@ -142,15 +153,16 @@ async function loadFactoryTokens(
     indexResult = await loadServerSnapshot<TokenIndexSnapshot>(indexPath);
   } catch {
     indexResult = {
-      snapshot: await loadClientTokenIndex((snapshot) => onIndexLoaded?.(snapshot.tokens, false)),
+      snapshot: await loadClientTokenIndex((snapshot) => onIndexLoaded?.(currentV4Tokens(snapshot.tokens), false)),
       stale: false,
     };
   }
-  if (!includeMarketData) return { tokens: indexResult.snapshot.tokens, marketDataError: null, stale: indexResult.stale };
-  onIndexLoaded?.(indexResult.snapshot.tokens, indexResult.stale);
+  const indexedTokens = currentV4Tokens(indexResult.snapshot.tokens);
+  if (!includeMarketData) return { tokens: indexedTokens, marketDataError: null, stale: indexResult.stale };
+  onIndexLoaded?.(indexedTokens, indexResult.stale);
 
   let marketDataError: unknown;
-  const marketTokens = await mapWithConcurrency(indexResult.snapshot.tokens, 2, async (base) => {
+  const marketTokens = await mapWithConcurrency(indexedTokens, 2, async (base) => {
     const refreshQuery = forceRefresh ? "?refresh=1" : "";
     try {
       const marketResult = await loadServerSnapshot<MarketSnapshot>(`/api/onchain/tokens/${base.address}/market${refreshQuery}`);
@@ -170,7 +182,7 @@ async function loadFactoryTokens(
 }
 
 export function useFactoryTokenIndex({ includeMarketData = true, allowCache = true }: { includeMarketData?: boolean; allowCache?: boolean } = {}) {
-  const [tokens, setTokens] = useState<TokenData[]>(getVerifiedBootstrapTokens);
+  const [tokens, setTokens] = useState<TokenData[]>(() => currentV4Tokens(getVerifiedBootstrapTokens()));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isCached, setIsCached] = useState(false);
