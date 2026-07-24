@@ -34,7 +34,7 @@ const sections = [
     items: [
       ["Data", "Launches, trades, charts, and fees are read from Arc Testnet events."],
       ["Listings", "Only tokens confirmed by configured Arc Testnet Factory events are displayed."],
-      ["Risk", "Scores organize observable signals; they never guarantee safety."],
+      ["Risk", "Visible labels organize observable signals; they never guarantee safety."],
     ],
   },
 ] as const;

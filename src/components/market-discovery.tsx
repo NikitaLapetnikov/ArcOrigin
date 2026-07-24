@@ -92,13 +92,13 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
         className="group rounded-xl border border-line bg-black/15 p-4 transition hover:border-cyan/25 hover:bg-white/[.025]"
       >
         <div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><span className="font-mono text-xs text-slate-600">{String(index + 1).padStart(2, "0")}</span><TokenIcon label={token.icon} image={token.image}/><div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{token.name}</p><p className="mt-1 font-mono text-[10px] text-slate-500">{token.ticker}</p></div></div><ArrowUpRight className="size-4 text-slate-600 transition group-hover:text-cyan"/></div>
-        <div className="mt-5 flex items-end justify-between"><div><p className="text-[10px] uppercase tracking-wider text-slate-600">24h volume</p><p className="mt-1 text-sm font-medium text-white">{money(token.volume24h, true)}</p></div><div className="text-right"><p className="text-[10px] uppercase tracking-wider text-slate-600">Momentum</p><p className="mt-1 text-sm font-semibold text-cyan">{score}</p></div></div>
+        <div className="mt-5 flex items-end justify-between"><div><p className="text-[10px] uppercase tracking-wider text-slate-600">24h volume</p><p className="mt-1 text-sm font-medium text-white">{money(token.volume24h, true)}</p></div><div className="text-right"><p className="text-[10px] uppercase tracking-wider text-slate-600">24h change</p><p className={token.priceChange24h >= 0 ? "mt-1 text-sm font-semibold text-emerald-300" : "mt-1 text-sm font-semibold text-rose-300"}>{token.priceChange24h > 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%</p></div></div>
         <div className="mt-3"><Progress value={score}/></div>
       </Link>)}
 
       {activeTab === "buys" && latestBuys.length === 0 && <EmptyActivity message="No confirmed buys yet. The feed will update after the first onchain trade."/>}
       {activeTab === "launches" && newLaunches.length === 0 && <EmptyActivity message="No confirmed factory launches yet."/>}
-      {activeTab === "trending" && trending.length === 0 && <EmptyActivity message="Trending scores will appear when market activity is available."/>}
+      {activeTab === "trending" && trending.length === 0 && <EmptyActivity message="Trending markets will appear when confirmed activity is available."/>}
     </div>
   </section>;
 }

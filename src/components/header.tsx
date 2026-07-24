@@ -17,11 +17,18 @@ const nav = [
 ] as const;
 
 function WalletButton() {
+  const [mounted, setMounted] = useState(false);
   const { address, isConnected, chainId } = useAccount();
   const { connectors, connect, isPending, error } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
   const connector = connectors.find((item) => item.name === "Rabby") ?? connectors[0];
+
+  useEffect(() => setMounted(true), []);
+
+  if (!mounted) {
+    return <Button variant="secondary" disabled><Wallet className="size-4" />Connect wallet</Button>;
+  }
 
   if (isConnected && chainId !== arcTestnet.id) {
     return <Button variant="secondary" onClick={() => switchChain({ chainId: arcTestnet.id })}>Switch to Arc</Button>;
@@ -45,8 +52,8 @@ function NavLink({ href, label, path, onClick }: { href: string; label: string; 
     onClick={onClick}
     aria-current={active ? "page" : undefined}
     className={cn(
-      "rounded-xl px-4 py-2 text-sm font-semibold transition",
-      active ? "bg-white/[.085] text-white shadow-sm" : "text-slate-400 hover:bg-white/[.035] hover:text-white",
+      "relative rounded-lg px-3.5 py-2 text-[13px] font-medium transition",
+      active ? "bg-white/[.06] text-white" : "text-slate-400 hover:bg-white/[.03] hover:text-slate-100",
     )}
   >{label}</Link>;
 }
@@ -56,24 +63,24 @@ export function Header() {
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
 
-  return <header className="sticky top-0 z-50 border-b border-line/80 bg-ink/85 backdrop-blur-2xl">
-    <div className="container-shell flex h-[68px] items-center justify-between gap-4">
+  return <header className="sticky top-0 z-50 border-b border-line/70 bg-ink/80 backdrop-blur-2xl">
+    <div className="container-shell flex h-16 items-center justify-between gap-4">
       <Link href="/" className="flex items-center gap-2.5">
         <Image
           src="/brand/arcorigin-logo.png"
           alt="ArcOrigin"
-          width={40}
-          height={40}
+          width={36}
+          height={36}
           priority
-          className="size-10 rounded-xl border border-cyan/20 shadow-[0_0_28px_rgba(71,173,255,.18)]"
+          className="size-9 rounded-[10px] border border-cyan/15 shadow-[0_0_24px_rgba(57,189,248,.14)]"
         />
-        <span className="text-[15px] font-extrabold tracking-[-.025em] text-white">ArcOrigin</span>
+        <span className="text-[15px] font-semibold tracking-[-.025em] text-white">ArcOrigin</span>
       </Link>
-      <nav className="hidden items-center gap-1 rounded-2xl border border-line bg-white/[.025] p-1 lg:flex">
+      <nav className="hidden items-center gap-1 lg:flex">
         {nav.map(([label, href]) => <NavLink key={href} label={label} href={href} path={path} />)}
       </nav>
       <div className="hidden items-center gap-2 md:flex">
-        <Badge tone="good" className="hidden gap-1.5 xl:inline-flex"><Radio className="size-3" />Arc Testnet ready</Badge>
+        <Badge tone="neutral" className="hidden gap-1.5 xl:inline-flex"><Radio className="size-3 text-emerald-400" />Arc Testnet</Badge>
         <WalletButton />
       </div>
       <button

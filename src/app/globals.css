@@ -2,50 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+  --surface-0: #060811;
+  --surface-1: #0b101c;
+  --surface-2: #101725;
+  --surface-3: #151e2e;
+  --border: rgba(141, 164, 202, .16);
+  --border-strong: rgba(141, 164, 202, .24);
+  --text-primary: #f3f6fb;
+  --text-secondary: #a3adc0;
+  --text-tertiary: #68758c;
+  --accent: #39bdf8;
+  --accent-violet: #7567ff;
+}
 * { border-color: theme(colors.line); }
-html { background: #070a11; scroll-behavior: smooth; }
+html { background: var(--surface-0); scroll-behavior: smooth; }
 body {
   min-height: 100vh;
   overflow-x: hidden;
-  color: #f1f4f3;
+  color: var(--text-primary);
   background:
-    radial-gradient(900px 520px at 12% 0%, rgba(39, 98, 198, .18), transparent 68%),
-    radial-gradient(760px 520px at 92% 12%, rgba(39, 174, 198, .09), transparent 68%),
-    #070a11;
-  font-feature-settings: "ss01", "cv02", "cv03";
+    radial-gradient(900px 500px at 18% -14%, rgba(44, 112, 246, .11), transparent 70%),
+    radial-gradient(700px 440px at 88% -8%, rgba(113, 78, 255, .075), transparent 72%),
+    var(--surface-0);
+  font-feature-settings: "ss01", "ss02", "cv02", "cv03", "cv11";
   font-family: "Manrope Variable", Manrope, "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
-  letter-spacing: -.01em;
+  letter-spacing: -.012em;
+  line-height: 1.5;
   text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
-button, input, textarea, select { font: inherit; }
-button, a { -webkit-tap-highlight-color: transparent; }
+button, input, textarea, select { font: inherit; letter-spacing: inherit; }
+button, a { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
   outline: 2px solid rgba(115, 217, 255, .75);
   outline-offset: 2px;
 }
-h1, h2, h3 { text-wrap: balance; }
+h1, h2, h3 { color: var(--text-primary); font-weight: 650; text-wrap: balance; }
 p { text-wrap: pretty; }
-::selection { color: #061019; background: rgba(115,217,255,.82); }
-.skip-link { position: fixed; left: 1rem; top: -4rem; z-index: 100; border-radius: .75rem; background: #73d9ff; padding: .65rem 1rem; color: #061019; font-size: .875rem; font-weight: 700; transition: top .15s ease; }
+::selection { color: #041018; background: rgba(57,189,248,.86); }
+.skip-link { position: fixed; left: 1rem; top: -4rem; z-index: 100; border-radius: .625rem; background: var(--accent); padding: .65rem 1rem; color: #061019; font-size: .875rem; font-weight: 700; transition: top .15s ease; }
 .skip-link:focus { top: 1rem; }
 
 @layer components {
-  .container-shell { @apply mx-auto w-full max-w-[1440px] px-4 md:px-7 lg:px-10; }
-  .panel { @apply rounded-[20px] border border-line bg-panel shadow-glow; background-image: linear-gradient(145deg, rgba(255,255,255,.022), transparent 42%); }
-  .eyebrow { @apply font-mono text-[10px] font-semibold uppercase tracking-[.16em] text-cyan; }
+  .container-shell { @apply mx-auto w-full max-w-[1400px] px-4 sm:px-6 lg:px-8; }
+  .panel {
+    @apply rounded-2xl border bg-panel shadow-glow;
+    border-color: var(--border);
+    background-image: linear-gradient(180deg, rgba(255,255,255,.018), transparent 38%);
+  }
+  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[.13em] text-cyan; }
   .muted { @apply text-sm text-slate-400; }
-  .input { @apply h-11 w-full rounded-xl border border-line bg-[#090e17] px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan/50 focus:ring-2 focus:ring-cyan/10; box-shadow: inset 0 1px rgba(255,255,255,.018); }
-  .label { @apply mb-2 block text-xs font-medium text-slate-300; }
-  .grid-line { background-image: linear-gradient(rgba(115,217,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(115,217,255,.035) 1px, transparent 1px); background-size: 52px 52px; }
+  .input {
+    @apply h-11 w-full rounded-[10px] border bg-[#080d17] px-3.5 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan/50 focus:ring-2 focus:ring-cyan/10;
+    border-color: var(--border);
+    box-shadow: inset 0 1px rgba(255,255,255,.018);
+  }
+  .label { @apply mb-2 block text-[13px] font-medium text-slate-300; }
+  .grid-line { background-image: linear-gradient(rgba(125,145,179,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(125,145,179,.025) 1px, transparent 1px); background-size: 64px 64px; }
   .break-safe { overflow-wrap: anywhere; word-break: break-word; }
 }
 
-.recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke: #242a2c; }
+.recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke: #1c2535; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: #2a3133; border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: #394143; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #202a3b; border: 2px solid var(--surface-0); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #303d53; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
