@@ -301,17 +301,16 @@ export function OnchainTokenDashboard({
 
       {activeTab === "Creator tokens" && <div className="overflow-x-auto">
         <table className="w-full min-w-[820px] text-left text-xs">
-          <thead><tr className="border-b border-line font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="px-4 py-3">Token</th><th>Contract</th><th>Launched</th><th>Block</th><th>Creator allocation</th><th>Factory proof</th><th className="pr-4 text-right">Action</th></tr></thead>
+          <thead><tr className="border-b border-line font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="px-4 py-3">Token</th><th>Contract</th><th>Launched</th><th>Block</th><th>Factory proof</th><th className="pr-4 text-right">Action</th></tr></thead>
           <tbody>{creatorTokens.map((creatorToken) => <tr key={creatorToken.address} className="border-b border-line/60 last:border-0 hover:bg-white/[.02]">
             <td className="px-4 py-3"><div className="flex items-center gap-3"><TokenIcon label={creatorToken.icon} image={creatorToken.image} className="size-8 rounded-lg"/><div><p className="font-semibold text-white">{creatorToken.name}</p><p className="mt-0.5 font-mono text-[9px] text-slate-600">{creatorToken.ticker}</p></div>{creatorToken.address.toLowerCase() === token.address.toLowerCase() && <Badge tone="cyan">Current</Badge>}</div></td>
             <td><AddressPill address={creatorToken.address}/></td>
             <td className="text-slate-400">{utcDateTime(creatorToken.launchedAt)}</td>
             <td className="text-slate-400">{creatorToken.launchBlock ?? "—"}</td>
-            <td className="text-slate-300">{creatorToken.creatorAllocationPercent === undefined ? "—" : `${creatorToken.creatorAllocationPercent}%`}</td>
             <td>{creatorToken.launchTxHash ? <ArcscanLink hash={creatorToken.launchTxHash} label="Launch tx"/> : "—"}</td>
             <td className="pr-4 text-right"><Link href={`/tokens/${creatorToken.address}`} className="inline-flex h-8 items-center rounded-lg border border-line px-3 text-xs text-slate-300 transition hover:border-cyan/30 hover:text-white">Open</Link></td>
           </tr>)}
-          {creatorTokens.length === 0 && <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-500">No other verified Factory launches were found for this creator.</td></tr>}</tbody>
+          {creatorTokens.length === 0 && <tr><td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500">No other verified Factory launches were found for this creator.</td></tr>}</tbody>
         </table>
         <p className="border-t border-line px-4 py-3 text-[10px] leading-5 text-slate-600">Factory launch facts only. Live market data is loaded on each token page.</p>
       </div>}

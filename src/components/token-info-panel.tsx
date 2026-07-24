@@ -80,8 +80,6 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-500">
         <span>Block {token.launchBlock ?? "—"}</span>
-        <span>·</span>
-        <span>{token.creatorAllocationPercent === undefined ? "Creator allocation unavailable" : `${token.creatorAllocationPercent}% creator allocation`}</span>
       </div>
       {token.launchTxHash && <a
         href={`${EXPLORER_URL}/tx/${token.launchTxHash}`}

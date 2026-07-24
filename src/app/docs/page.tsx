@@ -8,7 +8,7 @@ const sections = [
     title: "Launch",
     items: [
       ["Token", "Fixed supply, no owner mint, blacklist, pause, or transfer tax."],
-      ["Allocation", "The creator allocation is visible and capped at 20%."],
+      ["Creator tokens", "No free creator allocation. Creators can only acquire tokens through the optional paid developer buy."],
       ["Cost", "Launching costs 25 USDC. An optional developer buy is a separate USDC payment and a real curve trade."],
     ],
   },

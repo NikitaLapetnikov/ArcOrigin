@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
-import { AtSign, Check, ChevronDown, ChevronRight, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, Send, X } from "lucide-react";
+import { AtSign, Check, ChevronRight, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, Send, X } from "lucide-react";
 import { decodeEventLog, formatUnits, parseUnits, publicActions, type Address, type Hash } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, arcTestnet } from "@/lib/chains";
@@ -28,7 +28,6 @@ type FormData = {
   website: string;
   x: string;
   telegram: string;
-  allocation: string;
   developerBuy: string;
 };
 
@@ -43,7 +42,6 @@ const defaults: FormData = {
   website: "",
   x: "",
   telegram: "",
-  allocation: "5",
   developerBuy: "0",
 };
 const confirmations = [
@@ -127,7 +125,6 @@ async function optimizeImage(file: File) {
 export function LaunchForm() {
   const descriptionId = useId();
   const [step, setStep] = useState(1);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [form, setForm] = useState(defaults);
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState("");
@@ -174,31 +171,30 @@ export function LaunchForm() {
     }
   }, [metadataInput, storageStatus]);
   const developerBuyMax = useMemo(() => {
-    const curveTokens = 1_000_000_000 * (1 - (Number(form.allocation) || 0) / 100);
+    const curveTokens = 1_000_000_000;
     const maximumTokens = 50_000_000;
     if (curveTokens <= maximumTokens) return 0;
     const netUsdc = DEFAULT_VIRTUAL_USDC_RESERVE * maximumTokens / (curveTokens - maximumTokens);
     return Math.floor(netUsdc / 0.99 * 100) / 100;
-  }, [form.allocation]);
+  }, []);
   const developerBuyAmount = Math.max(0, Number(form.developerBuy) || 0);
   const totalWalletPayment = 25 + developerBuyAmount;
   const canContinue = step === 1
     ? identityValid && !imageProcessing
     : step === 2
-      ? Number(form.allocation) >= 0 && Number(form.allocation) <= 20
-        && Number(form.developerBuy) >= 0 && Number(form.developerBuy) <= developerBuyMax
+      ? Number(form.developerBuy) >= 0 && Number(form.developerBuy) <= developerBuyMax
       : checks.length === confirmations.length;
   const isPending = status !== "idle";
   const curveEconomics = useMemo(() => calculateCurveEconomics({
     totalSupply: 1_000_000_000,
-    creatorAllocationPercent: Number(form.allocation) || 0,
+    creatorAllocationPercent: 0,
     virtualUsdcReserve: DEFAULT_VIRTUAL_USDC_RESERVE,
     graduationThreshold: DEFAULT_GRADUATION_THRESHOLD,
-  }), [form.allocation]);
+  }), []);
 
   function update(key: keyof FormData, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
-    if (key !== "allocation") setUploadedMetadata(null);
+    setUploadedMetadata(null);
   }
 
   async function selectImage(file: File | null) {
@@ -329,7 +325,7 @@ export function LaunchForm() {
           symbol: form.ticker.toUpperCase(),
           metadataURI: metadata.metadataURI,
           totalSupply: TOTAL_SUPPLY,
-          creatorAllocationBps: Math.round(Number(form.allocation) * 100),
+          creatorAllocationBps: 0,
           virtualUsdcReserve: VIRTUAL_USDC_RESERVE,
           graduationThreshold: GRADUATION_THRESHOLD,
         }],
@@ -495,20 +491,7 @@ export function LaunchForm() {
           <Row label="Developer buy payment" value={`${developerBuyAmount.toLocaleString()} USDC`} />
           <div className="mt-1 border-t border-line pt-3"><Row label="Total wallet payment" value={`${totalWalletPayment.toLocaleString()} USDC`} /></div>
         </dl>
-        <button type="button" onClick={() => setAdvancedOpen((value) => !value)} className="flex items-center justify-between rounded-xl border border-line bg-black/20 px-4 py-3 text-left text-sm text-slate-300">
-          <span><span className="block font-medium text-white">Advanced</span><span className="mt-1 block text-[11px] text-slate-500">Creator allocation and curve details</span></span>
-          <ChevronDown className={`size-4 transition ${advancedOpen ? "rotate-180" : ""}`} />
-        </button>
-        {advancedOpen && <div className="grid gap-4 rounded-xl border border-line bg-black/20 p-4">
-          <Field label="Creator allocation %" value={form.allocation} onChange={(value) => update("allocation", value)} type="number" min="0" max="20" step="0.01" />
-          <p className="text-[11px] leading-5 text-slate-500">Direct fixed-supply allocation to the creator wallet. It is separate from the developer buy and always visible in token risk metrics.</p>
-        </div>}
-        <div className="rounded-xl border border-line bg-black/20 p-4">
-          <p className="label">Creator wallet</p>
-          <p className="break-all font-mono text-xs text-slate-300">{address ?? "Connect a wallet in the header"}</p>
-          <p className="mt-2 text-[11px] text-slate-500">The factory assigns the creator allocation to the wallet that signs the launch.</p>
-        </div>
-        <WarningBox>Graduation occurs at 10,000 real USDC. The contract enforces fixed supply, a maximum 20% creator allocation, capped buys, and permanent liquidity with no withdrawal function.</WarningBox>
+        <WarningBox>Graduation occurs at 10,000 real USDC. ArcOrigin launches use zero free creator allocation: creators receive tokens only through the optional paid developer buy. Supply is fixed and post-graduation liquidity is permanent.</WarningBox>
         <div className="grid gap-3 sm:grid-cols-3">
           <EconomicsMetric label="Curve sold at graduation" value={`${curveEconomics.curveInventorySoldPercent.toFixed(0)}%`} />
           <EconomicsMetric label="Permanent LP TVL" value={`$${curveEconomics.permanentLiquidityTvl.toLocaleString()}`} />
@@ -545,7 +528,6 @@ export function LaunchForm() {
       {(form.website || form.x || form.telegram) && <div className="mt-4 flex flex-wrap gap-2">{form.website && <PreviewTag icon={<Globe className="size-3" />} label="Website" />}{form.x && <PreviewTag icon={<AtSign className="size-3" />} label="X" />}{form.telegram && <PreviewTag icon={<Send className="size-3" />} label="Telegram" />}</div>}
       <dl className="mt-6 grid gap-3 text-xs">
         <Row label="Supply" value="1,000,000,000" />
-        <Row label="Creator allocation" value={`${form.allocation || 0}%`} />
         <Row label="Curve target" value={`${DEFAULT_GRADUATION_THRESHOLD.toLocaleString()} USDC`} />
         <Row label="Developer buy" value={`${developerBuyAmount.toLocaleString()} USDC`} />
         <Row label="Launch fee" value="25 USDC" />
