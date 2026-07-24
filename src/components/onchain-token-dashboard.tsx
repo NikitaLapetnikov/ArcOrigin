@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AtSign, ExternalLink, Globe, RefreshCw, Send, ShieldCheck } from "lucide-react";
+import { ExternalLink, RefreshCw } from "lucide-react";
 import { useAccount } from "wagmi";
 import { PnlShareCard } from "@/components/pnl-share-card";
 import { KLineTokenChart } from "@/components/kline-token-chart";
@@ -16,7 +16,7 @@ import type { TokenData, Trade } from "@/lib/types";
 import { money, number, utcDateTime } from "@/lib/utils";
 
 export type OnchainTokenSnapshot = MarketSnapshot;
-type TerminalTab = "Trades" | "My position" | "Top traders" | "Holders" | "Creator tokens" | "Curve" | "Info";
+type TerminalTab = "Trades" | "My position" | "Top traders" | "Holders" | "Creator tokens" | "Curve";
 
 type TraderSummary = {
   wallet: string;
@@ -162,7 +162,6 @@ export function OnchainTokenDashboard({
     { label: "Holders", count: holderSnapshot ? number(holderSnapshot.holders) : token.holders > 0 ? number(token.holders) : undefined },
     { label: "Creator tokens", count: String(creatorTokens.length) },
     { label: "Curve" },
-    { label: "Info" },
   ];
 
   return <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -326,24 +325,6 @@ export function OnchainTokenDashboard({
           : "Legacy curve: real USDC backs sells, while virtual USDC shapes pricing. Buying closes at the configured threshold because this deployment predates permanent-liquidity graduation."}</p>
       </div>}
 
-      {activeTab === "Info" && <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div>
-          <p className="eyebrow">About {token.ticker}</p>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-400">{token.description || "No token description was published in the immutable launch metadata."}</p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {token.socials.website && <InfoLink href={token.socials.website} icon={<Globe className="size-3.5"/>} label="Website"/>}
-            {token.socials.x && <InfoLink href={token.socials.x} icon={<AtSign className="size-3.5"/>} label="X / Twitter"/>}
-            {token.socials.telegram && <InfoLink href={token.socials.telegram} icon={<Send className="size-3.5"/>} label="Telegram"/>}
-            <InfoLink href={`${EXPLORER_URL}/address/${token.address}`} icon={<ExternalLink className="size-3.5"/>} label="Arcscan"/>
-          </div>
-          <div className="mt-6 flex flex-wrap gap-2">{token.riskLabels.map((label) => <Badge key={label} tone={label.includes("high") || label.includes("missing") ? "bad" : "good"}><ShieldCheck className="mr-1 size-3"/>{label.replaceAll("_", " ")}</Badge>)}</div>
-          <p className="mt-4 text-[11px] leading-5 text-slate-500">Risk labels describe visible onchain and metadata signals, not a guarantee of safety.</p>
-        </div>
-        <div className="rounded-xl border border-line bg-black/15 p-4">
-          <p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">Contracts</p>
-          <dl className="mt-5 grid gap-3 text-xs"><InfoRow label="Token" value={<AddressPill address={token.address}/>}/>{token.curveAddress && <InfoRow label="Curve" value={<AddressPill address={token.curveAddress}/>}/>}<InfoRow label="Creator" value={<AddressPill address={token.creator}/>}/><InfoRow label="Launch block" value={String(token.launchBlock ?? "—")}/></dl>
-        </div>
-      </div>}
     </div>
     </Panel>
     <aside className="grid h-fit min-w-0 gap-3 xl:sticky xl:top-[76px]">
@@ -454,12 +435,4 @@ function FlowMetric({ label, value, detail, tone }: { label: string; value: stri
 
 function Metric({ label, value }: { label: string; value: string }) {
   return <div><p className="text-slate-600">{label}</p><p className="mt-1 font-medium text-slate-200">{value}</p></div>;
-}
-
-function InfoLink({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
-  return <a href={href} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-white/[.025] px-3 text-xs text-slate-300 transition hover:border-cyan/30 hover:text-white">{icon}{label}</a>;
-}
-
-function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div className="flex items-center justify-between gap-3"><dt className="text-slate-500">{label}</dt><dd className="text-right text-slate-300">{value}</dd></div>;
 }
