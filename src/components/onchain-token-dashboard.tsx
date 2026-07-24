@@ -102,7 +102,15 @@ export function useOnchainTokenSnapshot(token: TokenData) {
   return { snapshot, loading, error, stale, refresh };
 }
 
-export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenData; creatorTokens: TokenData[] }) {
+export function OnchainTokenDashboard({
+  token,
+  creatorTokens,
+  rightRail,
+}: {
+  token: TokenData;
+  creatorTokens: TokenData[];
+  rightRail?: React.ReactNode;
+}) {
   const { snapshot, loading, error, stale, refresh } = useOnchainTokenSnapshot(token);
   const [activeTab, setActiveTab] = useState<TerminalTab>("Trades");
   const { address } = useAccount();
@@ -157,12 +165,13 @@ export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenDa
     { label: "Info" },
   ];
 
-  return <Panel className="overflow-hidden rounded-xl shadow-none">
+  return <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
+    <Panel className="min-w-0 overflow-hidden rounded-xl shadow-none">
     <div className="grid grid-cols-2 border-b border-line bg-black/10 sm:grid-cols-3 xl:grid-cols-6">
       <TerminalMetric label="Price" value={tokenPrice(snapshot.price)} />
       <TerminalMetric label="Market cap" value={money(snapshot.marketCap, true)} />
       <TerminalMetric label="Liquidity" value={money(snapshot.raisedUsdc, true)} detail="Real USDC" />
-      <TerminalMetric label="Volume" value={money(snapshot.volume, true)} detail={`${buyTrades.length} buys · ${sellTrades.length} sells`} />
+      <TerminalMetric label="Supply" value={token.totalSupply ? number(token.totalSupply) : "—"} />
       <TerminalMetric label="Holders" value={holderSnapshot ? number(holderSnapshot.holders) : token.holders > 0 ? number(token.holders) : "—"} />
       <TerminalMetric
         label="Since launch"
@@ -174,7 +183,7 @@ export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenDa
     <div className="border-b border-line p-3 sm:p-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Badge tone={loading || stale ? "neutral" : "good"}>{loading ? "Refreshing" : stale ? "Cached" : "Live onchain"}</Badge>
+          <Badge tone={loading || stale ? "neutral" : "good"}>{loading ? "Refreshing" : stale ? "Cached" : "Live"}</Badge>
           <span className="font-mono text-[9px] text-slate-600">Block {snapshot.indexedBlock}</span>
         </div>
         <div className="flex items-center gap-1">
@@ -182,22 +191,6 @@ export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenDa
           <Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={loading} onClick={() => void refresh(true)}>
             <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />Refresh
           </Button>
-        </div>
-      </div>
-      <div className="mb-3 grid gap-2 rounded-xl border border-line bg-black/15 p-3 sm:grid-cols-[1fr_auto] sm:items-center">
-        <div>
-          <div className="flex items-center justify-between gap-4 text-[10px]">
-            <span className="text-emerald-300">Buy volume {money(buyVolume)} · {buyTrades.length}</span>
-            <span className="text-rose-300">Sell volume {money(sellVolume)} · {sellTrades.length}</span>
-          </div>
-          <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-white/[.05]">
-            <div className="bg-emerald-400 transition-[width]" style={{ width: `${buyShare}%` }} />
-            <div className="bg-rose-400 transition-[width]" style={{ width: `${100 - buyShare}%` }} />
-          </div>
-        </div>
-        <div className="text-left sm:min-w-28 sm:text-right">
-          <p className="font-mono text-[8px] uppercase tracking-wider text-slate-600">Net flow</p>
-          <p className={`mt-1 text-xs font-semibold ${netFlow >= 0 ? "text-emerald-300" : "text-rose-300"}`}>{netFlow >= 0 ? "+" : "−"}{money(Math.abs(netFlow))}</p>
         </div>
       </div>
       <KLineTokenChart
@@ -352,7 +345,19 @@ export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenDa
         </div>
       </div>}
     </div>
-  </Panel>;
+    </Panel>
+    <aside className="grid h-fit min-w-0 gap-3 xl:sticky xl:top-[76px]">
+      <MarketFlowPanel
+        buyVolume={buyVolume}
+        sellVolume={sellVolume}
+        buyCount={buyTrades.length}
+        sellCount={sellTrades.length}
+        buyShare={buyShare}
+        netFlow={netFlow}
+      />
+      {rightRail}
+    </aside>
+  </div>;
 }
 
 function tokenPrice(value: number) {
@@ -407,7 +412,44 @@ function TerminalEmpty({ title, body }: { title: string; body: string }) {
 }
 
 function TerminalMetric({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: "good" | "bad" }) {
-  return <div className="min-w-0 border-b border-r border-line px-3 py-3 last:border-r-0 sm:px-4 xl:border-b-0"><p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">{label}</p><p className={`mt-1 truncate text-sm font-semibold ${tone === "good" ? "text-emerald-300" : tone === "bad" ? "text-rose-300" : "text-white"}`}>{value}</p>{detail && <p className="mt-0.5 truncate text-[9px] text-slate-600">{detail}</p>}</div>;
+  return <div className="min-w-0 border-b border-r border-line px-3 py-3 last:border-r-0 sm:px-4 xl:border-b-0"><p className="text-[9px] font-medium uppercase tracking-[.08em] text-slate-600">{label}</p><p className={`mt-1 truncate text-sm font-semibold ${tone === "good" ? "text-emerald-300" : tone === "bad" ? "text-rose-300" : "text-white"}`}>{value}</p>{detail && <p className="mt-0.5 truncate text-[9px] text-slate-600">{detail}</p>}</div>;
+}
+
+function MarketFlowPanel({
+  buyVolume,
+  sellVolume,
+  buyCount,
+  sellCount,
+  buyShare,
+  netFlow,
+}: {
+  buyVolume: number;
+  sellVolume: number;
+  buyCount: number;
+  sellCount: number;
+  buyShare: number;
+  netFlow: number;
+}) {
+  return <section className="overflow-hidden rounded-xl border border-line bg-panel">
+    <div className="grid grid-cols-4 divide-x divide-line">
+      <FlowMetric label="24h volume" value={money(buyVolume + sellVolume, true)} />
+      <FlowMetric label="Buys" value={money(buyVolume, true)} tone="good" detail={String(buyCount)} />
+      <FlowMetric label="Sells" value={money(sellVolume, true)} tone="bad" detail={String(sellCount)} />
+      <FlowMetric label="Net flow" value={`${netFlow >= 0 ? "+" : "−"}${money(Math.abs(netFlow), true)}`} tone={netFlow >= 0 ? "good" : "bad"} />
+    </div>
+    <div className="flex h-1 bg-white/[.04]">
+      <div className="bg-emerald-400" style={{ width: `${buyShare}%` }} />
+      <div className="bg-rose-400" style={{ width: `${100 - buyShare}%` }} />
+    </div>
+  </section>;
+}
+
+function FlowMetric({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: "good" | "bad" }) {
+  return <div className="min-w-0 px-2.5 py-3 text-center">
+    <p className="truncate text-[8px] font-medium uppercase tracking-[.07em] text-slate-600">{label}</p>
+    <p className={`mt-1 truncate text-[11px] font-semibold ${tone === "good" ? "text-emerald-300" : tone === "bad" ? "text-rose-300" : "text-slate-200"}`}>{value}</p>
+    {detail && <p className="mt-0.5 text-[8px] text-slate-600">{detail} trades</p>}
+  </div>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

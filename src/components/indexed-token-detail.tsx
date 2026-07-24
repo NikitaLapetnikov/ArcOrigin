@@ -54,17 +54,13 @@ export function IndexedTokenDetail({ address }: { address: string }) {
       </div>
     </div>
 
-    <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="min-w-0">
-        <OnchainTokenDashboard
-          token={token}
-          creatorTokens={tokens.filter((item) => item.creator.toLowerCase() === token.creator.toLowerCase())}
-        />
-      </div>
-      <aside className="grid h-fit gap-3 xl:sticky xl:top-[100px]">
+    <OnchainTokenDashboard
+      token={token}
+      creatorTokens={tokens.filter((item) => item.creator.toLowerCase() === token.creator.toLowerCase())}
+      rightRail={<>
         <BuySellPanel token={token} />
         <TokenInfoPanel token={token} />
-      </aside>
-    </div>
+      </>}
+    />
   </div>;
 }
