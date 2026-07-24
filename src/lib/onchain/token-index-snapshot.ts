@@ -212,7 +212,13 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
   const v4Launches = launches.filter(
     (launch) => launch.factory.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase(),
   );
-  if (v4Launches.length === 0) throw new Error("Arc RPC returned no V4 Factory launches for the configured index range.");
+  if (v4Launches.length === 0) {
+    return {
+      tokens: [],
+      indexedBlock: indexedBlock.toString(),
+      generatedAt: new Date().toISOString(),
+    };
+  }
   const creatorCounts = new Map<string, number>();
   for (const launch of v4Launches) {
     const creator = launch.creator.toLowerCase();
