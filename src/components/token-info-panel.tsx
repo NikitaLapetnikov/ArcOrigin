@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
-import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
+import { Check, Copy, ExternalLink, ShieldCheck } from "lucide-react";
 import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, factoryForLaunchBlock } from "@/lib/chains";
 import type { TokenData } from "@/lib/types";
 import { shortAddress, utcDateTime } from "@/lib/utils";
-import { Badge, Button, Progress } from "./ui";
+import { Badge } from "./ui";
 
 type AddressItem = {
   label: string;
@@ -15,7 +14,6 @@ type AddressItem = {
 };
 
 export function TokenInfoPanel({ token }: { token: TokenData }) {
-  const { snapshot, loading, error, refresh } = useHolderSnapshot(token, true);
   const [copied, setCopied] = useState("");
   const factory = token.factoryAddress ?? factoryForLaunchBlock(token.launchBlock);
   const addresses: AddressItem[] = [
@@ -38,42 +36,12 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
     }
   }
 
-  const creatorPercent = snapshot?.creatorPercent ?? token.creatorAllocationPercent;
-  const concentration = snapshot?.topTenExcludingCurvePercent;
-  const curvePercent = snapshot?.curvePercent;
-
   return <section className="panel overflow-hidden rounded-xl shadow-none">
     <div className="flex items-center justify-between border-b border-line bg-black/10 px-4 py-3">
       <div>
         <p className="text-sm font-semibold text-white">Token info</p>
         <p className="mt-0.5 font-mono text-[9px] text-slate-600">Verified on Arc Testnet</p>
       </div>
-    </div>
-
-    <div className="border-b border-line p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div>
-          <p className="font-mono text-[9px] uppercase tracking-[.14em] text-slate-600">Distribution</p>
-          <p className="mt-1 text-[11px] text-slate-500">
-            {snapshot ? `Confirmed at block ${snapshot.indexedBlock}` : "Loads quietly from confirmed transfers"}
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          className="h-8 px-2 text-[10px]"
-          disabled={loading}
-          onClick={() => void refresh(true)}
-        >
-          <RefreshCw className={`size-3 ${loading ? "animate-spin" : ""}`} />
-          {snapshot ? "Refresh" : "Load"}
-        </Button>
-      </div>
-      <div className="grid gap-2.5">
-        <DistributionRow label="Creator" value={creatorPercent} />
-        <DistributionRow label="Top 10 excluding curve" value={concentration} />
-        <DistributionRow label="Trading curve" value={curvePercent} />
-      </div>
-      {error && <p className="mt-3 text-[10px] leading-4 text-amber-200/70">Holder data will retry in the background. Trading is unaffected.</p>}
     </div>
 
     <div className="border-b border-line p-4">
@@ -131,14 +99,4 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
       </a>}
     </div>
   </section>;
-}
-
-function DistributionRow({ label, value }: { label: string; value?: number }) {
-  return <div>
-    <div className="mb-1.5 flex items-center justify-between text-[10px]">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-slate-300">{value === undefined ? "—" : `${value.toFixed(2)}%`}</span>
-    </div>
-    <Progress value={value ?? 0} />
-  </div>;
 }

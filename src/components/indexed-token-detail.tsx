@@ -10,7 +10,7 @@ import { Badge, Button, Panel, TokenIcon, WarningBox } from "@/components/ui";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
-import { ARC_TESTNET_V4_FACTORY, EXPLORER_URL, factoryForLaunchBlock } from "@/lib/chains";
+import { EXPLORER_URL } from "@/lib/chains";
 import { number, shortAddress, utcDateTime } from "@/lib/utils";
 
 export function IndexedTokenDetail({ address }: { address: string }) {
@@ -44,8 +44,6 @@ export function IndexedTokenDetail({ address }: { address: string }) {
     }
   }
 
-  const factory = token.factoryAddress ?? factoryForLaunchBlock(token.launchBlock);
-  const isV4 = factory.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase();
   const holderCount = holderSnapshot?.holders ?? token.holders;
   const heroStats = [
     ["Holders", holderCount > 0 ? number(holderCount) : "—"],
@@ -54,7 +52,6 @@ export function IndexedTokenDetail({ address }: { address: string }) {
     ["Curve inventory", holderSnapshot ? `${holderSnapshot.curvePercent.toFixed(2)}%` : "—"],
     ["Permanent lock", holderSnapshot ? `${holderSnapshot.permanentLiquidityLockPercent.toFixed(2)}%` : "—"],
     ["Supply", token.totalSupply ? number(token.totalSupply) : "—"],
-    ["Curve fee", isV4 ? "1% / 1% · 70/30" : "Legacy protocol fee"],
   ];
 
   return <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-4">
@@ -86,7 +83,7 @@ export function IndexedTokenDetail({ address }: { address: string }) {
           </div>
         </div>
       </div>
-        <dl className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-line bg-black/15 sm:grid-cols-4 xl:grid-cols-7">
+        <dl className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-line bg-black/15 sm:grid-cols-3 xl:grid-cols-6">
           {heroStats.map(([label, value]) => <div key={label} className="min-w-0 border-b border-r border-line/70 px-3 py-2.5 last:border-r-0 sm:[&:nth-child(n+5)]:border-b-0 xl:border-b-0">
             <dt className="truncate font-mono text-[8px] uppercase tracking-[.08em] text-slate-600">{label}</dt>
             <dd className="mt-1 truncate text-[11px] font-semibold text-slate-200" title={value}>{value}</dd>
