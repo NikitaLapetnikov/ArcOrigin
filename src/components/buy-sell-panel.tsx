@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, Settings2 } from "lucide-react";
+import { Settings2 } from "lucide-react";
 import {
   formatUnits,
   parseUnits,
@@ -110,7 +110,6 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const [amount, setAmount] = useState("1");
   const [slippageInput, setSlippageInput] = useState("20");
   const [priority, setPriority] = useState<Priority>("Medium");
-  const [quote, setQuote] = useState<LiveQuote | null>(null);
   const [status, setStatus] = useState<TransactionStatus>("idle");
   const [notice, setNotice] = useState("");
   const [noticeIsError, setNoticeIsError] = useState(false);
@@ -118,7 +117,6 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const [balances, setBalances] = useState<WalletBalances | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState(false);
-  const [creatorFeeShareBps, setCreatorFeeShareBps] = useState<number | null>(null);
   const submissionLockRef = useRef(false);
   const balanceRequestRef = useRef(0);
   const { address, isConnected, chainId } = useAccount();
@@ -127,9 +125,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const inputDecimals = side === "Buy" ? 6 : 18;
-  const outputDecimals = side === "Buy" ? 18 : 6;
   const inputSymbol = side === "Buy" ? "USDC" : token.ticker;
-  const outputSymbol = side === "Buy" ? token.ticker : "USDC";
   const isPending = status !== "idle";
   const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
   const buyDisabled = side === "Buy" && token.status === "Graduated" && !permanentLiquidityMode;
@@ -138,28 +134,6 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const slippageValid = Number.isFinite(slippage)
     && slippage > 0
     && slippage <= MAX_SLIPPAGE_PERCENT;
-  const quoteFeeBase = quote ? (side === "Buy" ? quote.input : quote.output + quote.fee) : 0n;
-  const quoteFeePercent = quote && quoteFeeBase > 0n
-    ? Number(quote.fee * 10_000n / quoteFeeBase) / 100
-    : null;
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!publicClient) return;
-    void publicClient.readContract({
-      address: curveAddress,
-      abi: bondingCurveAbi,
-      functionName: "CREATOR_FEE_SHARE_BPS",
-    }).then((value) => {
-      if (!cancelled) setCreatorFeeShareBps(Number(value));
-    }).catch(() => {
-      if (!cancelled) setCreatorFeeShareBps(null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [curveAddress, publicClient]);
-
   const refreshBalances = useCallback(async () => {
     const requestId = ++balanceRequestRef.current;
     if (!address || chainId !== arcTestnet.id) {
@@ -208,7 +182,6 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   }, [address, chainId, publicClient, token.address, walletClient]);
 
   useEffect(() => {
-    setQuote(null);
     setTransactionHash(null);
     setNotice("");
     setNoticeIsError(false);
@@ -242,56 +215,53 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     return client;
   }
 
-  async function requestQuote() {
-    setNotice("");
-    setNoticeIsError(false);
-    setTransactionHash(null);
-    setStatus("quoting");
-    try {
-      if (buyDisabled) throw new Error("New buys are closed after graduation. Existing holders can still sell against the remaining curve liquidity.");
-      if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
-      const input = parseUnits(amount, inputDecimals);
-      if (input <= 0n) throw new Error("Enter an amount greater than zero.");
-      const client = await getClient();
-      const [output, fee] = await withRpcRetry(() => client.readContract({
-        address: curveAddress,
-        abi: bondingCurveAbi,
-        functionName: side === "Buy" ? "quoteBuy" : "quoteSell",
-        args: [input],
-      }));
-      if (output <= 0n) {
-        if (side === "Buy" && permanentLiquidityMode && token.status !== "Graduated") {
-          const maximum = await withRpcRetry(() => client.readContract({
-            address: curveAddress,
-            abi: bondingCurveAbi,
-            functionName: "maxBuyAmount",
-          }));
-          throw new Error(`This input exceeds the remaining curve capacity. Maximum buy: ${displayUnits(maximum, 6)} USDC.`);
-        }
-        throw new Error(side === "Sell" ? "The curve has insufficient USDC liquidity for this sale." : "The curve returned zero tokens.");
+  async function readQuote(client: PublicClient): Promise<LiveQuote> {
+    if (buyDisabled) throw new Error("New buys are closed after graduation. Existing holders can still sell against the remaining curve liquidity.");
+    if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
+    const input = parseUnits(amount, inputDecimals);
+    if (input <= 0n) throw new Error("Enter an amount greater than zero.");
+    const [output, fee] = await withRpcRetry(() => client.readContract({
+      address: curveAddress,
+      abi: bondingCurveAbi,
+      functionName: side === "Buy" ? "quoteBuy" : "quoteSell",
+      args: [input],
+    }));
+    if (output <= 0n) {
+      if (side === "Buy" && permanentLiquidityMode && token.status !== "Graduated") {
+        const maximum = await withRpcRetry(() => client.readContract({
+          address: curveAddress,
+          abi: bondingCurveAbi,
+          functionName: "maxBuyAmount",
+        }));
+        throw new Error(`This input exceeds the remaining curve capacity. Maximum buy: ${displayUnits(maximum, 6)} USDC.`);
       }
-      const slippageBps = BigInt(Math.round(slippage * 100));
-      const minimumOutput = output * (10_000n - slippageBps) / 10_000n;
-      setQuote({ input, output, fee, minimumOutput });
-      setNotice("Onchain quote ready. Review the output, then confirm the trade.");
-    } catch (error) {
-      setNotice(transactionError(error));
-      setNoticeIsError(true);
-    } finally {
-      setStatus("idle");
+      throw new Error(side === "Sell" ? "The curve has insufficient USDC liquidity for this sale." : "The curve returned zero tokens.");
     }
+    const slippageBps = BigInt(Math.round(slippage * 100));
+    return {
+      input,
+      output,
+      fee,
+      minimumOutput: output * (10_000n - slippageBps) / 10_000n,
+    };
   }
 
   async function submitTrade() {
-    if (!quote || !address) return;
+    if (!address) {
+      setNotice("Connect Rabby to trade.");
+      setNoticeIsError(true);
+      return;
+    }
     if (submissionLockRef.current) return;
     submissionLockRef.current = true;
-    setStatus("preparing");
+    setStatus("quoting");
     setNotice("");
     setNoticeIsError(false);
     setTransactionHash(null);
     try {
       const client = await getClient();
+      const quote = await readQuote(client as PublicClient);
+      setStatus("preparing");
       const approvalToken = (side === "Buy" ? ARC_TESTNET_CONTRACTS.usdc : token.address) as Address;
       const allowance = await withRpcRetry(() => client.readContract({
         address: approvalToken,
@@ -336,7 +306,6 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       setTransactionHash(tradeHash);
       setNotice(`${side} confirmed on Arc Testnet.`);
       setNoticeIsError(false);
-      setQuote(null);
       await refreshBalances();
       window.dispatchEvent(new CustomEvent("arcforge:trade-confirmed", {
         detail: { tokenAddress: token.address, transactionHash: tradeHash },
@@ -360,9 +329,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
           ? `${side} pending…`
           : buyDisabled
             ? "Buying closed at graduation"
-            : quote
-              ? `${side} ${token.ticker}`
-              : "Get onchain quote";
+            : `${side} ${token.ticker}`;
 
   const balanceLabel = !address
     ? "Connect wallet"
@@ -423,11 +390,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
         >{value}</button>)}</div>
       </div>
     </div>
-    <div className="relative my-3 flex justify-center"><span className="grid size-7 place-items-center rounded-full border border-line bg-panel text-slate-500"><ArrowDown className="size-3" /></span></div>
-    <label className="label">Expected output</label>
-    <div className="flex h-14 items-center justify-between rounded-xl border border-line bg-[#080c13] px-3"><span className="text-xl font-semibold text-white">{quote ? displayUnits(quote.output, outputDecimals) : "—"}</span><Badge tone="cyan">{outputSymbol}</Badge></div>
-    <dl className="my-5 grid gap-2 text-xs"><div className="flex justify-between"><dt className="text-slate-500">Trading fee</dt><dd className="text-slate-300">{quote && quoteFeePercent !== null ? `${displayUnits(quote.fee, 6)} USDC · ${quoteFeePercent.toFixed(2)}%` : "Read from curve with quote"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Fee recipient</dt><dd className="text-slate-300">{creatorFeeShareBps === null ? "Legacy protocol curve" : `${creatorFeeShareBps / 100}% creator · ${(10_000 - creatorFeeShareBps) / 100}% protocol`}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Quote source</dt><dd className="text-emerald-300">Onchain reserves</dd></div><div className="flex justify-between"><dt className="text-slate-500">Minimum received</dt><dd className="text-slate-300">{quote ? `${displayUnits(quote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</dd></div><div className="flex justify-between"><dt className="text-slate-500">Transaction priority</dt><dd className="text-slate-300">{priority}</dd></div></dl>
-    <Button className="w-full" disabled={isPending || buyDisabled || !slippageValid} onClick={() => quote ? void submitTrade() : void requestQuote()}>{actionLabel}</Button>
+    <Button className="mt-4 w-full" disabled={isPending || buyDisabled || !slippageValid} onClick={() => void submitTrade()}>{actionLabel}</Button>
     {notice && <p role={noticeIsError ? "alert" : "status"} aria-live="polite" className={`mt-3 rounded-lg border p-2 text-[11px] leading-4 ${noticeIsError ? "border-rose-400/20 bg-rose-400/[.07] text-rose-200" : transactionHash ? "border-emerald-400/15 bg-emerald-400/[.07] text-emerald-300" : "border-cyan/15 bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
     <p className="mt-4 text-[11px] leading-5 text-slate-500">{token.status === "Graduated"
       ? permanentLiquidityMode
