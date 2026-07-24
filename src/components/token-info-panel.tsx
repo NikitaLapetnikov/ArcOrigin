@@ -6,7 +6,7 @@ import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
 import { ARC_TESTNET_CONTRACTS, ARC_TESTNET_V4_FACTORY, EXPLORER_URL, factoryForLaunchBlock } from "@/lib/chains";
 import type { TokenData } from "@/lib/types";
 import { number, shortAddress, utcDateTime } from "@/lib/utils";
-import { Badge, Button, Progress, RiskBadge } from "./ui";
+import { Badge, Button, Progress } from "./ui";
 
 type AddressItem = {
   label: string;
@@ -51,7 +51,6 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
         <p className="text-sm font-semibold text-white">Token info</p>
         <p className="mt-0.5 font-mono text-[9px] text-slate-600">Verified on Arc Testnet</p>
       </div>
-      <RiskBadge score={token.riskScore} />
     </div>
 
     <div className="grid grid-cols-2 gap-px bg-line">

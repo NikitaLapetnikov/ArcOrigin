@@ -6,7 +6,7 @@ import { AtSign, ExternalLink, Globe, RefreshCw, Send, ShieldCheck } from "lucid
 import { useAccount } from "wagmi";
 import { PnlShareCard } from "@/components/pnl-share-card";
 import { KLineTokenChart } from "@/components/kline-token-chart";
-import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, RiskBadge, TokenIcon, WarningBox } from "@/components/ui";
+import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, TokenIcon, WarningBox } from "@/components/ui";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import { EXPLORER_URL } from "@/lib/chains";
@@ -288,7 +288,7 @@ export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenDa
       </div>}
 
       {activeTab === "Holders" && <div className="p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow">Holder distribution</p><p className="mt-2 text-sm text-slate-400">Confirmed holder balances, cached locally for instant repeat visits.</p></div><div className="flex items-center gap-2"><Badge tone={holderSnapshot ? "good" : "neutral"}>{holderLoading ? "Refreshing" : holderSnapshot ? "Onchain snapshot" : "Unavailable"}</Badge><Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={holderLoading} onClick={() => void refreshHolders(true)}>Refresh</Button></div></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow">Holder distribution</p><p className="mt-2 text-sm text-slate-400">Confirmed holder balances, cached locally for instant repeat visits.</p></div><div className="flex items-center gap-2"><Badge tone={holderSnapshot ? "good" : "neutral"}>{holderLoading ? "Refreshing" : holderSnapshot ? "Ready" : "Unavailable"}</Badge><Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={holderLoading} onClick={() => void refreshHolders(true)}>Refresh</Button></div></div>
         {holderLoading && !holderSnapshot && <div className="mt-8 rounded-xl border border-line bg-black/15 px-4 py-10 text-center text-sm text-slate-500">Loading holder analytics in the background…</div>}
         {holderSnapshot && <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{[["Creator", holderSnapshot.creatorPercent], ["Top 10 excluding curve", holderSnapshot.topTenExcludingCurvePercent], ["Trading curve", holderSnapshot.curvePercent], ["Permanent lock", holderSnapshot.permanentLiquidityLockPercent]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-line bg-black/15 p-4"><div className="mb-3 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-200">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
         {holderSnapshot && <div className="mt-5 overflow-x-auto rounded-xl border border-line">
@@ -347,7 +347,7 @@ export function OnchainTokenDashboard({ token, creatorTokens }: { token: TokenDa
           <p className="mt-4 text-[11px] leading-5 text-slate-500">Risk labels describe visible onchain and metadata signals, not a guarantee of safety.</p>
         </div>
         <div className="rounded-xl border border-line bg-black/15 p-4">
-          <div className="flex items-center justify-between"><p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">Risk score</p><RiskBadge score={token.riskScore}/></div>
+          <p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">Contracts</p>
           <dl className="mt-5 grid gap-3 text-xs"><InfoRow label="Token" value={<AddressPill address={token.address}/>}/>{token.curveAddress && <InfoRow label="Curve" value={<AddressPill address={token.curveAddress}/>}/>}<InfoRow label="Creator" value={<AddressPill address={token.creator}/>}/><InfoRow label="Launch block" value={String(token.launchBlock ?? "—")}/></dl>
         </div>
       </div>}

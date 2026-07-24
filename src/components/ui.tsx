@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { HTMLAttributes, ReactNode } from "react";
-import { ExternalLink, ShieldCheck, TriangleAlert } from "lucide-react";
+import { ExternalLink, TriangleAlert } from "lucide-react";
 import { EXPLORER_URL } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 
@@ -28,11 +28,6 @@ export function AddressPill({ address }: { address: string }) { return <code cla
 export function ArcscanLink({ hash, label }: { hash: string; label?: string }) { return <a href={`${EXPLORER_URL}/tx/${hash}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-cyan hover:underline">{label ?? shortAddress(hash)} <ExternalLink className="size-3" /></a>; }
 
 export function WarningBox({ children }: { children: ReactNode }) { return <div className="flex gap-3 rounded-xl border border-amber-300/15 bg-amber-300/[.05] p-3 text-xs leading-5 text-amber-100/75"><TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-300" />{children}</div>; }
-
-export function RiskBadge({ score }: { score: number }) {
-  const tone = score >= 80 ? "good" : score >= 60 ? "warn" : "bad";
-  return <Badge tone={tone}><ShieldCheck className="mr-1 size-3" />{score} score</Badge>;
-}
 
 export function TokenIcon({ label, image, className }: { label: string; image?: string; className?: string }) {
   return <div className={cn("relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl border border-cyan/20 bg-cyan/[.09] font-mono text-[11px] font-semibold text-cyan", className)}>

@@ -5,7 +5,7 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { BuySellPanel } from "@/components/buy-sell-panel";
 import { OnchainTokenDashboard } from "@/components/onchain-token-dashboard";
 import { TokenInfoPanel } from "@/components/token-info-panel";
-import { AddressPill, Badge, Button, Panel, RiskBadge, TokenIcon, WarningBox } from "@/components/ui";
+import { AddressPill, Badge, Button, Panel, TokenIcon, WarningBox } from "@/components/ui";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { EXPLORER_URL } from "@/lib/chains";
@@ -40,7 +40,6 @@ export function IndexedTokenDetail({ address }: { address: string }) {
             <h1 className="truncate text-lg font-semibold text-white sm:text-xl">{token.name}</h1>
             <span className="font-mono text-xs text-slate-500">{token.ticker}</span>
             <Badge tone="cyan">{token.status}</Badge>
-            <Badge tone="good">Onchain</Badge>
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500">
             <AddressPill address={token.address} />
@@ -51,7 +50,6 @@ export function IndexedTokenDetail({ address }: { address: string }) {
       </div>
       <div className="flex items-center gap-2 pl-12 lg:pl-0">
         <WatchlistButton address={token.address} />
-        <RiskBadge score={token.riskScore} />
         <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-2 rounded-lg border border-line px-3 text-xs text-slate-300 transition hover:border-cyan/30 hover:text-white">Arcscan <ExternalLink className="size-3" /></a>
       </div>
     </div>

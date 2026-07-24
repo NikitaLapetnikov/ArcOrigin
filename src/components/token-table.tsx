@@ -7,11 +7,11 @@ import { readWatchlist } from "@/components/watchlist-button";
 import { calculateMomentumScore } from "@/lib/scoring";
 import type { TokenData } from "@/lib/types";
 import { money, number, utcDateTime } from "@/lib/utils";
-import { Badge, Button, Progress, RiskBadge, TokenIcon } from "./ui";
+import { Badge, Button, Progress, TokenIcon } from "./ui";
 
-const filters = ["All", "Watchlist", "New", "Trending", "Graduating", "High volume", "Low risk"] as const;
+const filters = ["All", "Watchlist", "New", "Trending", "Graduating", "High volume"] as const;
 type Filter = typeof filters[number];
-type SortKey = "created" | "price" | "priceChange24h" | "marketCap" | "raisedUSDC" | "volume24h" | "trades" | "holders" | "curveProgress" | "riskScore";
+type SortKey = "created" | "price" | "priceChange24h" | "marketCap" | "raisedUSDC" | "volume24h" | "trades" | "holders" | "curveProgress";
 type SortDirection = "asc" | "desc";
 type OnchainState = "loading" | "live" | "cached" | "unavailable";
 
@@ -25,7 +25,6 @@ const sortOptions: { key: SortKey; label: string }[] = [
   { key: "trades", label: "Trades" },
   { key: "holders", label: "Holders" },
   { key: "curveProgress", label: "Curve" },
-  { key: "riskScore", label: "Risk score" },
 ];
 
 function createdSortValue(token: TokenData) {
@@ -86,7 +85,6 @@ export function TokenTable({
     if (filter === "Trending") return calculateMomentumScore(token) >= 40;
     if (filter === "Graduating") return token.curveProgress >= 75 && token.curveProgress < 100;
     if (filter === "High volume") return token.volume24h >= 10_000;
-    if (filter === "Low risk") return token.riskScore >= 80;
     return true;
   }).sort((left, right) => {
     const difference = sortValue(left, sort) - sortValue(right, sort);
@@ -131,8 +129,7 @@ export function TokenTable({
         const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
         return <Link key={token.address} href={`/tokens/${token.address}`} className="min-w-0 rounded-xl border border-line bg-black/15 p-4 transition active:border-cyan/40">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span><SourceBadge onchainState={onchainState}/></div></div></div>
-            {awaitingLive ? <span className="text-slate-600">—</span> : <RiskBadge score={token.riskScore}/>}
+            <div className="flex min-w-0 items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span></div></div></div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-xs sm:grid-cols-5">
             <MobileMetric label="Created" value={createdLabel(token)}/>
@@ -160,14 +157,13 @@ export function TokenTable({
           {!compact && <SortableHeader label="Trades" sortKey="trades" activeSort={sort} direction={direction} onSort={changeSort}/>}
           {!compact && <SortableHeader label="Holders" sortKey="holders" activeSort={sort} direction={direction} onSort={changeSort}/>}
           <SortableHeader label="Curve" sortKey="curveProgress" activeSort={sort} direction={direction} onSort={changeSort} className="w-36"/>
-          <SortableHeader label="Risk" sortKey="riskScore" activeSort={sort} direction={direction} onSort={changeSort}/>
           <th></th>
         </tr></thead>
         <tbody>{shown.map((token) => {
           const awaitingLive = onchainState === "unavailable" && token.price <= 0;
           const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
           return <tr key={token.address} className="border-b border-line/60 transition last:border-0 hover:bg-white/[.025]">
-            <td className="px-4 py-3"><Link href={`/tokens/${token.address}`} className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div><div className="flex items-center gap-2"><p className="font-semibold text-white">{token.name}</p><SourceBadge onchainState={onchainState}/></div><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span><span className="text-[10px] text-slate-600">{token.status}</span></div></div></Link></td>
+            <td className="px-4 py-3"><Link href={`/tokens/${token.address}`} className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div><p className="font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span><span className="text-[10px] text-slate-600">{token.status}</span></div></div></Link></td>
             {!compact && <td className="whitespace-nowrap text-slate-400">{createdLabel(token)}</td>}
             <td>{awaitingLive ? <span className="text-slate-600">—</span> : <><p className="text-slate-200">{money(token.price)}</p><button type="button" onClick={() => changeSort("priceChange24h")} className={token.priceChange24h >= 0 ? "mt-1 text-emerald-400" : "mt-1 text-rose-400"}>Since launch {token.priceChange24h > 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%</button></>}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.marketCap, true)}</td>
@@ -176,7 +172,6 @@ export function TokenTable({
             {!compact && <td className="text-slate-400">{awaitingLive ? "—" : number(token.trades)}</td>}
             {!compact && <td className="text-slate-400">{token.holders === 0 ? "—" : number(token.holders)}</td>}
             <td className="pr-5"><div className="mb-1.5 flex justify-between text-[10px] text-slate-500"><span>{awaitingLive ? "—" : progressLabel}</span><span>{money(token.targetUSDC, true)}</span></div><Progress value={awaitingLive ? 0 : token.curveProgress}/></td>
-            <td>{awaitingLive ? <span className="text-slate-600">—</span> : <RiskBadge score={token.riskScore}/>}</td>
             <td className="pr-4"><Link href={`/tokens/${token.address}`} className="font-semibold text-cyan">Trade →</Link></td>
           </tr>;
         })}</tbody>
@@ -184,10 +179,6 @@ export function TokenTable({
       {shown.length === 0 && <div className="p-10 text-center text-sm text-slate-500">No tokens match this view.</div>}
     </div>
   </div>;
-}
-
-function SourceBadge({ onchainState }: { onchainState: OnchainState }) {
-  return <Badge tone={onchainState === "unavailable" || onchainState === "cached" ? "neutral" : "good"}>{onchainState === "loading" ? "Refreshing" : onchainState === "cached" ? "Cached" : onchainState === "unavailable" ? "Unavailable" : "Onchain"}</Badge>;
 }
 
 function SortableHeader({ label, sortKey, secondarySortKey, activeSort, direction, onSort, className = "" }: {

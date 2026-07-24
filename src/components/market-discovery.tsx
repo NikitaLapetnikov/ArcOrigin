@@ -6,7 +6,7 @@ import { Activity, ArrowUpRight, Flame, Rocket } from "lucide-react";
 import { calculateMomentumScore } from "@/lib/scoring";
 import type { TokenData, Trade } from "@/lib/types";
 import { money, number, utcDateTime } from "@/lib/utils";
-import { Badge, Progress, TokenIcon } from "@/components/ui";
+import { Progress, TokenIcon } from "@/components/ui";
 
 type DiscoveryTab = "buys" | "launches" | "trending";
 
@@ -17,10 +17,6 @@ const tabs: { id: DiscoveryTab; label: string; icon: typeof Activity }[] = [
 ];
 
 type BuyItem = { token: TokenData; trade: Trade; order: number };
-
-function sourceBadge() {
-  return <Badge tone="good">Onchain</Badge>;
-}
 
 function launchOrder(token: TokenData) {
   if (token.launchedAt) return token.launchedAt;
@@ -76,7 +72,6 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{token.name}</p><p className="mt-1 font-mono text-[10px] text-slate-500">{token.ticker}</p></div></div>
-          {sourceBadge()}
         </div>
         <div className="mt-5 flex items-end justify-between gap-4"><div><p className="text-lg font-semibold text-emerald-300">+{number(trade.tokens)} {token.ticker}</p><p className="mt-1 text-xs text-slate-500">for {money(trade.usdc)}</p></div><div className="text-right"><p className="text-[10px] uppercase tracking-wider text-slate-600">Buy</p><p className="mt-1 text-[11px] text-slate-500">{utcDateTime(trade.timestamp)}</p></div></div>
       </Link>)}
@@ -87,7 +82,7 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
         className="group rounded-xl border border-line bg-black/15 p-4 transition hover:border-cyan/25 hover:bg-white/[.025]"
       >
         <div className="flex items-start justify-between gap-3"><TokenIcon label={token.icon} image={token.image} className="size-12"/><span className="max-w-36 text-right text-[11px] leading-4 text-slate-500">{launchTime(token)}</span></div>
-        <div className="mt-4 flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><p className="mt-1 font-mono text-[10px] text-slate-500">{token.ticker}</p></div>{sourceBadge()}</div>
+        <div className="mt-4"><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><p className="mt-1 font-mono text-[10px] text-slate-500">{token.ticker}</p></div></div>
         <div className="mt-4 flex items-center justify-between border-t border-line/70 pt-3 text-xs"><span className="text-slate-500">Market cap</span><span className="font-medium text-slate-200">{money(token.marketCap, true)}</span></div>
       </Link>)}
 
