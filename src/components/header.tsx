@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Menu, Radio, Wallet, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -58,7 +59,14 @@ export function Header() {
   return <header className="sticky top-0 z-50 border-b border-line/80 bg-ink/85 backdrop-blur-2xl">
     <div className="container-shell flex h-[68px] items-center justify-between gap-4">
       <Link href="/" className="flex items-center gap-2.5">
-        <span className="grid size-9 place-items-center rounded-xl border border-cyan/25 bg-[#0a111d] text-sm font-extrabold text-cyan shadow-[0_0_28px_rgba(71,173,255,.16)]">AO</span>
+        <Image
+          src="/brand/arcorigin-logo.png"
+          alt="ArcOrigin"
+          width={40}
+          height={40}
+          priority
+          className="size-10 rounded-xl border border-cyan/20 shadow-[0_0_28px_rgba(71,173,255,.18)]"
+        />
         <span className="text-[15px] font-extrabold tracking-[-.025em] text-white">ArcOrigin</span>
       </Link>
       <nav className="hidden items-center gap-1 rounded-2xl border border-line bg-white/[.025] p-1 lg:flex">
