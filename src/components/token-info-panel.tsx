@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { Check, Copy, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
-import { ARC_TESTNET_CONTRACTS, ARC_TESTNET_V4_FACTORY, EXPLORER_URL, factoryForLaunchBlock } from "@/lib/chains";
+import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, factoryForLaunchBlock } from "@/lib/chains";
 import type { TokenData } from "@/lib/types";
-import { number, shortAddress, utcDateTime } from "@/lib/utils";
+import { shortAddress, utcDateTime } from "@/lib/utils";
 import { Badge, Button, Progress } from "./ui";
 
 type AddressItem = {
@@ -18,7 +18,6 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
   const { snapshot, loading, error, refresh } = useHolderSnapshot(token, true);
   const [copied, setCopied] = useState("");
   const factory = token.factoryAddress ?? factoryForLaunchBlock(token.launchBlock);
-  const isV4 = factory.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase();
   const addresses: AddressItem[] = [
     { label: "Token", address: token.address, description: "ERC-20 contract" },
     { label: "Curve", address: token.curveAddress, description: "Trading contract" },
@@ -39,11 +38,9 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
     }
   }
 
-  const holderCount = snapshot?.holders ?? token.holders;
   const creatorPercent = snapshot?.creatorPercent ?? token.creatorAllocationPercent;
   const concentration = snapshot?.topTenExcludingCurvePercent;
   const curvePercent = snapshot?.curvePercent;
-  const lockPercent = snapshot?.permanentLiquidityLockPercent;
 
   return <section className="panel overflow-hidden rounded-xl shadow-none">
     <div className="flex items-center justify-between border-b border-line bg-black/10 px-4 py-3">
@@ -51,17 +48,6 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
         <p className="text-sm font-semibold text-white">Token info</p>
         <p className="mt-0.5 font-mono text-[9px] text-slate-600">Verified on Arc Testnet</p>
       </div>
-    </div>
-
-    <div className="grid grid-cols-2 gap-px bg-line">
-      <InfoStat label="Holders" value={holderCount > 0 ? number(holderCount) : "—"} />
-      <InfoStat label="Creator holding" value={creatorPercent === undefined ? "—" : `${creatorPercent.toFixed(2)}%`} />
-      <InfoStat label="Top 10" value={concentration === undefined ? "—" : `${concentration.toFixed(2)}%`} />
-      <InfoStat label="Curve inventory" value={curvePercent === undefined ? "—" : `${curvePercent.toFixed(2)}%`} />
-      <InfoStat label="Permanent lock" value={lockPercent === undefined ? "—" : `${lockPercent.toFixed(2)}%`} />
-      <InfoStat label="Supply" value={token.totalSupply ? number(token.totalSupply) : "—"} />
-      <InfoStat label="Token transfer tax" value="None in token bytecode" />
-      <InfoStat label="Curve fee B / S" value={isV4 ? "1% / 1% · 70/30 split" : "Legacy protocol fee"} />
     </div>
 
     <div className="border-b border-line p-4">
@@ -145,13 +131,6 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
       </a>}
     </div>
   </section>;
-}
-
-function InfoStat({ label, value }: { label: string; value: string }) {
-  return <div className="bg-panel px-4 py-3">
-    <p className="font-mono text-[8px] uppercase tracking-wider text-slate-600">{label}</p>
-    <p className="mt-1 text-xs font-medium text-slate-200">{value}</p>
-  </div>;
 }
 
 function DistributionRow({ label, value }: { label: string; value?: number }) {

@@ -89,14 +89,15 @@ async function requestSnapshot(token: TokenData, forceRefresh: boolean) {
   return request;
 }
 
-export function useHolderSnapshot(token: TokenData, autoRefresh = false) {
-  const address = token.address;
+export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = false) {
+  const address = token?.address ?? "";
   const [snapshot, setSnapshot] = useState<HolderSnapshot | null>(null);
   const [savedAt, setSavedAt] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const refresh = useCallback(async (forceRefresh = false) => {
+    if (!token || !address) return;
     setLoading(true);
     setError("");
     try {
@@ -112,6 +113,11 @@ export function useHolderSnapshot(token: TokenData, autoRefresh = false) {
   }, [address, token]);
 
   useEffect(() => {
+    if (!address) {
+      setSnapshot(null);
+      setSavedAt(0);
+      return;
+    }
     const cached = readCached(address);
     if (cached) {
       setSnapshot(cached.snapshot);

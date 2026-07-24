@@ -9,13 +9,15 @@ import { TokenInfoPanel } from "@/components/token-info-panel";
 import { Badge, Button, Panel, TokenIcon, WarningBox } from "@/components/ui";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
-import { EXPLORER_URL } from "@/lib/chains";
-import { shortAddress, utcDateTime } from "@/lib/utils";
+import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
+import { ARC_TESTNET_V4_FACTORY, EXPLORER_URL, factoryForLaunchBlock } from "@/lib/chains";
+import { number, shortAddress, utcDateTime } from "@/lib/utils";
 
 export function IndexedTokenDetail({ address }: { address: string }) {
   const [copied, setCopied] = useState(false);
   const { tokens, loading, error, refresh } = useFactoryTokenIndex({ includeMarketData: false, allowCache: true });
   const token = tokens.find((item) => item.address.toLowerCase() === address.toLowerCase());
+  const { snapshot: holderSnapshot } = useHolderSnapshot(token, Boolean(token));
 
   if (!token) {
     return <div className="container-shell py-12">
@@ -42,24 +44,38 @@ export function IndexedTokenDetail({ address }: { address: string }) {
     }
   }
 
+  const factory = token.factoryAddress ?? factoryForLaunchBlock(token.launchBlock);
+  const isV4 = factory.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase();
+  const holderCount = holderSnapshot?.holders ?? token.holders;
+  const heroStats = [
+    ["Holders", holderCount > 0 ? number(holderCount) : "—"],
+    ["Creator holding", `${(holderSnapshot?.creatorPercent ?? token.creatorAllocationPercent ?? 0).toFixed(2)}%`],
+    ["Top 10", holderSnapshot ? `${holderSnapshot.topTenExcludingCurvePercent.toFixed(2)}%` : "—"],
+    ["Curve inventory", holderSnapshot ? `${holderSnapshot.curvePercent.toFixed(2)}%` : "—"],
+    ["Permanent lock", holderSnapshot ? `${holderSnapshot.permanentLiquidityLockPercent.toFixed(2)}%` : "—"],
+    ["Supply", token.totalSupply ? number(token.totalSupply) : "—"],
+    ["Curve fee", isV4 ? "1% / 1% · 70/30" : "Legacy protocol fee"],
+  ];
+
   return <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-4">
-    <div className="mb-3 grid gap-5 rounded-xl border border-line bg-panel p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-      <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
+    <div className="mb-3 rounded-xl border border-line bg-panel p-3.5 sm:p-4">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(480px,.9fr)_minmax(680px,1.1fr)_auto] xl:items-center">
+        <div className="flex min-w-0 items-start gap-3 sm:items-center">
         <Link href="/tokens" aria-label="Back to markets" className="mt-2 grid size-10 shrink-0 place-items-center rounded-[10px] border border-line text-slate-500 transition hover:border-slate-500/40 hover:text-white sm:mt-0"><ArrowLeft className="size-4"/></Link>
-        <TokenIcon label={token.icon} image={token.image} className="size-[72px] rounded-2xl text-base shadow-[0_12px_32px_rgba(0,0,0,.28)]" />
+        <TokenIcon label={token.icon} image={token.image} className="size-16 rounded-2xl text-base shadow-[0_12px_32px_rgba(0,0,0,.28)]" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
-            <h1 className="truncate text-2xl font-semibold tracking-[-.035em] text-white">{token.name}</h1>
+            <h1 className="truncate text-xl font-semibold tracking-[-.035em] text-white">{token.name}</h1>
             <span className="font-mono text-[11px] text-slate-500">{token.ticker}</span>
             <Badge tone="cyan">{token.status}</Badge>
           </div>
-          <div className="mt-3 grid gap-x-6 gap-y-2 text-[11px] text-slate-500 sm:grid-cols-[minmax(240px,auto)_auto_auto] sm:items-center">
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-500">
             <button
               type="button"
               onClick={() => void copyContract(token.address)}
               title={token.address}
               aria-label={copied ? "Contract copied" : "Copy token contract"}
-              className="flex min-w-0 items-center gap-2 rounded-lg border border-line bg-black/20 px-3 py-2 text-left transition hover:border-cyan/30 hover:bg-white/[.025]"
+              className="flex min-w-0 max-w-[360px] items-center gap-2 rounded-lg border border-line bg-black/20 px-2.5 py-1.5 text-left transition hover:border-cyan/30 hover:bg-white/[.025]"
             >
               <span className={`shrink-0 text-[9px] font-medium uppercase tracking-[.08em] ${copied ? "text-emerald-300" : "text-slate-600"}`}>{copied ? "Copied" : "Contract"}</span>
               <code className="min-w-0 flex-1 truncate text-[10px] text-slate-300">{token.address}</code>
@@ -70,9 +86,16 @@ export function IndexedTokenDetail({ address }: { address: string }) {
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2 pl-[88px] lg:pl-0">
-        <WatchlistButton address={token.address} />
-        <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-[10px] border border-line px-3 text-xs text-slate-300 transition hover:border-cyan/30 hover:text-white">Arcscan <ExternalLink className="size-3" /></a>
+        <dl className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-line bg-black/15 sm:grid-cols-4 xl:grid-cols-7">
+          {heroStats.map(([label, value]) => <div key={label} className="min-w-0 border-b border-r border-line/70 px-3 py-2.5 last:border-r-0 sm:[&:nth-child(n+5)]:border-b-0 xl:border-b-0">
+            <dt className="truncate font-mono text-[8px] uppercase tracking-[.08em] text-slate-600">{label}</dt>
+            <dd className="mt-1 truncate text-[11px] font-semibold text-slate-200" title={value}>{value}</dd>
+          </div>)}
+        </dl>
+        <div className="flex items-center gap-2">
+          <WatchlistButton address={token.address} />
+          <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-[10px] border border-line px-3 text-xs text-slate-300 transition hover:border-cyan/30 hover:text-white">Arcscan <ExternalLink className="size-3" /></a>
+        </div>
       </div>
     </div>
 
