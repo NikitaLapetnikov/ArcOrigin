@@ -234,7 +234,8 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
   }
   return {
     tokens: tokens.filter(
-      (token) => Math.abs(token.targetUSDC - ARCORIGIN_V4_GRADUATION_TARGET_USDC) < 0.000001,
+      (token) => Math.abs(token.targetUSDC - ARCORIGIN_V4_GRADUATION_TARGET_USDC) < 0.000001
+        && Math.abs(token.creatorAllocationPercent ?? 0) < 0.000001,
     ),
     indexedBlock: indexedBlock.toString(),
     generatedAt: new Date().toISOString(),

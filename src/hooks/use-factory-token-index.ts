@@ -17,7 +17,8 @@ type TokenIndexSnapshot = { tokens: TokenData[]; indexedBlock: string; generated
 
 function isCurrentV4Token(token: TokenData) {
   return token.factoryAddress?.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase()
-    && Math.abs(token.targetUSDC - ARCORIGIN_V4_GRADUATION_TARGET_USDC) < 0.000001;
+    && Math.abs(token.targetUSDC - ARCORIGIN_V4_GRADUATION_TARGET_USDC) < 0.000001
+    && Math.abs(token.creatorAllocationPercent ?? 0) < 0.000001;
 }
 
 function currentV4Tokens(tokens: TokenData[]) {
