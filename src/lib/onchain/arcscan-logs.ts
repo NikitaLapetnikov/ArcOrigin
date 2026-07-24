@@ -97,7 +97,11 @@ export async function getArcscanLogs({
   });
   if (!response.ok) throw new Error(`Arcscan log request failed with HTTP ${response.status}.`);
   const payload = await response.json() as ArcscanResponse;
-  if (payload.status === "0" && payload.message === "No records found") return [];
+  if (payload.status === "0"
+    && Array.isArray(payload.result)
+    && payload.result.length === 0
+    && typeof payload.message === "string"
+    && /^No (?:records|logs) found$/i.test(payload.message.trim())) return [];
   if (payload.status !== "1" || !Array.isArray(payload.result)) {
     throw new Error("Arcscan log index is temporarily unavailable.");
   }
