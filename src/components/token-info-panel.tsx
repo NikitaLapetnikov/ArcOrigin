@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Check, Copy, ExternalLink, ShieldCheck } from "lucide-react";
-import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, factoryForLaunchBlock } from "@/lib/chains";
+import { EXPLORER_URL } from "@/lib/chains";
 import type { TokenData } from "@/lib/types";
 import { shortAddress, utcDateTime } from "@/lib/utils";
 import { Badge } from "./ui";
@@ -15,15 +15,9 @@ type AddressItem = {
 
 export function TokenInfoPanel({ token }: { token: TokenData }) {
   const [copied, setCopied] = useState("");
-  const factory = token.factoryAddress ?? factoryForLaunchBlock(token.launchBlock);
   const addresses: AddressItem[] = [
     { label: "Token", address: token.address, description: "ERC-20 contract" },
-    { label: "Curve", address: token.curveAddress, description: "Trading contract" },
     { label: "Creator", address: token.creator, description: "Launch wallet" },
-    { label: "Factory", address: factory, description: "Contract deployer" },
-    { label: "USDC", address: ARC_TESTNET_CONTRACTS.usdc, description: "Quote asset" },
-    { label: "Fee vault", address: ARC_TESTNET_CONTRACTS.feeVault, description: "Protocol fees" },
-    { label: "Registry", address: ARC_TESTNET_CONTRACTS.creatorRegistry, description: "Creator record" },
   ];
 
   async function copyAddress(address: string) {
