@@ -7,6 +7,7 @@ import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
 import { getFactoryLaunchIndex, type FactoryLaunch } from "@/lib/onchain/holder-snapshot";
 import { calculateRiskScore } from "@/lib/scoring";
 import { resolveTokenMetadata } from "@/lib/server/token-metadata-resolver";
+import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 import type { CreatorProfile, TokenData } from "@/lib/types";
 
 const tokenConfigAbi = [
@@ -21,6 +22,7 @@ const curveConfigAbi = [
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const REQUEST_WAIT_TIMEOUT_MS = 10_000;
+const PERSISTENT_CACHE_KEY = "arcorigin:v4:token-index";
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 type TokenIndexSnapshot = {
@@ -255,6 +257,13 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
 }
 
 export async function getTokenIndexSnapshot(forceRefresh = false) {
+  if (!state.snapshot) {
+    const persisted = await readPersistentSnapshot<TokenIndexSnapshot>(PERSISTENT_CACHE_KEY);
+    if (persisted?.tokens && Array.isArray(persisted.tokens)) {
+      state.snapshot = persisted;
+      state.cachedAt = Date.parse(persisted.generatedAt) || 0;
+    }
+  }
   const now = Date.now();
   const isFresh = state.snapshot && now - state.cachedAt < CACHE_TTL_MS;
   const refreshThrottled = state.snapshot && now - state.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
@@ -269,6 +278,7 @@ export async function getTokenIndexSnapshot(forceRefresh = false) {
       .then((snapshot) => {
         state.snapshot = snapshot;
         state.cachedAt = Date.now();
+        void writePersistentSnapshot(PERSISTENT_CACHE_KEY, snapshot);
         return snapshot;
       })
       .finally(() => {

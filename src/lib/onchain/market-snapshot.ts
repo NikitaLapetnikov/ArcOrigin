@@ -6,6 +6,7 @@ import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
+import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 import type { ChartPoint, Trade } from "@/lib/types";
 
 const tokenBoughtEvent = parseAbiItem("event TokenBought(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 fee)");
@@ -337,6 +338,13 @@ function getTokenCache(tokenAddress: Address) {
 
 export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = false) {
   const cache = getTokenCache(tokenAddress);
+  if (!cache.snapshot) {
+    const persisted = await readPersistentSnapshot<MarketSnapshot>(`arcorigin:v4:market:${tokenAddress.toLowerCase()}`);
+    if (persisted?.indexedBlock && Array.isArray(persisted.trades)) {
+      cache.snapshot = persisted;
+      cache.cachedAt = Date.parse(persisted.generatedAt) || 0;
+    }
+  }
   const now = Date.now();
   const isFresh = cache.snapshot && now - cache.cachedAt < CACHE_TTL_MS;
   const refreshThrottled = cache.snapshot && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
@@ -352,6 +360,7 @@ export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = fa
       .then((snapshot) => {
         cache.snapshot = snapshot;
         cache.cachedAt = Date.now();
+        void writePersistentSnapshot(`arcorigin:v4:market:${tokenAddress.toLowerCase()}`, snapshot);
         return snapshot;
       })
       .finally(() => {
