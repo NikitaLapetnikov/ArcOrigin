@@ -1,7 +1,7 @@
 import "server-only";
 
 import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector, type Address, type Hash } from "viem";
-import { ARC_TESTNET_FACTORY_INDEXES } from "@/lib/chains";
+import { ARC_TESTNET_FACTORY_INDEXES, ARC_TESTNET_V4_FACTORY } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 
@@ -15,6 +15,9 @@ const HOLDER_CACHE_TTL_MS = 45_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const MAX_TOKEN_CACHES = 50;
 const RPC_REQUEST_GAP_MS = 220;
+const CURRENT_FACTORY_INDEXES = ARC_TESTNET_FACTORY_INDEXES.filter(
+  (factory) => factory.address.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase(),
+);
 
 export type FactoryLaunch = {
   factory: Address;
@@ -121,7 +124,7 @@ function loadLaunchLogs(address: Address, fromBlock: bigint, toBlock: bigint) {
 
 async function loadFactoryLaunches(indexedBlock: bigint) {
   try {
-    const logGroups = await Promise.all(ARC_TESTNET_FACTORY_INDEXES.map((factory) => getArcscanLogs({
+    const logGroups = await Promise.all(CURRENT_FACTORY_INDEXES.map((factory) => getArcscanLogs({
       address: factory.address,
       fromBlock: factory.fromBlock,
       toBlock: indexedBlock,
@@ -137,7 +140,7 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
         });
         const token = decoded.args.token;
         launches.set(token.toLowerCase(), {
-          factory: ARC_TESTNET_FACTORY_INDEXES[factoryIndex].address,
+          factory: CURRENT_FACTORY_INDEXES[factoryIndex].address,
           token,
           curve: decoded.args.curve,
           creator: decoded.args.creator,
@@ -156,7 +159,7 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
   }
 
   const launches = new Map<string, FactoryLaunch>();
-  for (const factory of ARC_TESTNET_FACTORY_INDEXES) {
+  for (const factory of CURRENT_FACTORY_INDEXES) {
     for (let fromBlock = factory.fromBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
       const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
       const logs = await loadLaunchLogs(factory.address, fromBlock, toBlock);
@@ -234,7 +237,7 @@ export async function getFactoryLaunchIndex(forceRefresh = false) {
 }
 
 async function verifyLaunchHint(tokenAddress: Address, hint: HolderLaunchHint) {
-  const knownFactory = ARC_TESTNET_FACTORY_INDEXES.some(
+  const knownFactory = CURRENT_FACTORY_INDEXES.some(
     (factory) => factory.address.toLowerCase() === hint.factory.toLowerCase() && hint.launchBlock >= factory.fromBlock,
   );
   if (!knownFactory) throw new FactoryTokenNotFoundError("The supplied launch factory is not configured.");
