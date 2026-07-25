@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Deployment Status" };
 const rows = [
   ["Network", "Arc Testnet"],
   ["Chain ID", String(manifest.chainId)],
-  ["RPC", "https://rpc.testnet.arc.network"],
+  ["RPC", "https://rpc.drpc.testnet.arc.network"],
   ["Explorer", manifest.explorerBaseUrl],
   ["Deployed", new Date(manifest.deployedAt).toLocaleString("en-GB", { timeZone: "UTC" }) + " UTC"],
   ["V4 activated", new Date(manifest.migration.activatedAt).toLocaleString("en-GB", { timeZone: "UTC" }) + " UTC"],

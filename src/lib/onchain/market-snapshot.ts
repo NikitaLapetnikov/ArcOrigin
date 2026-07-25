@@ -118,7 +118,7 @@ async function loadBlockTimestamps(blockNumbers: bigint[]) {
     missingBlocks.push(blockKey);
   }
   const blocks = await Promise.all(missingBlocks.map(async (blockKey) => {
-    const response = await fetch(process.env.ARC_TESTNET_RPC_URL ?? "https://rpc.testnet.arc.network", {
+    const response = await fetch(process.env.ARC_TESTNET_RPC_URL ?? "https://rpc.drpc.testnet.arc.network", {
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: blockKey,
