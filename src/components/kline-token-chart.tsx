@@ -125,6 +125,7 @@ export function KLineTokenChart({
     if (!chart) return;
     chart.setSymbol({ ticker, pricePrecision: precisionFor(latest?.close ?? 0.00000001), volumePrecision: 2 });
     chart.setPeriod(periodFor(compact ? "1h" : timeframe));
+    chart.resetData();
     chart.setBarSpace(compact ? 9 : DEFAULT_BAR_SPACE);
     chart.setOffsetRightDistance(RIGHT_EDGE_DISTANCE);
     window.requestAnimationFrame(() => chart.scrollToRealTime());

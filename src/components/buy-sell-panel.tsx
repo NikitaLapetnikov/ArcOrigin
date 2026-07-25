@@ -306,7 +306,6 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       setTransactionHash(tradeHash);
       setNotice(`${side} confirmed on Arc Testnet.`);
       setNoticeIsError(false);
-      await refreshBalances();
       window.dispatchEvent(new CustomEvent("arcforge:trade-confirmed", {
         detail: {
           tokenAddress: token.address,
@@ -320,6 +319,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
           tokens: Number(formatUnits(side === "Buy" ? quote.output : quote.input, 18)),
         },
       }));
+      void refreshBalances();
     } catch (error) {
       setNotice(transactionError(error));
       setNoticeIsError(true);
