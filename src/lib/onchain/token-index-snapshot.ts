@@ -19,6 +19,7 @@ const curveConfigAbi = [
 ] as const;
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
+const REQUEST_WAIT_TIMEOUT_MS = 10_000;
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 type TokenIndexSnapshot = {
@@ -56,6 +57,20 @@ globalThis.__arcOriginTokenIndexState = state;
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitForSnapshot(pending: Promise<TokenIndexSnapshot>) {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Arc RPC request timed out.")), REQUEST_WAIT_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function isRetryableRpcError(error: unknown) {
@@ -264,7 +279,7 @@ export async function getTokenIndexSnapshot(forceRefresh = false) {
       });
   }
   try {
-    const snapshot = await state.pending;
+    const snapshot = await waitForSnapshot(state.pending);
     return { snapshot, stale: false };
   } catch (error) {
     if (state.snapshot) return { snapshot: state.snapshot, stale: true };
