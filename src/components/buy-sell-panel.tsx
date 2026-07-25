@@ -308,7 +308,17 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       setNoticeIsError(false);
       await refreshBalances();
       window.dispatchEvent(new CustomEvent("arcforge:trade-confirmed", {
-        detail: { tokenAddress: token.address, transactionHash: tradeHash },
+        detail: {
+          tokenAddress: token.address,
+          transactionHash: tradeHash,
+          side,
+          wallet: address,
+          blockNumber: receipt.blockNumber.toString(),
+          timestamp: Math.floor(Date.now() / 1_000),
+          usdc: Number(formatUnits(side === "Buy" ? quote.input : quote.output, 6)),
+          fee: Number(formatUnits(quote.fee, 6)),
+          tokens: Number(formatUnits(side === "Buy" ? quote.output : quote.input, 18)),
+        },
       }));
     } catch (error) {
       setNotice(transactionError(error));

@@ -4,6 +4,7 @@ import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector, type Addres
 import { ARC_TESTNET_FACTORY_INDEXES, ARC_TESTNET_V4_FACTORY } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
+import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
@@ -398,6 +399,14 @@ function getTokenCache(tokenAddress: Address) {
 
 export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = false, hint?: HolderLaunchHint) {
   const cache = getTokenCache(tokenAddress);
+  const persistentKey = `arcorigin:v4:holders:${tokenAddress.toLowerCase()}`;
+  if (!cache.snapshot) {
+    const persisted = await readPersistentSnapshot<HolderSnapshot>(persistentKey);
+    if (persisted?.indexedBlock && Array.isArray(persisted.topHolders)) {
+      cache.snapshot = persisted;
+      cache.cachedAt = Date.parse(persisted.generatedAt) || 0;
+    }
+  }
   const now = Date.now();
   const isFresh = cache.snapshot && now - cache.cachedAt < HOLDER_CACHE_TTL_MS;
   const refreshThrottled = cache.snapshot && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
@@ -413,6 +422,7 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
       .then((snapshot) => {
         cache.snapshot = snapshot;
         cache.cachedAt = Date.now();
+        void writePersistentSnapshot(persistentKey, snapshot);
         return snapshot;
       })
       .finally(() => {

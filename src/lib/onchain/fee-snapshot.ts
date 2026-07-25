@@ -9,6 +9,7 @@ import {
 } from "@/lib/chains";
 import { erc20Abi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
+import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 
 const feeReceivedEvent = parseAbiItem("event FeeReceived(address indexed asset, address indexed payer, bytes32 indexed feeType, uint256 amount)");
 const feeWithdrawnEvent = parseAbiItem("event FeeWithdrawn(address indexed asset, address indexed recipient, uint256 amount)");
@@ -54,6 +55,7 @@ type FeeCache = {
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const LOG_BLOCK_RANGE = 9_999n;
+const PERSISTENT_CACHE_KEY = "arcorigin:v4:fees";
 const publicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL);
 
 declare global {
@@ -208,6 +210,13 @@ async function loadFeeSnapshot(): Promise<FeeSnapshot> {
 }
 
 export async function getFeeSnapshot(forceRefresh = false) {
+  if (!cache.snapshot) {
+    const persisted = await readPersistentSnapshot<FeeSnapshot>(PERSISTENT_CACHE_KEY);
+    if (persisted?.indexedBlock && Array.isArray(persisted.rows)) {
+      cache.snapshot = persisted;
+      cache.cachedAt = Date.parse(persisted.generatedAt) || 0;
+    }
+  }
   const now = Date.now();
   const isFresh = cache.snapshot && now - cache.cachedAt < CACHE_TTL_MS;
   const refreshThrottled = cache.snapshot && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
@@ -223,6 +232,7 @@ export async function getFeeSnapshot(forceRefresh = false) {
       .then((snapshot) => {
         cache.snapshot = snapshot;
         cache.cachedAt = Date.now();
+        void writePersistentSnapshot(PERSISTENT_CACHE_KEY, snapshot);
         return snapshot;
       })
       .finally(() => {

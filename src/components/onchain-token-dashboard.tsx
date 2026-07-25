@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { useAccount } from "wagmi";
 import { PnlShareCard } from "@/components/pnl-share-card";
@@ -62,13 +62,24 @@ export function useOnchainTokenSnapshot(token: TokenData) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [stale, setStale] = useState(false);
+  const pendingTradeHashes = useRef(new Set<string>());
+
+  const applyRefreshedSnapshot = useCallback((next: OnchainTokenSnapshot) => {
+    setSnapshot((current) => {
+      for (const hash of pendingTradeHashes.current) {
+        if (!next.trades.some((trade) => trade.txHash.toLowerCase() === hash)) return current;
+        pendingTradeHashes.current.delete(hash);
+      }
+      return next;
+    });
+  }, []);
 
   const refresh = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError("");
     try {
       try {
-        setSnapshot(await loadIndexedMarketSnapshot(token));
+        applyRefreshedSnapshot(await loadIndexedMarketSnapshot(token));
         setStale(false);
       } catch {
         const response = await fetch(`/api/onchain/tokens/${token.address}/market${forceRefresh ? "?refresh=1" : ""}`, {
@@ -76,7 +87,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
         });
         const payload = await response.json() as { snapshot?: OnchainTokenSnapshot; stale?: boolean; error?: string };
         if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Market data is unavailable.");
-        setSnapshot(payload.snapshot);
+        applyRefreshedSnapshot(payload.snapshot);
         setStale(Boolean(payload.stale));
         if (payload.stale) setError("Showing the latest confirmed market snapshot while Arc Testnet RPC recovers.");
       }
@@ -87,17 +98,83 @@ export function useOnchainTokenSnapshot(token: TokenData) {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [applyRefreshedSnapshot, token]);
 
   useEffect(() => {
     void refresh();
+    const retryTimers: Array<ReturnType<typeof setTimeout>> = [];
     const handleTrade = (event: Event) => {
-      const detail = (event as CustomEvent<{ tokenAddress?: string }>).detail;
-      if (detail?.tokenAddress?.toLowerCase() === token.address.toLowerCase()) void refresh(true);
+      const detail = (event as CustomEvent<{
+        tokenAddress?: string;
+        transactionHash?: string;
+        side?: "Buy" | "Sell";
+        wallet?: string;
+        blockNumber?: string;
+        timestamp?: number;
+        usdc?: number;
+        fee?: number;
+        tokens?: number;
+      }>).detail;
+      if (detail?.tokenAddress?.toLowerCase() !== token.address.toLowerCase()
+        || !detail.transactionHash
+        || !detail.side
+        || !detail.wallet
+        || !detail.usdc
+        || !detail.tokens) return;
+      const hash = detail.transactionHash.toLowerCase();
+      const side = detail.side;
+      const wallet = detail.wallet;
+      const transactionHash = detail.transactionHash;
+      const usdc = detail.usdc;
+      const tokens = detail.tokens;
+      pendingTradeHashes.current.add(hash);
+      setSnapshot((current) => {
+        if (current.trades.some((trade) => trade.txHash.toLowerCase() === hash)) return current;
+        const timestamp = detail.timestamp ?? Math.floor(Date.now() / 1_000);
+        const price = usdc / tokens;
+        const reserveDelta = side === "Buy"
+          ? Math.max(0, usdc - (detail.fee ?? 0))
+          : -(usdc + (detail.fee ?? 0));
+        const raisedUsdc = Math.max(0, current.raisedUsdc + reserveDelta);
+        const tokenReserve = Math.max(0, current.tokenReserve + (side === "Buy" ? -tokens : tokens));
+        const totalSupply = token.totalSupply ?? 1_000_000_000;
+        const trade: Trade = {
+          time: detail.blockNumber ? `Block ${detail.blockNumber}` : "Confirmed",
+          timestamp,
+          type: side,
+          wallet,
+          usdc,
+          tokens,
+          price,
+          txHash: transactionHash,
+        };
+        return {
+          ...current,
+          price,
+          priceChange: token.price > 0 ? (price / token.price - 1) * 100 : current.priceChange,
+          marketCap: price * totalSupply,
+          volume: current.volume + usdc,
+          buyers: current.buyers + (side === "Buy" ? 1 : 0),
+          sellers: current.sellers + (side === "Sell" ? 1 : 0),
+          raisedUsdc,
+          progress: current.targetUsdc > 0 ? raisedUsdc / current.targetUsdc * 100 : 0,
+          tokensSold: Math.max(0, current.tokensSold + (side === "Buy" ? tokens : -tokens)),
+          tokenReserve,
+          chart: [...current.chart, { time: "Now", timestamp, price, volume: usdc }],
+          trades: [trade, ...current.trades],
+          generatedAt: new Date().toISOString(),
+        };
+      });
+      for (const delay of [1_500, 5_000, 12_000]) {
+        retryTimers.push(setTimeout(() => void refresh(true), delay));
+      }
     };
     window.addEventListener("arcforge:trade-confirmed", handleTrade);
-    return () => window.removeEventListener("arcforge:trade-confirmed", handleTrade);
-  }, [refresh, token.address]);
+    return () => {
+      window.removeEventListener("arcforge:trade-confirmed", handleTrade);
+      retryTimers.forEach(clearTimeout);
+    };
+  }, [refresh, token.address, token.price, token.totalSupply]);
 
   return { snapshot, loading, error, stale, refresh };
 }
