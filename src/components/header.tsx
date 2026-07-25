@@ -29,6 +29,17 @@ function WalletButton() {
   );
 
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (!selectorOpen) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectorOpen(false);
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [selectorOpen]);
+  useEffect(() => {
+    if (isConnected) setSelectorOpen(false);
+  }, [isConnected]);
 
   if (!mounted) {
     return <Button variant="secondary" disabled><Wallet className="size-4" />Connect wallet</Button>;
@@ -51,7 +62,7 @@ function WalletButton() {
   }
 
   return <div className="relative flex items-center gap-2">
-    <Button title={error?.message} onClick={() => setSelectorOpen(true)} disabled={isPending || availableConnectors.length === 0}>
+    <Button title={error?.message} onClick={() => setSelectorOpen(true)} disabled={isPending}>
       <Wallet className="size-4" />{isPending ? "Connecting" : "Connect wallet"}
     </Button>
     {error && <span className="hidden max-w-44 text-[10px] leading-4 text-rose-300 xl:block">{error.message.split("\n")[0]}</span>}
@@ -85,6 +96,7 @@ function WalletButton() {
           </button>)}
           {availableConnectors.length === 0 && <p className="rounded-xl border border-line p-4 text-xs leading-5 text-slate-400">Install or enable an EVM-compatible wallet extension, then reload this page.</p>}
         </div>
+        {error && <p role="alert" className="mt-3 rounded-xl border border-rose-400/20 bg-rose-400/[.06] px-3 py-2 text-xs leading-5 text-rose-200">{error.message.split("\n")[0]}</p>}
       </div>
     </div>, document.body)}
   </div>;

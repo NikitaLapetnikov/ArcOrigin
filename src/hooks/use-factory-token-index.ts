@@ -8,7 +8,7 @@ import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tokens";
 import type { TokenData } from "@/lib/types";
 
-const TOKEN_INDEX_CACHE_KEY = "arcorigin:5042002:factory-index-v6";
+const TOKEN_INDEX_CACHE_KEY = "arcorigin:5042002:factory-index-v7";
 const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
 const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
 
@@ -57,9 +57,9 @@ function readCachedIndex(): CachedIndex | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedIndex>;
     if (typeof parsed.savedAt !== "number" || Date.now() - parsed.savedAt > TOKEN_INDEX_CACHE_TTL) return null;
-    if (!Array.isArray(parsed.tokens) || parsed.tokens.length === 0 || parsed.tokens.length > 100 || !parsed.tokens.every(isCachedToken)) return null;
+    if (!Array.isArray(parsed.tokens) || parsed.tokens.length > 100 || !parsed.tokens.every(isCachedToken)) return null;
     const tokens = currentV4Tokens(parsed.tokens);
-    return tokens.length > 0 ? { savedAt: parsed.savedAt, tokens } : null;
+    return { savedAt: parsed.savedAt, tokens };
   } catch {
     return null;
   }
