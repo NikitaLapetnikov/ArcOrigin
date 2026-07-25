@@ -1,5 +1,6 @@
-import { createPublicClient, decodeEventLog, formatUnits, http, parseAbiItem, toEventSelector } from "viem";
-import { ARC_TESTNET_FACTORY_INDEXES, arcTestnet } from "@/lib/chains";
+import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector } from "viem";
+import { ARC_TESTNET_FACTORY_INDEXES } from "@/lib/chains";
+import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
 import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tokens";
@@ -43,10 +44,7 @@ type ClientMetadata = {
   telegram?: string;
 };
 
-const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(arcTestnet.rpcUrls.default.http[0], { retryCount: 1, timeout: 8_000 }),
-});
+const publicClient = createArcPublicClient();
 
 function iconFor(name: string, symbol: string) {
   const initials = name.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join("");

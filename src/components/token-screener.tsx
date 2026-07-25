@@ -26,7 +26,7 @@ export function TokenScreener() {
       <StatCard label="Onchain volume" value={indexedTokens.length > 0 && !isPartial ? money(onchainVolume) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Refreshing in background" : `${trades} confirmed trades`}/>
       <StatCard label="Curve reserves" value={indexedTokens.length > 0 && !isPartial ? money(raised) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Refreshing in background" : "Confirmed onchain reserves"}/>
     </div>
-    {error && <div className="mb-5 flex items-center gap-3"><div className="flex-1"><WarningBox>{isCached && indexedTokens.length > 0 ? `Showing the last confirmed cached snapshot. ${error}` : error}</WarningBox></div><Button variant="ghost" onClick={() => void refresh()}>Retry live data</Button></div>}
+    {error && <div className="mb-5 flex items-center gap-3"><div className="flex-1"><WarningBox>{error}</WarningBox></div><Button variant="ghost" onClick={() => void refresh()}>Retry live data</Button></div>}
     <label className="relative mb-4 block">
       <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-slate-600" />
       <input

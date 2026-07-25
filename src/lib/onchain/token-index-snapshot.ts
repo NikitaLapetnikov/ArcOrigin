@@ -1,7 +1,8 @@
 import "server-only";
 
-import { createPublicClient, formatUnits, http } from "viem";
-import { ARCORIGIN_V4_GRADUATION_TARGET_USDC, ARC_TESTNET_V4_FACTORY, arcTestnet } from "@/lib/chains";
+import { formatUnits } from "viem";
+import { ARCORIGIN_V4_GRADUATION_TARGET_USDC, ARC_TESTNET_V4_FACTORY } from "@/lib/chains";
+import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
 import { getFactoryLaunchIndex, type FactoryLaunch } from "@/lib/onchain/holder-snapshot";
 import { calculateRiskScore } from "@/lib/scoring";
@@ -36,11 +37,7 @@ type TokenIndexState = {
   hydratedTokens: Map<string, TokenData>;
 };
 
-const rpcUrl = process.env.ARC_TESTNET_RPC_URL ?? arcTestnet.rpcUrls.default.http[0];
-const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(rpcUrl, { retryCount: 0, timeout: 15_000 }),
-});
+const publicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL, 8_000);
 
 declare global {
   var __arcOriginTokenIndexState: TokenIndexState | undefined;

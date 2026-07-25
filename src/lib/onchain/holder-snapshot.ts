@@ -1,7 +1,8 @@
 import "server-only";
 
-import { createPublicClient, decodeEventLog, formatUnits, http, parseAbiItem, toEventSelector, type Address, type Hash } from "viem";
-import { ARC_TESTNET_FACTORY_INDEXES, arcTestnet } from "@/lib/chains";
+import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector, type Address, type Hash } from "viem";
+import { ARC_TESTNET_FACTORY_INDEXES } from "@/lib/chains";
+import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
@@ -68,11 +69,7 @@ type HolderState = {
   tokenCaches: Map<string, HolderCacheEntry>;
 };
 
-const rpcUrl = process.env.ARC_TESTNET_RPC_URL ?? arcTestnet.rpcUrls.default.http[0];
-const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(rpcUrl, { retryCount: 0, timeout: 15_000 }),
-});
+const publicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL);
 
 declare global {
   var __arcOriginHolderState: HolderState | undefined;

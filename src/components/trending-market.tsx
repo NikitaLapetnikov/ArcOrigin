@@ -8,13 +8,13 @@ import { money } from "@/lib/utils";
 import { EmptyState, Progress, TokenIcon, WarningBox } from "./ui";
 
 export function TrendingMarket() {
-  const { tokens: indexedTokens, loading, error, isCached, isPartial, refresh } = useFactoryTokenIndex();
+  const { tokens: indexedTokens, loading, error, isPartial, refresh } = useFactoryTokenIndex();
   const ranked = indexedTokens
     .map((token) => ({ token, score: calculateMomentumScore(token) }))
     .sort((left, right) => right.score - left.score);
 
   return <div className="container-shell pb-20">
-    {error && <div className="mb-5 flex items-center gap-3"><div className="flex-1"><WarningBox>{isCached && indexedTokens.length > 0 ? `Showing the last confirmed cached onchain snapshot. ${error}` : error}</WarningBox></div><button onClick={() => void refresh()} className="shrink-0 text-xs font-semibold text-cyan">Retry live data</button></div>}
+    {error && <div className="mb-5 flex items-center gap-3"><div className="flex-1"><WarningBox>{error}</WarningBox></div><button onClick={() => void refresh()} className="shrink-0 text-xs font-semibold text-cyan">Retry live data</button></div>}
     {ranked.length === 0 && !loading ? <EmptyState title="No confirmed market activity" body="Trending tokens will appear after Factory launches are indexed from Arc Testnet."/> : <div className="panel overflow-hidden">{ranked.map(({token},index) => {
       const onchainUnavailable = isPartial || (loading && indexedTokens.length === 0);
       return <Link href={`/tokens/${token.address}`} key={token.address} className="grid items-center gap-4 border-b border-line/70 p-4 transition last:border-0 hover:bg-white/[.025] md:grid-cols-[56px_1.3fr_1fr_1fr_1fr_auto]">

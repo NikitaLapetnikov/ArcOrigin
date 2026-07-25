@@ -1,14 +1,14 @@
 import "server-only";
 
-import { createPublicClient, formatUnits, http, keccak256, parseAbiItem, toHex, type Address, type Hash } from "viem";
+import { formatUnits, keccak256, parseAbiItem, toHex, type Address, type Hash } from "viem";
 import {
   ARC_TESTNET_CONTRACTS,
   ARC_TESTNET_FIRST_LAUNCH_BLOCK,
   ARC_TESTNET_V4_FACTORY,
   ARC_TESTNET_V4_FACTORY_BLOCK,
-  arcTestnet,
 } from "@/lib/chains";
 import { erc20Abi } from "@/lib/contracts";
+import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 
 const feeReceivedEvent = parseAbiItem("event FeeReceived(address indexed asset, address indexed payer, bytes32 indexed feeType, uint256 amount)");
 const feeWithdrawnEvent = parseAbiItem("event FeeWithdrawn(address indexed asset, address indexed recipient, uint256 amount)");
@@ -54,11 +54,7 @@ type FeeCache = {
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const LOG_BLOCK_RANGE = 9_999n;
-const rpcUrl = process.env.ARC_TESTNET_RPC_URL ?? arcTestnet.rpcUrls.default.http[0];
-const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(rpcUrl, { retryCount: 0, timeout: 15_000 }),
-});
+const publicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL);
 
 declare global {
   var __arcOriginFeeCache: FeeCache | undefined;

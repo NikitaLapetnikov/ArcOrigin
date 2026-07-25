@@ -13,5 +13,5 @@ export function HomeMarket() {
       : loading
         ? "loading"
         : indexedTokens.length > 0 ? "live" : "unavailable";
-  return <>{error && <div className="mb-4"><WarningBox>{isCached && indexedTokens.length > 0 ? `Showing the last confirmed cached snapshot. ${error}` : error}</WarningBox></div>}<TokenTable tokens={indexedTokens} compact onchainState={onchainState}/></>;
+  return <>{error && <div className="mb-4"><WarningBox>{error}</WarningBox></div>}<TokenTable tokens={indexedTokens} compact onchainState={onchainState}/></>;
 }

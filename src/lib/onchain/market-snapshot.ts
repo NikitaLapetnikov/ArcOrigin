@@ -1,8 +1,8 @@
 import "server-only";
 
-import { createPublicClient, decodeEventLog, formatUnits, http, parseAbiItem, type Address, type Hash } from "viem";
-import { arcTestnet } from "@/lib/chains";
+import { decodeEventLog, formatUnits, parseAbiItem, type Address, type Hash } from "viem";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
+import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
@@ -67,11 +67,7 @@ type MarketState = {
   blockTimestamps: Map<string, number>;
 };
 
-const rpcUrl = process.env.ARC_TESTNET_RPC_URL ?? arcTestnet.rpcUrls.default.http[0];
-const publicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(rpcUrl, { retryCount: 0, timeout: 15_000 }),
-});
+const publicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL);
 
 declare global {
   var __arcOriginMarketState: MarketState | undefined;

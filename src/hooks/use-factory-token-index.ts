@@ -128,10 +128,14 @@ function preserveMarketValues(base: TokenData, previous?: TokenData) {
 }
 
 async function loadServerSnapshot<T>(path: string): Promise<{ snapshot: T; stale: boolean }> {
-  const response = await fetch(path, { signal: AbortSignal.timeout(SNAPSHOT_REQUEST_TIMEOUT_MS) });
-  const payload = await response.json() as { snapshot?: T; stale?: boolean; error?: string };
-  if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Onchain snapshot is unavailable.");
-  return { snapshot: payload.snapshot, stale: Boolean(payload.stale) };
+  try {
+    const response = await fetch(path, { signal: AbortSignal.timeout(SNAPSHOT_REQUEST_TIMEOUT_MS) });
+    const payload = await response.json() as { snapshot?: T; stale?: boolean; error?: string };
+    if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Onchain snapshot is unavailable.");
+    return { snapshot: payload.snapshot, stale: Boolean(payload.stale) };
+  } catch {
+    throw new Error("Live data is temporarily unavailable.");
+  }
 }
 
 async function mapWithConcurrency<T, R>(items: T[], concurrency: number, worker: (item: T) => Promise<R>) {
@@ -206,19 +210,22 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
           setIsCached(stale);
         },
         (marketTokens, marketDataError, stale) => {
-          setTokens(marketTokens);
+          setTokens((current) => marketTokens.map((token) => marketDataError
+            ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
+            : token));
           setIsPartial(Boolean(marketDataError));
           setIsCached(stale);
           setLoading(false);
         },
       );
-      setTokens(result.tokens);
+      setTokens((current) => result.tokens.map((token) => result.marketDataError
+        ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
+        : token));
       setIsPartial(Boolean(result.marketDataError));
       setIsCached(result.stale);
-      if (allowCache && includeMarketData) setCachedAt(writeCachedIndex(result.tokens));
+      if (allowCache && includeMarketData && !result.marketDataError) setCachedAt(writeCachedIndex(result.tokens));
       if (result.marketDataError) {
-        const message = result.marketDataError instanceof Error ? result.marketDataError.message : String(result.marketDataError);
-        setError(`Factory launches are confirmed, but some market values could not be refreshed. ${message}`);
+        setError("Live market refresh is delayed. Confirm trade amounts with the onchain quote.");
       } else if (result.stale) {
         setError("Showing the latest confirmed Factory snapshot while Arc Testnet RPC recovers.");
       }
