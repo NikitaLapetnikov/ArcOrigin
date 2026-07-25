@@ -32,6 +32,8 @@ import { money } from "@/lib/utils";
 import { buildCandles, type ChartTimeframe } from "@/components/token-chart";
 
 const timeframes = ["1s", "30s", "1m", "5m", "15m", "1h", "4h", "1d"] as const;
+const DEFAULT_BAR_SPACE = 18;
+const RIGHT_EDGE_DISTANCE = 24;
 type DisplayMode = "Price" | "MCap";
 type IndicatorName = "MA" | "EMA" | "BOLL" | "SAR" | "VOL" | "MACD" | "RSI" | "KDJ";
 type Tool = "cursor" | "straightLine" | "rayLine" | "horizontalStraightLine" | "verticalStraightLine" | "parallelStraightLine" | "fibonacciLine" | "brush" | "arcMeasure";
@@ -123,6 +125,9 @@ export function KLineTokenChart({
     if (!chart) return;
     chart.setSymbol({ ticker, pricePrecision: precisionFor(latest?.close ?? 0.00000001), volumePrecision: 2 });
     chart.setPeriod(periodFor(compact ? "1h" : timeframe));
+    chart.setBarSpace(compact ? 9 : DEFAULT_BAR_SPACE);
+    chart.setOffsetRightDistance(RIGHT_EDGE_DISTANCE);
+    window.requestAnimationFrame(() => chart.scrollToRealTime());
   }, [candles, compact, latest?.close, ticker, timeframe]);
 
   useEffect(() => {
@@ -197,10 +202,14 @@ export function KLineTokenChart({
       });
       chart.setSymbol({ ticker, pricePrecision: 8, volumePrecision: 2 });
       chart.setPeriod(periodFor(compact ? "1h" : "1m"));
-      chart.setOffsetRightDistance(60);
+      chart.setBarSpace(compact ? 9 : DEFAULT_BAR_SPACE);
+      chart.setOffsetRightDistance(RIGHT_EDGE_DISTANCE);
       chartRef.current = chart;
       setReady(true);
-      window.requestAnimationFrame(() => chart.resize());
+      window.requestAnimationFrame(() => {
+        chart.resize();
+        chart.scrollToRealTime();
+      });
     }
     void mount();
     return () => {
@@ -320,8 +329,9 @@ export function KLineTokenChart({
     const chart = chartRef.current;
     if (!chart) return;
     chart.scrollToRealTime();
-    chart.setBarSpace(9);
-  }, []);
+    chart.setBarSpace(compact ? 9 : DEFAULT_BAR_SPACE);
+    chart.setOffsetRightDistance(RIGHT_EDGE_DISTANCE);
+  }, [compact]);
   const undoDrawing = useCallback(() => {
     setDrawingHistory((current) => {
       const removed = current.at(-1);
