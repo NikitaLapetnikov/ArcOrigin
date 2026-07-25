@@ -62,7 +62,7 @@ function transactionError(error: unknown) {
       ? error.message
       : "The wallet transaction failed.";
   if (/RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|\b429\b/i.test(message)) {
-    return "Arc RPC is temporarily unavailable. Check Rabby activity or Arcscan before retrying because the transaction may already have been submitted.";
+    return "Arc RPC is temporarily unavailable. Check your wallet activity or Arcscan before retrying because the transaction may already have been submitted.";
   }
   if (/User rejected|User denied|rejected the request/i.test(message)) return "The request was cancelled in your wallet.";
   return message;
@@ -93,7 +93,7 @@ async function estimatePriorityFees(client: PublicClient, priority: Priority): P
       : fees.maxFeePerGas * multiplier / 100n;
     return { maxFeePerGas, maxPriorityFeePerGas };
   } catch {
-    // Rabby can safely estimate its own fee if the public RPC does not expose fee history.
+    // A connected wallet can safely estimate its own fee if the public RPC does not expose fee history.
     return {};
   }
 }
@@ -205,7 +205,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   }
 
   async function getClient() {
-    if (!isConnected || !address) throw new Error("Connect Rabby before requesting an onchain quote.");
+    if (!isConnected || !address) throw new Error("Connect a wallet before requesting an onchain quote.");
     if (chainId !== arcTestnet.id) {
       await switchChainAsync({ chainId: arcTestnet.id });
       throw new Error("Arc Testnet is now selected. Request the quote again.");
@@ -248,7 +248,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
 
   async function submitTrade() {
     if (!address) {
-      setNotice("Connect Rabby to trade.");
+      setNotice("Connect a wallet to trade.");
       setNoticeIsError(true);
       return;
     }

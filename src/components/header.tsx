@@ -5,7 +5,8 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Menu, Radio, Wallet, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { createPortal } from "react-dom";
+import { useAccount, useConnect, useDisconnect, useSwitchChain, type Connector } from "wagmi";
 import { arcTestnet } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 import { Badge, Button } from "./ui";
@@ -18,11 +19,14 @@ const nav = [
 
 function WalletButton() {
   const [mounted, setMounted] = useState(false);
+  const [selectorOpen, setSelectorOpen] = useState(false);
   const { address, isConnected, chainId } = useAccount();
-  const { connectors, connect, isPending, error } = useConnect();
+  const { connectors, connectAsync, isPending, error } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
-  const connector = connectors.find((item) => item.name === "Rabby") ?? connectors[0];
+  const availableConnectors = connectors.filter((connector, index, items) =>
+    items.findIndex((item) => item.uid === connector.uid || item.name === connector.name) === index,
+  );
 
   useEffect(() => setMounted(true), []);
 
@@ -37,11 +41,52 @@ function WalletButton() {
     return <Button variant="secondary" onClick={() => disconnect()}><span className="size-2 rounded-full bg-emerald-400" />{shortAddress(address ?? "")}</Button>;
   }
 
-  return <div className="flex items-center gap-2">
-    <Button title={error?.message} onClick={() => connector && connect({ connector })} disabled={isPending || !connector}>
-      <Wallet className="size-4" />{isPending ? "Connecting" : `Connect ${connector?.name ?? "wallet"}`}
+  async function connectWallet(connector: Connector) {
+    try {
+      await connectAsync({ connector });
+      setSelectorOpen(false);
+    } catch {
+      // Wagmi exposes the connector error below the button and keeps the selector open for retry.
+    }
+  }
+
+  return <div className="relative flex items-center gap-2">
+    <Button title={error?.message} onClick={() => setSelectorOpen(true)} disabled={isPending || availableConnectors.length === 0}>
+      <Wallet className="size-4" />{isPending ? "Connecting" : "Connect wallet"}
     </Button>
     {error && <span className="hidden max-w-44 text-[10px] leading-4 text-rose-300 xl:block">{error.message.split("\n")[0]}</span>}
+    {selectorOpen && createPortal(<div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Choose wallet"
+      className="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) setSelectorOpen(false);
+      }}
+    >
+      <div className="w-full max-w-sm rounded-2xl border border-line bg-[#0b1016] p-4 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="font-semibold text-white">Connect wallet</p>
+            <p className="mt-1 text-[11px] text-slate-500">Choose any available wallet</p>
+          </div>
+          <button type="button" aria-label="Close wallet selector" onClick={() => setSelectorOpen(false)} className="grid size-8 place-items-center rounded-lg text-slate-500 hover:bg-white/[.05] hover:text-white"><X className="size-4" /></button>
+        </div>
+        <div className="grid gap-2">
+          {availableConnectors.map((connector) => <button
+            key={connector.uid}
+            type="button"
+            disabled={isPending}
+            onClick={() => void connectWallet(connector)}
+            className="flex h-12 items-center justify-between rounded-xl border border-line bg-white/[.025] px-4 text-sm font-medium text-slate-200 transition hover:border-cyan/35 hover:bg-cyan/[.05] disabled:opacity-50"
+          >
+            <span>{connector.name}</span>
+            <Wallet className="size-4 text-slate-500" />
+          </button>)}
+          {availableConnectors.length === 0 && <p className="rounded-xl border border-line p-4 text-xs leading-5 text-slate-400">Install or enable an EVM-compatible wallet extension, then reload this page.</p>}
+        </div>
+      </div>
+    </div>, document.body)}
   </div>;
 }
 

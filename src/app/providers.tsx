@@ -8,11 +8,8 @@ import { arcTestnet } from "@/lib/chains";
 
 const config = createConfig({
   chains: [arcTestnet],
-  connectors: [
-    injected({ target: "rabby", shimDisconnect: true }),
-    injected({ target: "metaMask", shimDisconnect: true }),
-    injected({ shimDisconnect: true }),
-  ],
+  connectors: [injected({ shimDisconnect: true })],
+  multiInjectedProviderDiscovery: true,
   transports: { [arcTestnet.id]: http() },
   ssr: true,
 });

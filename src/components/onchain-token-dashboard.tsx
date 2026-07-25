@@ -236,7 +236,7 @@ export function OnchainTokenDashboard({
           </div>
           {address && <AddressPill address={address}/>}
         </div>
-        {!address && <TerminalEmpty title="Connect Rabby to view your position" body="ArcOrigin will show this wallet's confirmed balance and curve trades without estimating missing data."/>}
+        {!address && <TerminalEmpty title="Connect a wallet to view your position" body="ArcOrigin will show this wallet's confirmed balance and curve trades without estimating missing data."/>}
         {address && holderLoading && !holderSnapshot && <TerminalEmpty title="Loading your position…" body="Reading the confirmed holder snapshot in the background."/>}
         {address && holderSnapshot && !walletHolder && <TerminalEmpty title="No current token balance found" body="This wallet is not present in the confirmed holder snapshot for this token."/>}
         {address && walletHolder && <div className="mt-5 overflow-x-auto rounded-xl border border-line">

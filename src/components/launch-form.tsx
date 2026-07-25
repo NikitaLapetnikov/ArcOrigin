@@ -60,7 +60,7 @@ function transactionError(error: unknown) {
   const fallback = error instanceof Error ? error.message : "The wallet transaction failed.";
   if (/User rejected|User denied|rejected the request/i.test(fallback)) return "The request was cancelled in your wallet.";
   if (/RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|\b429\b/i.test(fallback)) {
-    return "Arc RPC is temporarily unavailable. Check Rabby activity or Arcscan before retrying because an approval or launch may already have been submitted.";
+    return "Arc RPC is temporarily unavailable. Check your wallet activity or Arcscan before retrying because an approval or launch may already have been submitted.";
   }
   if (typeof error === "object" && error && "shortMessage" in error) return String(error.shortMessage);
   return fallback;
@@ -225,7 +225,7 @@ export function LaunchForm() {
   }
 
   async function ensureMetadata(creator: Address) {
-    if (!walletClient) throw new Error("Connect Rabby before uploading token metadata.");
+    if (!walletClient) throw new Error("Connect a wallet before uploading token metadata.");
     const normalized = validateTokenMetadataInput(metadataInput);
     const imageSha256 = image ? await sha256Hex(await image.arrayBuffer()) : "";
     const commitment = await sha256Hex(canonicalMetadataCommitment(normalized, imageSha256));
@@ -438,7 +438,7 @@ export function LaunchForm() {
   const actionLabel = status === "checking"
     ? "Checking balance…"
     : status === "signing_metadata"
-      ? "Sign metadata in Rabby…"
+      ? "Sign metadata in wallet…"
       : status === "uploading_metadata"
         ? "Publishing to IPFS…"
         : status === "approving"
@@ -506,7 +506,7 @@ export function LaunchForm() {
           <input type="checkbox" className="accent-cyan" checked={checks.includes(item)} onChange={() => setChecks((current) => current.includes(item) ? current.filter((value) => value !== item) : [...current, item])} />
           {item}
         </label>)}</div>
-        <WarningBox>Rabby will request a free metadata signature, the 25 USDC launch-fee approval, and the launch transaction. If developer buy is above zero, an additional curve approval and buy follow after launch.</WarningBox>
+        <WarningBox>Your wallet will request a free metadata signature, the 25 USDC launch-fee approval, and the launch transaction. If developer buy is above zero, an additional curve approval and buy follow after launch.</WarningBox>
       </div>}
 
       {error && <p role="alert" className="mt-5 rounded-xl border border-rose-400/20 bg-rose-400/[.07] p-3 text-xs leading-5 text-rose-200">{error}</p>}
