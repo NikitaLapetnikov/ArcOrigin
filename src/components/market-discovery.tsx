@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Activity, ArrowUpRight, BarChart3, ChevronLeft, ChevronRight, Clock3, Flame, Rocket, Star, Trophy, Volume2 } from "lucide-react";
+import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { readWatchlist } from "@/components/watchlist-button";
 import { calculateMomentumScore } from "@/lib/scoring";
 import type { TokenData, Trade } from "@/lib/types";
@@ -11,15 +11,15 @@ import { Badge, TokenIcon } from "@/components/ui";
 
 type DiscoveryTab = "buys" | "new" | "old" | "trending" | "graduated" | "marketCap" | "volume" | "watchlist";
 
-const tabs: { id: DiscoveryTab; label: string; icon: typeof Activity }[] = [
-  { id: "buys", label: "Latest buys", icon: Activity },
-  { id: "new", label: "New", icon: Rocket },
-  { id: "old", label: "Old", icon: Clock3 },
-  { id: "trending", label: "Trending", icon: Flame },
-  { id: "graduated", label: "Graduated", icon: Trophy },
-  { id: "marketCap", label: "Market cap", icon: BarChart3 },
-  { id: "volume", label: "Volume", icon: Volume2 },
-  { id: "watchlist", label: "Watchlist", icon: Star },
+const tabs: { id: DiscoveryTab; label: string }[] = [
+  { id: "buys", label: "Latest buys" },
+  { id: "new", label: "New" },
+  { id: "old", label: "Old" },
+  { id: "trending", label: "Trending" },
+  { id: "graduated", label: "Graduated" },
+  { id: "marketCap", label: "Market cap" },
+  { id: "volume", label: "Volume" },
+  { id: "watchlist", label: "Watchlist" },
 ];
 
 type BuyItem = { token: TokenData; trade: Trade; order: number };
@@ -101,7 +101,7 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
 
   return <section className="panel mb-5 overflow-hidden" aria-label="Market activity">
     <div className="flex items-center gap-1 overflow-x-auto border-b border-line px-3 py-2.5" role="tablist" aria-label="Market discovery">
-      {tabs.map(({ id, label, icon: Icon }) => <button
+      {tabs.map(({ id, label }) => <button
         key={id}
         type="button"
         role="tab"
@@ -109,9 +109,9 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
         aria-controls={`market-panel-${id}`}
         onClick={() => setActiveTab(id)}
         className={activeTab === id
-          ? "inline-flex h-9 shrink-0 items-center gap-2 rounded-lg bg-white/[.07] px-3.5 text-sm font-semibold text-white"
-          : "inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3.5 text-sm font-medium text-slate-500 transition hover:text-slate-300"}
-      ><Icon className="size-3.5"/>{label}</button>)}
+          ? "inline-flex h-10 shrink-0 items-center rounded-lg border border-cyan/35 bg-white/[.08] px-4 text-[15px] font-semibold text-white shadow-[0_0_0_1px_rgba(57,189,248,.08)]"
+          : "inline-flex h-10 shrink-0 items-center rounded-lg border border-transparent px-4 text-[15px] font-semibold text-slate-400 transition hover:bg-white/[.035] hover:text-white"}
+      >{label}</button>)}
       <p className="ml-auto hidden pr-3 text-xs text-slate-500 2xl:block">{tokens.length} token{tokens.length === 1 ? "" : "s"}</p>
     </div>
 
