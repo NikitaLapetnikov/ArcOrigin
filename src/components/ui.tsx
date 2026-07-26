@@ -37,8 +37,8 @@ export function TokenIcon({ label, image, className }: { label: string; image?: 
 
 export function Progress({ value }: { value: number }) { return <div className="h-1.5 overflow-hidden rounded-full bg-white/[.06]"><div className="h-full rounded-full bg-cyan transition-all" style={{ width: `${Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0))}%` }} /></div>; }
 
-export function PageIntro({ eyebrow, title, body, children, compact = false }: { eyebrow: string; title: string; body: string; children?: ReactNode; compact?: boolean }) {
-  return <div className={cn("container-shell", compact ? "pb-6 pt-9 md:pb-8 md:pt-11" : "pb-7 pt-10 md:pb-10 md:pt-14")}><div className="max-w-[680px]"><p className="eyebrow mb-3">{eyebrow}</p><h1 className={cn("font-semibold leading-[1.08] tracking-[-.05em] text-white", compact ? "text-[32px] sm:text-[38px] md:text-[42px]" : "text-[34px] sm:text-[42px] md:text-[50px]")}>{title}</h1><p className={cn("max-w-xl text-slate-400", compact ? "mt-3 text-sm leading-6" : "mt-4 text-[15px] leading-7")}>{body}</p>{children}</div></div>;
+export function PageIntro({ eyebrow, title, body, children, compact = false }: { eyebrow: string; title: string; body?: string; children?: ReactNode; compact?: boolean }) {
+  return <div className={cn("container-shell", compact ? "pb-6 pt-9 md:pb-8 md:pt-11" : "pb-7 pt-10 md:pb-10 md:pt-14")}><div className="max-w-[680px]"><p className="eyebrow mb-3">{eyebrow}</p><h1 className={cn("font-semibold leading-[1.08] tracking-[-.05em] text-white", compact ? "text-[32px] sm:text-[38px] md:text-[42px]" : "text-[34px] sm:text-[42px] md:text-[50px]")}>{title}</h1>{body && <p className={cn("max-w-xl text-slate-400", compact ? "mt-3 text-sm leading-6" : "mt-4 text-[15px] leading-7")}>{body}</p>}{children}</div></div>;
 }
 
 export function EmptyState({ title, body }: { title: string; body: string }) { return <div className="panel p-10 text-center"><p className="font-semibold text-white">{title}</p><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{body}</p></div>; }
