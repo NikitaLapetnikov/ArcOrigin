@@ -1,4 +1,5 @@
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
+import { ARC_TESTNET_V4_FACTORY } from "@/lib/chains";
 import type { RiskLabel, TokenData } from "@/lib/types";
 
 const creator = "0x2807B95E05649b7Befe74C4061f9492C5b889A42";
@@ -25,6 +26,10 @@ type BootstrapLaunch = {
   description: string;
   image?: string;
   metadataURI?: string;
+  factoryAddress?: string;
+  creatorAllocationPercent?: number;
+  virtualUsdcReserve?: number;
+  targetUSDC?: number;
 };
 
 function ageMinutes(launchedAt: number) {
@@ -32,20 +37,24 @@ function ageMinutes(launchedAt: number) {
 }
 
 function createBootstrapToken(launch: BootstrapLaunch): TokenData {
-  const price = 10_000 / 950_000_000;
+  const creatorAllocationPercent = launch.creatorAllocationPercent ?? 5;
+  const virtualUsdcReserve = launch.virtualUsdcReserve ?? 10_000;
+  const targetUSDC = launch.targetUSDC ?? 50_000;
+  const initialTokenReserve = 1_000_000_000 * (1 - creatorAllocationPercent / 100);
+  const price = virtualUsdcReserve / initialTokenReserve;
   return {
     ...launch,
     creator,
     source: "onchain",
-    creatorAllocationPercent: 5,
+    creatorAllocationPercent,
     totalSupply: 1_000_000_000,
-    virtualUsdcReserve: 10_000,
+    virtualUsdcReserve,
     ageMinutes: ageMinutes(launch.launchedAt),
     price,
     priceChange24h: 0,
     marketCap: price * 1_000_000_000,
     raisedUSDC: 0,
-    targetUSDC: 50_000,
+    targetUSDC,
     volume5m: 0,
     volume1h: 0,
     volume24h: 0,
@@ -81,6 +90,23 @@ function createBootstrapToken(launch: BootstrapLaunch): TokenData {
  */
 export function getVerifiedBootstrapTokens(): TokenData[] {
   return [
+    createBootstrapToken({
+      name: "Sherlok",
+      ticker: "SHERLOK",
+      icon: "SH",
+      image: "https://ipfs.io/ipfs/bafkreigdlvkn3xiunoqdec2qcpcpfu6veyyjiq7nhr4lw5ceip522j6qx4",
+      metadataURI: "ipfs://bafkreiftk3j2kwrioeipgxnjn2uvdst6664nmkgv3caxqws6q3tpvnv3e4",
+      address: "0xf499c61eb11871a0811490b79ac6bb6269a96478",
+      curveAddress: "0xc620b06631a09b16e972a1a3b9f6a6c0d33e699e",
+      factoryAddress: ARC_TESTNET_V4_FACTORY,
+      launchTxHash: "0x516a17f86f466df9b6a9f77cb519562fadbe6e6c7a9f5e582b8eae2f484111a0",
+      launchBlock: 53_442_199,
+      launchedAt: 1_784_907_769,
+      description: "Cat Sherlok",
+      creatorAllocationPercent: 5,
+      virtualUsdcReserve: 2_500,
+      targetUSDC: 10_000,
+    }),
     createBootstrapToken({
       name: "Sherlok",
       ticker: "SHERLOK",

@@ -1,10 +1,12 @@
 import "server-only";
 
 import { formatUnits } from "viem";
-import { ARCORIGIN_V4_GRADUATION_TARGET_USDC, ARC_TESTNET_V4_FACTORY } from "@/lib/chains";
+import { ARC_TESTNET_V4_FACTORY } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
+import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
 import { getFactoryLaunchIndex, type FactoryLaunch } from "@/lib/onchain/holder-snapshot";
+import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tokens";
 import { calculateRiskScore } from "@/lib/scoring";
 import { resolveTokenMetadata } from "@/lib/server/token-metadata-resolver";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
@@ -40,6 +42,7 @@ type TokenIndexState = {
 };
 
 const publicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL, 8_000);
+const verifiedV4Tokens = currentV4Tokens(getVerifiedBootstrapTokens());
 
 declare global {
   var __arcOriginTokenIndexState: TokenIndexState | undefined;
@@ -227,6 +230,9 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
     (launch) => launch.factory.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase(),
   );
   if (v4Launches.length === 0) {
+    if (verifiedV4Tokens.length > 0) {
+      throw new Error("The V4 Factory log source returned an unexpected empty snapshot.");
+    }
     return {
       tokens: [],
       indexedBlock: indexedBlock.toString(),
@@ -246,11 +252,12 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
       creatorCounts.get(launch.creator.toLowerCase()) ?? 1,
     ))));
   }
+  const currentTokens = currentV4Tokens(tokens);
+  if (currentTokens.length === 0 && verifiedV4Tokens.length > 0) {
+    throw new Error("The V4 Factory snapshot did not contain its confirmed launch.");
+  }
   return {
-    tokens: tokens.filter(
-      (token) => Math.abs(token.targetUSDC - ARCORIGIN_V4_GRADUATION_TARGET_USDC) < 0.000001
-        && Math.abs(token.creatorAllocationPercent ?? 0) < 0.000001,
-    ),
+    tokens: currentTokens,
     indexedBlock: indexedBlock.toString(),
     generatedAt: new Date().toISOString(),
   };
@@ -259,9 +266,16 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
 export async function getTokenIndexSnapshot(forceRefresh = false) {
   if (!state.snapshot) {
     const persisted = await readPersistentSnapshot<TokenIndexSnapshot>(PERSISTENT_CACHE_KEY);
-    if (persisted?.tokens && Array.isArray(persisted.tokens)) {
+    if (persisted?.tokens && Array.isArray(persisted.tokens) && (persisted.tokens.length > 0 || verifiedV4Tokens.length === 0)) {
       state.snapshot = persisted;
       state.cachedAt = Date.parse(persisted.generatedAt) || 0;
+    } else if (verifiedV4Tokens.length > 0) {
+      state.snapshot = {
+        tokens: verifiedV4Tokens,
+        indexedBlock: String(Math.max(...verifiedV4Tokens.map((token) => token.launchBlock ?? 0))),
+        generatedAt: new Date().toISOString(),
+      };
+      state.cachedAt = 0;
     }
   }
   const now = Date.now();

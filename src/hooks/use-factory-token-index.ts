@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ARCORIGIN_V4_GRADUATION_TARGET_USDC, ARC_TESTNET_V4_FACTORY } from "@/lib/chains";
 import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
+import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tokens";
@@ -14,16 +14,6 @@ const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
 
 type CachedIndex = { savedAt: number; tokens: TokenData[] };
 type TokenIndexSnapshot = { tokens: TokenData[]; indexedBlock: string; generatedAt: string };
-
-function isCurrentV4Token(token: TokenData) {
-  return token.factoryAddress?.toLowerCase() === ARC_TESTNET_V4_FACTORY.toLowerCase()
-    && Math.abs(token.targetUSDC - ARCORIGIN_V4_GRADUATION_TARGET_USDC) < 0.000001
-    && Math.abs(token.creatorAllocationPercent ?? 0) < 0.000001;
-}
-
-function currentV4Tokens(tokens: TokenData[]) {
-  return tokens.filter(isCurrentV4Token);
-}
 
 function isAddress(value: unknown): value is string {
   return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
@@ -165,7 +155,21 @@ async function loadFactoryTokens(
       stale: false,
     };
   }
-  const indexedTokens = currentV4Tokens(indexResult.snapshot.tokens);
+  let indexedTokens = currentV4Tokens(indexResult.snapshot.tokens);
+  if (indexedTokens.length === 0) {
+    const verifiedFallback = currentV4Tokens(getVerifiedBootstrapTokens());
+    if (verifiedFallback.length > 0) {
+      indexedTokens = verifiedFallback;
+      indexResult = {
+        snapshot: {
+          tokens: verifiedFallback,
+          indexedBlock: String(Math.max(...verifiedFallback.map((token) => token.launchBlock ?? 0))),
+          generatedAt: new Date().toISOString(),
+        },
+        stale: true,
+      };
+    }
+  }
   if (!includeMarketData) return { tokens: indexedTokens, marketDataError: null, stale: indexResult.stale };
   onIndexLoaded?.(indexedTokens, indexResult.stale);
 
