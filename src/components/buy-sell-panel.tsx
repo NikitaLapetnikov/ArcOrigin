@@ -119,6 +119,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const [balanceError, setBalanceError] = useState(false);
   const [liveQuote, setLiveQuote] = useState<LiveQuote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
   const submissionLockRef = useRef(false);
   const balanceRequestRef = useRef(0);
   const quoteRequestRef = useRef(0);
@@ -218,20 +219,26 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     return client;
   }
 
-  const readQuote = useCallback(async (client: PublicClient): Promise<LiveQuote> => {
+  const readQuote = useCallback(async (): Promise<LiveQuote> => {
     if (buyDisabled) throw new Error("New buys are closed after graduation. Existing holders can still sell against the remaining curve liquidity.");
     if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
     const input = parseUnits(amount, inputDecimals);
     if (input <= 0n) throw new Error("Enter an amount greater than zero.");
-    const [output, fee] = await withRpcRetry(() => client.readContract({
-      address: curveAddress,
-      abi: bondingCurveAbi,
-      functionName: side === "Buy" ? "quoteBuy" : "quoteSell",
-      args: [input],
-    }));
+    const response = await fetch(
+      `/api/onchain/quote?curve=${encodeURIComponent(curveAddress)}&side=${side}&amount=${input.toString()}`,
+      { cache: "no-store", signal: AbortSignal.timeout(8_000) },
+    );
+    const result = await response.json() as { output?: string; fee?: string; error?: string };
+    if (!response.ok || !result.output || result.fee === undefined) {
+      throw new Error(result.error || "Unable to read an onchain quote.");
+    }
+    const output = BigInt(result.output);
+    const fee = BigInt(result.fee);
     if (output <= 0n) {
       if (side === "Buy" && permanentLiquidityMode && token.status !== "Graduated") {
-        const maximum = await withRpcRetry(() => client.readContract({
+          const client = publicClient;
+          if (!client) throw new Error("The Arc quote service is temporarily unavailable.");
+          const maximum = await withRpcRetry(() => client.readContract({
           address: curveAddress,
           abi: bondingCurveAbi,
           functionName: "maxBuyAmount",
@@ -253,6 +260,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     curveAddress,
     inputDecimals,
     permanentLiquidityMode,
+    publicClient,
     side,
     slippage,
     slippageValid,
@@ -262,6 +270,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   useEffect(() => {
     const requestId = ++quoteRequestRef.current;
     setLiveQuote(null);
+    setQuoteError("");
     if (!publicClient || !slippageValid || buyDisabled || !amount || Number(amount) <= 0) {
       setQuoteLoading(false);
       return;
@@ -269,12 +278,15 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
 
     setQuoteLoading(true);
     const timeout = window.setTimeout(() => {
-      void readQuote(publicClient)
+      void readQuote()
         .then((quote) => {
           if (quoteRequestRef.current === requestId) setLiveQuote(quote);
         })
         .catch(() => {
-          if (quoteRequestRef.current === requestId) setLiveQuote(null);
+          if (quoteRequestRef.current === requestId) {
+            setLiveQuote(null);
+            setQuoteError("Quote temporarily unavailable. Retry in a moment.");
+          }
         })
         .finally(() => {
           if (quoteRequestRef.current === requestId) setQuoteLoading(false);
@@ -298,7 +310,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     setTransactionHash(null);
     try {
       const client = await getClient();
-      const quote = await readQuote(client as PublicClient);
+      const quote = await readQuote();
       setStatus("preparing");
       const approvalToken = (side === "Buy" ? ARC_TESTNET_CONTRACTS.usdc : token.address) as Address;
       const allowance = await withRpcRetry(() => client.readContract({
@@ -411,6 +423,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
         <span>Minimum received</span>
         <span className="font-mono">{liveQuote ? `${displayUnits(liveQuote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</span>
       </div>
+      {quoteError && <p role="status" className="mt-2 text-sm text-amber-300">{quoteError}</p>}
     </div>
     <div className="mt-3 grid gap-3 rounded-xl border border-line bg-black/15 p-3">
       <div className="flex items-center justify-between gap-3">
