@@ -56,10 +56,8 @@ const confirmations = [
   "I understand the fee and launch risk",
 ];
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const DEFAULT_LAUNCH_FEE = 25n * 10n ** 6n;
+const DEFAULT_LAUNCH_FEE = 10n * 10n ** 6n;
 const TOTAL_SUPPLY = 1_000_000_000n * 10n ** 18n;
-const VIRTUAL_USDC_RESERVE = BigInt(DEFAULT_VIRTUAL_USDC_RESERVE) * 10n ** 6n;
-const GRADUATION_THRESHOLD = BigInt(DEFAULT_GRADUATION_THRESHOLD) * 10n ** 6n;
 
 function transactionError(error: unknown) {
   const fallback = error instanceof Error ? error.message : "The wallet transaction failed.";
@@ -385,10 +383,6 @@ export function LaunchForm() {
           name: form.name.trim(),
           symbol: form.ticker.toUpperCase(),
           metadataURI: metadata.metadataURI,
-          totalSupply: TOTAL_SUPPLY,
-          creatorAllocationBps: 0,
-          virtualUsdcReserve: VIRTUAL_USDC_RESERVE,
-          graduationThreshold: GRADUATION_THRESHOLD,
         }],
       });
       const receipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: launchHash }));

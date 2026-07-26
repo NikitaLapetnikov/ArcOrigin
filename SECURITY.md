@@ -6,7 +6,7 @@ Scope: Solidity contracts, deployment scripts, wallet transaction flows, metadat
 
 ## Status and limitations
 
-ArcOrigin is a testnet product. This document records an internal engineering review, not an independent audit, certification, bug bounty result, or mainnet approval. The deployed V4 contracts are immutable: application fixes in this repository do not change their bytecode. Contract-level changes require a new deployment and migration plan.
+ArcOrigin is a testnet product. This document records an internal engineering review, not an independent audit, certification, bug bounty result, or mainnet approval. Deployed V4 and V5 contracts are immutable: application fixes in this repository do not change their bytecode. Contract-level changes require a new deployment and activation plan.
 
 Review work included manual source analysis, economic-invariant analysis, contract compilation/tests, TypeScript and ESLint checks, production build verification, and dependency auditing. It did not include formal verification, a professional third-party audit, or exhaustive adversarial testing.
 
@@ -30,6 +30,14 @@ The web application and indexer were hardened during this review:
 
 The Solidity suite currently covers fixed supply, allocation and metadata bounds, access control, fee changes, fee splitting, slippage, dust rounding, randomized reserve invariants, graduation input caps, price continuity, permanent-liquidity solvency, and FeeVault withdrawal rules.
 
+## V5 changes
+
+V5 narrows the Factory to a canonical one-billion supply and zero free creator allocation, reduces the launch fee to 10 USDC, and snapshots launch protection, curve economics, fees, and any DEX migration adapter into each new curve. The initial protection window limits a wallet to 5% holdings and 5.5% cumulative purchases for three blocks.
+
+The external migration boundary is deliberately disabled on Arc Testnet. A curve configured without an adapter retains the permanent internal AMM behavior. A curve configured with an adapter requires graduation to atomically transfer every remaining token and real-USDC reserve; a zero pool address or any residual curve balance reverts the entire migration. Trading on a successfully migrated curve is permanently disabled.
+
+This boundary does not make an unknown adapter safe. A production Uniswap or Aerodrome adapter and its LP fee locker remain separate mainnet deliverables requiring official Arc deployment addresses, fork tests, source verification, and an independent audit. Adapter configuration is snapshotted at launch and cannot be retrofitted onto an existing curve.
+
 ## V4 contract observations
 
 ### Safeguards present
@@ -48,7 +56,7 @@ The Solidity suite currently covers fixed supply, allocation and metadata bounds
 | High | Factory, Registry, and FeeVault administration currently depends on a single EOA on testnet. | Move ownership to a reviewed multisig and put fee/configuration changes behind a timelock before mainnet. |
 | Medium | Trading fees push the creator share directly during every trade. | A future quote token with transfer restrictions, or a blocked creator recipient, could make that token's trades revert. A V5 design should accrue creator fees for pull-based withdrawal. |
 | Medium | `FeeVault.collectFee` is permissionless by design. | Funds cannot be stolen through it, but callers can create real deposits with arbitrary labels. The application now ignores those labels and derives analytics from trusted Factory/curve events. A V5 Vault should authorize collectors if canonical onchain categories are required. |
-| Medium | The Factory permits non-canonical supply and creator allocation values within broad bounds. | The ArcOrigin UI creates 1B-supply, zero-free-allocation launches, but direct Factory callers can choose other valid values. A canonical mainnet factory should enforce the intended economics onchain. |
+| Resolved in V5 | The V4 Factory permits non-canonical supply and creator allocation values within broad bounds. | V5 enforces 1B supply and zero free creator allocation onchain. |
 | Medium | There is no emergency pause or recovery path. | This reduces administrator power but also removes incident containment. Decide and document the mainnet governance/fail-safe model before deployment. |
 | Low | Fee splitting uses integer base units. | Rounding dust goes to the creator share; totals can differ from an exact 70/30 decimal split by base units. |
 | Informational | Graduation locks surplus tokens at `0x000…dEaD` and retains USDC in the curve. | This is permanent by design. There is no DEX migration or LP-token withdrawal in V4. |
@@ -66,10 +74,11 @@ The Solidity suite currently covers fixed supply, allocation and metadata bounds
 1. Independent Solidity audit and remediation review by a qualified third party.
 2. Reproducible builds and verified source code for every deployed contract.
 3. Multisig ownership, delayed administration, signer rotation, and an incident-response runbook.
-4. A V5 decision for authorized fee collectors, pull-based creator fees, canonical launch parameters, and emergency controls.
+4. Authorized FeeVault collectors, pull-based creator fees, and a documented emergency-control policy. V5 resolves canonical launch parameters but not these remaining items.
 5. Property/fuzz testing with a dedicated framework and formal or symbolic analysis of curve/graduation invariants.
 6. Redundant authenticated RPC, a durable reorg-aware indexer, edge rate limiting, alerting, and backups.
 7. Legal and compliance review for the intended jurisdictions and mainnet asset flows.
+8. An audited DEX-specific migration adapter and LP fee locker tested against the exact official Arc deployment.
 
 Useful baseline references are the [Solidity security considerations](https://docs.soliditylang.org/en/latest/security-considerations.html) and [OpenZeppelin access-control guidance](https://docs.openzeppelin.com/contracts/5.x/access-control).
 

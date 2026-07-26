@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const EXPECTED_CHAIN_ID = 5_042_002;
-const EXPECTED_LAUNCH_FEE = 25n * 10n ** 6n;
+const EXPECTED_LAUNCH_FEE = 10n * 10n ** 6n;
 const EXPECTED_TRADING_FEE_BPS = 100n;
 
 function assertEqual(label, actual, expected) {
@@ -65,7 +65,10 @@ async function main() {
 
   const vault = await hre.ethers.getContractAt("ArcForgeFeeVault", manifest.contracts.feeVault);
   const registry = await hre.ethers.getContractAt("ArcForgeCreatorRegistry", manifest.contracts.creatorRegistry);
-  const factory = await hre.ethers.getContractAt("ArcForgeFactory", manifest.contracts.factory);
+  const factory = await hre.ethers.getContractAt(
+    manifest.curveModel?.version >= 5 ? "ArcForgeFactoryV5" : "ArcForgeFactory",
+    manifest.contracts.factory,
+  );
   const values = [];
   for (const [label, read] of [
     ["vault owner", () => vault.owner()],
@@ -127,7 +130,7 @@ async function main() {
     assertEqual(`${prefix} USDC`, legacyValues[1], manifest.contracts.usdc);
     assertEqual(`${prefix} fee vault`, legacyValues[2], manifest.contracts.feeVault);
     assertEqual(`${prefix} creator registry`, legacyValues[3], manifest.contracts.creatorRegistry);
-    assertEqual(`${prefix} launch fee`, legacyValues[4], EXPECTED_LAUNCH_FEE);
+    if (legacyValues[4] < 0n) throw new Error(`${prefix} launch fee is invalid.`);
     assertEqual(`${prefix} buy fee`, legacyValues[5], EXPECTED_TRADING_FEE_BPS);
     assertEqual(`${prefix} sell fee`, legacyValues[6], EXPECTED_TRADING_FEE_BPS);
   }

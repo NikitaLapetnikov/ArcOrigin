@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { ExternalLink } from "lucide-react";
 import {
   ARC_TESTNET_CONTRACTS,
-  ARC_TESTNET_V4_FACTORY_BLOCK,
+  ARC_TESTNET_V5_FACTORY_BLOCK,
   EXPLORER_URL,
   arcTestnet,
 } from "@/lib/chains";
@@ -45,7 +45,7 @@ const navigation = [
 ] as const;
 
 const contracts = [
-  ["V4 Factory", ARC_TESTNET_CONTRACTS.factory, `From block ${ARC_TESTNET_V4_FACTORY_BLOCK.toLocaleString()}`],
+  ["V5 Factory", ARC_TESTNET_CONTRACTS.factory, `From block ${ARC_TESTNET_V5_FACTORY_BLOCK.toLocaleString()}`],
   ["Fee Vault", ARC_TESTNET_CONTRACTS.feeVault, "Protocol fee accounting"],
   ["Creator Registry", ARC_TESTNET_CONTRACTS.creatorRegistry, "Factory launch records"],
   ["USDC", ARC_TESTNET_CONTRACTS.usdc, "Quote and settlement asset"],
@@ -78,12 +78,12 @@ export default function DocsPage() {
           <div className="relative mt-8 flex flex-wrap gap-2">
             <DocPill label="Arc Testnet" />
             <DocPill label="USDC markets" />
-            <DocPill label="V4 active" tone="cyan" />
+            <DocPill label="V5 active" tone="cyan" />
             <DocPill label="Unaudited testnet" tone="warn" />
           </div>
         </div>
         <div className="grid border-t border-line sm:grid-cols-2 lg:grid-cols-4">
-          <HeroFact label="Current launch fee" value="25 USDC" />
+          <HeroFact label="Current launch fee" value="10 USDC" />
           <HeroFact label="Trading fee" value="1%" />
           <HeroFact label="Fee split" value="70 / 30" />
           <HeroFact label="Graduation" value="10,000 USDC" />
@@ -128,8 +128,8 @@ export default function DocsPage() {
               <li>Charts and holder data are reconstructed from confirmed onchain events.</li>
             </ul>
           </Callout>
-          <Callout title="V4 scope" tone="neutral">
-            ArcOrigin V4 has market buys and sells on a dedicated curve. It does not currently provide limit orders, external DEX migration, liquidity-provider positions, chat, or community takeovers.
+          <Callout title="V5 scope" tone="neutral">
+            ArcOrigin V5 has market buys and sells on a dedicated curve plus a disabled-by-default DEX migration adapter. It does not currently provide limit orders, chat, or community takeovers.
           </Callout>
         </DocSection>
 
@@ -138,13 +138,13 @@ export default function DocsPage() {
           <StepList items={[
             ["Profile", "Set the name, ticker, description, image, website, and X profile."],
             ["Metadata", "The image and metadata are committed, signed by the wallet, and stored on IPFS."],
-            ["Deploy", "Approve the 25 USDC launch fee, then deploy the token and curve through the V4 Factory."],
+            ["Deploy", "Approve the 10 USDC launch fee, then deploy the token and curve through the V5 Factory."],
             ["Optional buy", "Approve the chosen USDC amount and buy from the same curve as every other trader."],
           ]} />
           <SpecGrid items={[
             ["Supply", "1,000,000,000"],
             ["Free creator allocation", "0%"],
-            ["Current launch fee", "25 USDC"],
+            ["Current launch fee", "10 USDC"],
             ["Developer buy", "Optional · max 5% through the app"],
           ]} />
           <Callout title="Metadata is public" tone="neutral">
@@ -163,6 +163,9 @@ export default function DocsPage() {
           ]} />
           <Callout title="A quote is not a reservation" tone="neutral">
             Another confirmed trade can move the curve before yours executes. The minimum-received value is the onchain protection against a worse fill.
+          </Callout>
+          <Callout title="Launch protection" tone="neutral">
+            During the first three blocks, a wallet cannot hold more than 5% or buy more than 5.5% of curve inventory. These limits expire automatically and do not restrict sells or wallet transfers.
           </Callout>
         </DocSection>
 
@@ -189,10 +192,13 @@ x · y          = constant before each trade`}</CodeBlock>
           <Callout title="What graduation does not mean" tone="neutral">
             Graduation is a mechanical liquidity milestone—not an endorsement, safety rating, or guarantee of future volume.
           </Callout>
+          <Callout title="DEX migration readiness" tone="neutral">
+            Every V5 curve snapshots its migration adapter at launch. Arc Testnet currently uses no adapter and retains the permanent internal AMM. A Uniswap or Aerodrome adapter will only be enabled for future curves after official Arc deployments, fork tests, and an independent audit.
+          </Callout>
         </DocSection>
 
         <DocSection id="fees" eyebrow="Economics" title="Fees">
-          <p>V4 fee distribution is enforced by the deployed contracts, not estimated by the interface.</p>
+          <p>V5 fee distribution is enforced by the deployed contracts, not estimated by the interface.</p>
           <div className="grid gap-3 md:grid-cols-3">
             <MiniCard title="Buy / sell" value="1%" body="Charged on every completed curve trade." />
             <MiniCard title="Creator" value="70%" body="Sent directly to the token creator from each trading fee." />
@@ -211,12 +217,12 @@ x · y          = constant before each trade`}</CodeBlock>
             ["Quote asset", "USDC"],
             ["Public RPC", arcTestnet.rpcUrls.default.http[0]],
             ["Explorer", EXPLORER_URL],
-            ["V4 start block", ARC_TESTNET_V4_FACTORY_BLOCK.toLocaleString()],
+            ["V5 start block", ARC_TESTNET_V5_FACTORY_BLOCK.toLocaleString()],
           ]} mono />
         </DocSection>
 
         <DocSection id="contracts" eyebrow="Integration" title="Contracts">
-          <p>These are the active ArcOrigin V4 addresses used by the interface. Always verify addresses before building an integration.</p>
+          <p>These are the active ArcOrigin V5 addresses used by the interface. Always verify addresses before building an integration.</p>
           <div className="overflow-hidden rounded-xl border border-line">
             {contracts.map(([label, address, detail]) => <a
               key={label}
@@ -233,7 +239,7 @@ x · y          = constant before each trade`}</CodeBlock>
         </DocSection>
 
         <DocSection id="events" eyebrow="Integration" title="Onchain events">
-          <p>Index bounded block ranges from the V4 start block. Events are the authoritative source for launches, trades, fees, charts, and holders.</p>
+          <p>Index bounded block ranges from the V5 start block. Events are the authoritative source for launches, trades, fees, charts, and holders.</p>
           <div className="overflow-x-auto rounded-xl border border-line">
             <table className="w-full min-w-[680px] text-left text-sm">
               <thead><tr className="border-b border-line bg-black/20 text-xs text-slate-500"><th className="px-4 py-3 font-medium">Event</th><th className="font-medium">Contract</th><th className="pr-4 font-medium">Use</th></tr></thead>
@@ -245,7 +251,7 @@ x · y          = constant before each trade`}</CodeBlock>
         <DocSection id="reading" eyebrow="Integration" title="Reading token state">
           <p>Use contract reads for current state and confirmed events for history. Never derive an executable quote from chart candles or cached market cards.</p>
           <DefinitionList items={[
-            ["Discovery", "Read TokenLaunched from the V4 Factory beginning at the published start block."],
+            ["Discovery", "Read TokenLaunched from the V5 Factory beginning at the published start block."],
             ["Token ↔ curve", "Read getTokenInfo(token) on the Factory."],
             ["Buy quote", "Call quoteBuy(usdcAmount) on the token curve."],
             ["Sell quote", "Call quoteSell(tokenAmount) on the token curve."],
@@ -268,13 +274,13 @@ x · y          = constant before each trade`}</CodeBlock>
           <p>The website uses a narrower, canonical launch profile than the Factory contract permits. This distinction matters for third-party integrations.</p>
           <div className="overflow-x-auto rounded-xl border border-line">
             <table className="w-full min-w-[680px] text-left text-sm">
-              <thead><tr className="border-b border-line bg-black/20 text-xs text-slate-500"><th className="px-4 py-3 font-medium">Parameter</th><th className="font-medium">ArcOrigin app</th><th className="pr-4 font-medium">V4 Factory limit</th></tr></thead>
+              <thead><tr className="border-b border-line bg-black/20 text-xs text-slate-500"><th className="px-4 py-3 font-medium">Parameter</th><th className="font-medium">ArcOrigin app</th><th className="pr-4 font-medium">V5 Factory rule</th></tr></thead>
               <tbody>
                 {[
                   ["Name", "Required", "1–64 UTF-8 bytes"],
                   ["Symbol", "Required · max 10 bytes", "1–10 UTF-8 bytes"],
-                  ["Supply", "1 billion", "Any non-zero value"],
-                  ["Free creator allocation", "0%", "Up to 20%"],
+                  ["Supply", "1 billion", "Fixed at 1 billion"],
+                  ["Free creator allocation", "0%", "Fixed at 0%"],
                   ["Developer buy", "Paid · up to 5%", "A separate curve trade"],
                   ["Metadata URI", "IPFS", "Up to 512 UTF-8 bytes"],
                   ["Graduation ratio", "10,000 / 2,500", "Threshold must equal 4× virtual reserve"],
@@ -283,12 +289,12 @@ x · y          = constant before each trade`}</CodeBlock>
             </table>
           </div>
           <Callout title="Verify direct launches" tone="warn">
-            A token created by calling the Factory outside the ArcOrigin interface can use non-canonical supply or creator allocation. Read the deployed token and curve state instead of assuming website defaults.
+            V5 enforces the canonical supply and zero free creator allocation in the Factory. Still read deployed token and curve state instead of trusting names, symbols, or cached interface data.
           </Callout>
         </DocSection>
 
         <DocSection id="risks" eyebrow="Read before trading" title="Risks">
-          <p>ArcOrigin is live on testnet and has not completed an independent mainnet audit. User-created tokens can be volatile, illiquid, duplicated, or lose all value.</p>
+          <p>ArcOrigin is live on testnet and V5 has not completed an independent mainnet audit. User-created tokens can be volatile, illiquid, duplicated, or lose all value.</p>
           <Callout title="Before signing" tone="warn">
             <ul className="grid gap-2.5">
               <li>Verify the token and curve contract addresses.</li>
@@ -300,7 +306,7 @@ x · y          = constant before each trade`}</CodeBlock>
         </DocSection>
 
         <DocSection id="security" eyebrow="Engineering review" title="Security review">
-          <p>An internal security and logic review was completed on 26 July 2026 across the V4 contracts, wallet flows, metadata upload, indexing, caching, and production headers. It is not an independent audit or mainnet approval.</p>
+          <p>An internal security and logic review was completed on 26 July 2026 across the V4 and V5 contracts, wallet flows, metadata upload, indexing, caching, and production headers. It is not an independent audit or mainnet approval.</p>
           <Callout title="Review outcome" tone="neutral">
             <ul className="grid gap-2.5">
               <li>No direct unauthorized-withdrawal or curve reserve-drain path was found in the reviewed flows.</li>
@@ -324,9 +330,9 @@ x · y          = constant before each trade`}</CodeBlock>
 
         <DocSection id="faq" eyebrow="Reference" title="FAQ" last>
           <FaqItem question="Where does a token migrate after graduation?">
-            Nowhere. V4 removes the virtual reserve, locks surplus token inventory at the dead address, and continues trading inside the same curve contract.
+            Current Arc Testnet curves migrate nowhere. V5 removes the virtual reserve, locks surplus inventory, and continues inside the same curve. Future mainnet curves may snapshot an audited Uniswap or Aerodrome adapter at launch.
           </FaqItem>
-          <FaqItem question="Who receives the 25 USDC launch fee?">
+          <FaqItem question="Who receives the 10 USDC launch fee?">
             The Fee Vault receives it. The configured vault recipient can withdraw protocol funds; token creators cannot withdraw the launch fee.
           </FaqItem>
           <FaqItem question="Can the creator mint more tokens or blacklist wallets?">
@@ -336,7 +342,7 @@ x · y          = constant before each trade`}</CodeBlock>
             Candles summarize confirmed historical trades. A quote reads the current curve state and can change with every newly confirmed trade.
           </FaqItem>
           <FaqItem question="Is ArcOrigin audited?">
-            An internal engineering review is published, but V4 has not completed an independent smart-contract audit and should be treated as testnet software.
+            An internal engineering review is published, but V5 has not completed an independent smart-contract audit and should be treated as testnet software.
           </FaqItem>
         </DocSection>
       </main>

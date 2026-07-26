@@ -20,9 +20,7 @@ export const factoryAbi = [
       type: "tuple",
       components: [
         { name: "name", type: "string" }, { name: "symbol", type: "string" },
-        { name: "metadataURI", type: "string" }, { name: "totalSupply", type: "uint256" },
-        { name: "creatorAllocationBps", type: "uint16" }, { name: "virtualUsdcReserve", type: "uint256" },
-        { name: "graduationThreshold", type: "uint256" },
+        { name: "metadataURI", type: "string" },
       ],
     }],
     outputs: [{ name: "token", type: "address" }, { name: "curve", type: "address" }],

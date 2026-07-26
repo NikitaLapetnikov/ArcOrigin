@@ -23,11 +23,15 @@ export const ARC_TESTNET_FIRST_LAUNCH_BLOCK = 53_061_367n;
 export const ARC_TESTNET_V2_FACTORY_BLOCK = 53_112_263n;
 export const ARC_TESTNET_V3_FACTORY_BLOCK = 53_237_596n;
 export const ARC_TESTNET_V4_FACTORY_BLOCK = 53_413_988n;
+export const ARC_TESTNET_V5_FACTORY_BLOCK = 53_751_918n;
 export const ARC_TESTNET_LEGACY_FACTORY = "0xA4DbA45B199287d3163199A86B4618968d8f8424" as Address;
 export const ARC_TESTNET_V2_FACTORY = "0xc5FB127934782D5A147d5EE67Be741EC233036D2" as Address;
 export const ARC_TESTNET_V3_FACTORY = "0x54382b7329FAB9BA0532f607b73027ee0AFB04Ba" as Address;
 export const ARC_TESTNET_V4_FACTORY = "0x09e8b251392dc289e94B2242A12949aAbC722045" as Address;
+export const ARC_TESTNET_V5_FACTORY = "0x7a0FB240bcB691555A51DE238aAA3a58c1DB337c" as Address;
+export const ARC_TESTNET_ACTIVE_FACTORY = ARC_TESTNET_V5_FACTORY;
 export const ARCORIGIN_V4_GRADUATION_TARGET_USDC = 10_000;
+export const ARCORIGIN_ACTIVE_GRADUATION_TARGET_USDC = 10_000;
 
 function configuredAddress(value: string | undefined, fallback: Address): Address {
   return value && isAddress(value) ? value : fallback;
@@ -36,7 +40,7 @@ function configuredAddress(value: string | undefined, fallback: Address): Addres
 export const ARC_TESTNET_CONTRACTS = {
   factory: configuredAddress(
     process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
-    ARC_TESTNET_V4_FACTORY,
+    ARC_TESTNET_ACTIVE_FACTORY,
   ),
   feeVault: configuredAddress(
     process.env.NEXT_PUBLIC_FEE_VAULT_ADDRESS,
@@ -53,6 +57,7 @@ export const ARC_TESTNET_CONTRACTS = {
 } as const;
 
 const knownFactoryIndexes = [
+  { address: ARC_TESTNET_V5_FACTORY, fromBlock: ARC_TESTNET_V5_FACTORY_BLOCK },
   { address: ARC_TESTNET_V4_FACTORY, fromBlock: ARC_TESTNET_V4_FACTORY_BLOCK },
   { address: ARC_TESTNET_V3_FACTORY, fromBlock: ARC_TESTNET_V3_FACTORY_BLOCK },
   { address: ARC_TESTNET_V2_FACTORY, fromBlock: ARC_TESTNET_V2_FACTORY_BLOCK },
@@ -61,7 +66,7 @@ const knownFactoryIndexes = [
 
 function factoryStartBlock(address: Address) {
   return knownFactoryIndexes.find((factory) => factory.address.toLowerCase() === address.toLowerCase())?.fromBlock
-    ?? ARC_TESTNET_V4_FACTORY_BLOCK;
+    ?? ARC_TESTNET_V5_FACTORY_BLOCK;
 }
 
 export const ARC_TESTNET_FACTORY_INDEXES = [
@@ -77,6 +82,7 @@ export const ARC_TESTNET_FACTORY_INDEXES = [
 export function factoryForLaunchBlock(launchBlock?: number) {
   if (launchBlock === undefined) return ARC_TESTNET_CONTRACTS.factory;
   const block = BigInt(launchBlock);
+  if (block >= ARC_TESTNET_V5_FACTORY_BLOCK) return ARC_TESTNET_V5_FACTORY;
   if (block >= ARC_TESTNET_V4_FACTORY_BLOCK) return ARC_TESTNET_V4_FACTORY;
   if (block >= ARC_TESTNET_V3_FACTORY_BLOCK) return ARC_TESTNET_V3_FACTORY;
   if (block >= ARC_TESTNET_V2_FACTORY_BLOCK) return ARC_TESTNET_V2_FACTORY;
