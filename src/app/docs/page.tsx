@@ -13,17 +13,35 @@ export const metadata: Metadata = {
 };
 
 const navigation = [
-  ["Overview", "overview"],
-  ["Launch", "launch"],
-  ["Trading", "trading"],
-  ["Bonding curve", "curve"],
-  ["Graduation", "graduation"],
-  ["Fees", "fees"],
-  ["Network", "network"],
-  ["Contracts", "contracts"],
-  ["Onchain events", "events"],
-  ["Risks", "risks"],
-  ["Security review", "security"],
+  {
+    label: "Protocol",
+    items: [
+      ["Overview", "overview"],
+      ["Create a token", "launch"],
+      ["Trading", "trading"],
+      ["Bonding curve", "curve"],
+      ["Graduation", "graduation"],
+      ["Fees", "fees"],
+    ],
+  },
+  {
+    label: "Integration",
+    items: [
+      ["Network", "network"],
+      ["Contracts", "contracts"],
+      ["Onchain events", "events"],
+      ["Reading state", "reading"],
+    ],
+  },
+  {
+    label: "Reference",
+    items: [
+      ["Protocol limits", "limits"],
+      ["Risks", "risks"],
+      ["Security review", "security"],
+      ["FAQ", "faq"],
+    ],
+  },
 ] as const;
 
 const contracts = [
@@ -55,7 +73,7 @@ export default function DocsPage() {
             Launch and trade<br className="hidden sm:block" /> with visible rules.
           </h1>
           <p className="relative mt-6 max-w-2xl text-base leading-7 text-slate-400">
-            The concise reference for ArcOrigin V4 on Arc Testnet.
+            Protocol mechanics, integration details, and honest testnet limitations in one place.
           </p>
           <div className="relative mt-8 flex flex-wrap gap-2">
             <DocPill label="Arc Testnet" />
@@ -65,7 +83,7 @@ export default function DocsPage() {
           </div>
         </div>
         <div className="grid border-t border-line sm:grid-cols-2 lg:grid-cols-4">
-          <HeroFact label="Launch fee" value="25 USDC" />
+          <HeroFact label="Current launch fee" value="25 USDC" />
           <HeroFact label="Trading fee" value="1%" />
           <HeroFact label="Fee split" value="70 / 30" />
           <HeroFact label="Graduation" value="10,000 USDC" />
@@ -78,15 +96,17 @@ export default function DocsPage() {
         <div className="border-b border-line px-5 py-4">
           <p className="font-mono text-[10px] uppercase tracking-[.14em] text-slate-500">Documentation</p>
         </div>
-        <nav aria-label="Documentation sections" className="flex gap-1 overflow-x-auto p-2 lg:grid">
-          {navigation.map(([label, id], index) => <a
-            key={id}
-            href={`#${id}`}
-            className="group flex h-10 shrink-0 items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-400 transition hover:bg-white/[.04] hover:text-white"
-          >
-            <span className="font-mono text-[9px] text-slate-600 group-hover:text-cyan">{String(index + 1).padStart(2, "0")}</span>
-            {label}
-          </a>)}
+        <nav aria-label="Documentation sections" className="flex gap-2 overflow-x-auto p-2 lg:grid lg:gap-4">
+          {navigation.map((group) => <div key={group.label} className="flex shrink-0 gap-1 lg:grid">
+            <p className="hidden px-3 pt-1 font-mono text-[9px] uppercase tracking-[.14em] text-slate-600 lg:block">{group.label}</p>
+            {group.items.map(([label, id]) => <a
+              key={id}
+              href={`#${id}`}
+              className="flex h-9 shrink-0 items-center rounded-lg px-3 text-sm font-medium text-slate-400 transition hover:bg-white/[.04] hover:text-white"
+            >
+              {label}
+            </a>)}
+          </div>)}
         </nav>
         <div className="m-3 rounded-xl border border-line bg-black/20 p-3">
           <p className="text-xs font-medium text-white">Arc Testnet</p>
@@ -97,6 +117,10 @@ export default function DocsPage() {
       <main className="min-w-0 overflow-hidden rounded-2xl border border-line bg-panel">
         <DocSection id="overview" eyebrow="Protocol" title="Overview">
           <p>ArcOrigin is a non-custodial token launchpad and trading terminal on Arc Testnet. Every launch creates a fixed-supply ERC-20 token and its own USDC bonding curve. Wallets interact directly with the deployed contracts.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <MiniCard title="Custody" value="Your wallet" body="ArcOrigin does not hold user wallets or trade balances." />
+            <MiniCard title="Settlement" value="USDC" body="Launches, trades, fees, and curve reserves settle on Arc Testnet." />
+          </div>
           <Callout title="Key facts">
             <ul className="grid gap-2.5">
               <li>Token names and symbols are not unique. Verify the contract address.</li>
@@ -104,9 +128,12 @@ export default function DocsPage() {
               <li>Charts and holder data are reconstructed from confirmed onchain events.</li>
             </ul>
           </Callout>
+          <Callout title="V4 scope" tone="neutral">
+            ArcOrigin V4 has market buys and sells on a dedicated curve. It does not currently provide limit orders, external DEX migration, liquidity-provider positions, chat, or community takeovers.
+          </Callout>
         </DocSection>
 
-        <DocSection id="launch" eyebrow="Create" title="Launch">
+        <DocSection id="launch" eyebrow="Create" title="Create a token">
           <p>The current interface launches a one-billion-token fixed supply with zero free creator allocation. The creator may add an optional paid developer buy, executed as a normal curve purchase after launch.</p>
           <StepList items={[
             ["Profile", "Set the name, ticker, description, image, website, and X profile."],
@@ -117,9 +144,12 @@ export default function DocsPage() {
           <SpecGrid items={[
             ["Supply", "1,000,000,000"],
             ["Free creator allocation", "0%"],
-            ["Launch fee", "25 USDC"],
-            ["Developer buy", "Optional · paid"],
+            ["Current launch fee", "25 USDC"],
+            ["Developer buy", "Optional · max 5% through the app"],
           ]} />
+          <Callout title="Metadata is public" tone="neutral">
+            The token stores an immutable IPFS metadata URI. Images, descriptions, and social links are public. Do not upload private or sensitive information.
+          </Callout>
         </DocSection>
 
         <DocSection id="trading" eyebrow="Execution" title="Trading">
@@ -131,23 +161,30 @@ export default function DocsPage() {
             ["Priority", "A wallet fee preference. It affects inclusion speed, not the curve price."],
             ["Approval", "USDC is approved before a buy; the launch token is approved before a sell."],
           ]} />
+          <Callout title="A quote is not a reservation" tone="neutral">
+            Another confirmed trade can move the curve before yours executes. The minimum-received value is the onchain protection against a worse fill.
+          </Callout>
         </DocSection>
 
         <DocSection id="curve" eyebrow="Pricing" title="Bonding curve">
           <p>Before graduation, pricing follows a constant-product curve using the real token reserve and an effective USDC reserve. The effective reserve is the 2,500 virtual-USDC seed plus USDC deposited by buyers.</p>
-          <CodeBlock>price = (virtual USDC + real USDC) / token reserve</CodeBlock>
+          <CodeBlock>{`effective USDC = virtual USDC + real USDC
+spot price     = effective USDC / token reserve
+x · y          = constant before each trade`}</CodeBlock>
           <div className="grid gap-3 sm:grid-cols-2">
-            <MiniCard title="Virtual reserve" value="2,500 USDC" body="Shapes the starting price. It is not withdrawable sell-side liquidity." />
+            <MiniCard title="Virtual reserve" value="2,500 USDC" body="Shapes the starting price. It is not real or withdrawable liquidity." />
             <MiniCard title="Real liquidity" value="Onchain USDC" body="Backs sells and is displayed separately from virtual quote depth." />
           </div>
+          <p>Buy outputs round conservatively in favor of the reserve. Sell outputs cannot exceed real USDC liquidity. The contract returns a zero quote when a trade cannot be executed safely.</p>
         </DocSection>
 
         <DocSection id="graduation" eyebrow="Lifecycle" title="Graduation">
           <p>Graduation occurs when the curve reaches 10,000 real USDC. There is no external DEX migration. Trading continues in the same curve contract.</p>
           <StepList items={[
-            ["Threshold", "The final pre-graduation buy is capped so real reserves cannot exceed the configured target."],
+            ["Threshold", "The final pre-graduation buy is capped so net real reserves cannot exceed 10,000 USDC."],
             ["Rebalance", "Virtual USDC is removed and the remaining token reserve is resized at the same spot price."],
-            ["Continue", "Real USDC and price-matched tokens remain as two-sided liquidity for ongoing buys and sells."],
+            ["Lock", "Surplus curve inventory is sent irreversibly to the dead address."],
+            ["Continue", "Real USDC and price-matched tokens remain in the curve as two-sided liquidity."],
           ]} />
           <Callout title="What graduation does not mean" tone="neutral">
             Graduation is a mechanical liquidity milestone—not an endorsement, safety rating, or guarantee of future volume.
@@ -161,7 +198,10 @@ export default function DocsPage() {
             <MiniCard title="Creator" value="70%" body="Sent directly to the token creator from each trading fee." />
             <MiniCard title="Protocol" value="30%" body="Recorded and held by the ArcOrigin Fee Vault." />
           </div>
-          <p className="text-sm text-slate-500">The separate 25 USDC launch fee is collected by the Fee Vault. An optional developer buy also pays the standard trading fee.</p>
+          <p className="text-sm text-slate-500">The creator share is sent directly during each trade; there is no separate claim action. The protocol share and launch fee enter the Fee Vault. An optional developer buy pays the standard trading fee.</p>
+          <Callout title="Configuration" tone="neutral">
+            The Factory owner can change the launch fee and the fee rates for future curves. Each deployed curve permanently snapshots its own buy and sell fee rates.
+          </Callout>
         </DocSection>
 
         <DocSection id="network" eyebrow="Integration" title="Network">
@@ -202,6 +242,51 @@ export default function DocsPage() {
           </div>
         </DocSection>
 
+        <DocSection id="reading" eyebrow="Integration" title="Reading token state">
+          <p>Use contract reads for current state and confirmed events for history. Never derive an executable quote from chart candles or cached market cards.</p>
+          <DefinitionList items={[
+            ["Discovery", "Read TokenLaunched from the V4 Factory beginning at the published start block."],
+            ["Token ↔ curve", "Read getTokenInfo(token) on the Factory."],
+            ["Buy quote", "Call quoteBuy(usdcAmount) on the token curve."],
+            ["Sell quote", "Call quoteSell(tokenAmount) on the token curve."],
+            ["Liquidity", "Read realLiquidity(); do not include virtual USDC."],
+            ["Graduation", "Read isGraduated() and getCurveProgress()."],
+            ["Holders", "Replay ERC-20 Transfer events and reconcile balances."],
+          ]} mono />
+          <CodeBlock>{`const [tokensOut, fee] = await publicClient.readContract({
+  address: curve,
+  abi: bondingCurveAbi,
+  functionName: "quoteBuy",
+  args: [parseUnits("100", 6)],
+});`}</CodeBlock>
+          <Callout title="Indexing rule" tone="neutral">
+            Treat a transaction as final UI state only after its receipt succeeds. Apply receipt events immediately, then reconcile against current contract reads. RPC failures should preserve the last confirmed snapshot, never invent replacement data.
+          </Callout>
+        </DocSection>
+
+        <DocSection id="limits" eyebrow="Reference" title="Protocol limits">
+          <p>The website uses a narrower, canonical launch profile than the Factory contract permits. This distinction matters for third-party integrations.</p>
+          <div className="overflow-x-auto rounded-xl border border-line">
+            <table className="w-full min-w-[680px] text-left text-sm">
+              <thead><tr className="border-b border-line bg-black/20 text-xs text-slate-500"><th className="px-4 py-3 font-medium">Parameter</th><th className="font-medium">ArcOrigin app</th><th className="pr-4 font-medium">V4 Factory limit</th></tr></thead>
+              <tbody>
+                {[
+                  ["Name", "Required", "1–64 UTF-8 bytes"],
+                  ["Symbol", "Required · max 10 bytes", "1–10 UTF-8 bytes"],
+                  ["Supply", "1 billion", "Any non-zero value"],
+                  ["Free creator allocation", "0%", "Up to 20%"],
+                  ["Developer buy", "Paid · up to 5%", "A separate curve trade"],
+                  ["Metadata URI", "IPFS", "Up to 512 UTF-8 bytes"],
+                  ["Graduation ratio", "10,000 / 2,500", "Threshold must equal 4× virtual reserve"],
+                ].map(([parameter, app, factory]) => <tr key={parameter} className="border-b border-line/70 last:border-0"><td className="px-4 py-3.5 font-medium text-white">{parameter}</td><td className="text-slate-400">{app}</td><td className="pr-4 text-slate-500">{factory}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+          <Callout title="Verify direct launches" tone="warn">
+            A token created by calling the Factory outside the ArcOrigin interface can use non-canonical supply or creator allocation. Read the deployed token and curve state instead of assuming website defaults.
+          </Callout>
+        </DocSection>
+
         <DocSection id="risks" eyebrow="Read before trading" title="Risks">
           <p>ArcOrigin is live on testnet and has not completed an independent mainnet audit. User-created tokens can be volatile, illiquid, duplicated, or lose all value.</p>
           <Callout title="Before signing" tone="warn">
@@ -214,7 +299,7 @@ export default function DocsPage() {
           </Callout>
         </DocSection>
 
-        <DocSection id="security" eyebrow="Engineering review" title="Security review" last>
+        <DocSection id="security" eyebrow="Engineering review" title="Security review">
           <p>An internal security and logic review was completed on 26 July 2026 across the V4 contracts, wallet flows, metadata upload, indexing, caching, and production headers. It is not an independent audit or mainnet approval.</p>
           <Callout title="Review outcome" tone="neutral">
             <ul className="grid gap-2.5">
@@ -235,6 +320,24 @@ export default function DocsPage() {
           >
             Read the full findings and residual-risk register <ExternalLink className="size-4" />
           </a>
+        </DocSection>
+
+        <DocSection id="faq" eyebrow="Reference" title="FAQ" last>
+          <FaqItem question="Where does a token migrate after graduation?">
+            Nowhere. V4 removes the virtual reserve, locks surplus token inventory at the dead address, and continues trading inside the same curve contract.
+          </FaqItem>
+          <FaqItem question="Who receives the 25 USDC launch fee?">
+            The Fee Vault receives it. The configured vault recipient can withdraw protocol funds; token creators cannot withdraw the launch fee.
+          </FaqItem>
+          <FaqItem question="Can the creator mint more tokens or blacklist wallets?">
+            No. The ArcOrigin token has fixed supply and no mint, blacklist, pause, or transfer-tax controls.
+          </FaqItem>
+          <FaqItem question="Why can the displayed chart differ from a fresh quote?">
+            Candles summarize confirmed historical trades. A quote reads the current curve state and can change with every newly confirmed trade.
+          </FaqItem>
+          <FaqItem question="Is ArcOrigin audited?">
+            An internal engineering review is published, but V4 has not completed an independent smart-contract audit and should be treated as testnet software.
+          </FaqItem>
         </DocSection>
       </main>
     </div>
@@ -321,4 +424,11 @@ function DefinitionList({ items, mono = false }: { items: ReadonlyArray<readonly
 
 function CodeBlock({ children }: { children: React.ReactNode }) {
   return <pre className="overflow-x-auto rounded-xl border border-line bg-[#070b12] px-5 py-4 font-mono text-sm text-cyan"><code>{children}</code></pre>;
+}
+
+function FaqItem({ question, children }: { question: string; children: React.ReactNode }) {
+  return <div className="grid gap-2 border-b border-line pb-6 last:border-0 last:pb-0 md:grid-cols-[250px_minmax(0,1fr)]">
+    <h3 className="text-sm font-semibold leading-6 text-white">{question}</h3>
+    <p className="text-sm leading-6 text-slate-500">{children}</p>
+  </div>;
 }
