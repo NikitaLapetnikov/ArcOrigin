@@ -13,6 +13,7 @@ import { Badge, Button } from "./ui";
 
 const nav = [
   ["Markets", "/tokens"],
+  ["Watchlist", "/watchlist"],
   ["Launch", "/launch"],
   ["Docs", "/docs"],
 ] as const;
