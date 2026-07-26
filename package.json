@@ -20,6 +20,11 @@
     "deploy:arc-testnet:v5": "hardhat run scripts/deploy-factory-v5.cjs --network arcTestnet --config hardhat.config.cjs",
     "deploy:arc-testnet:v5:activate": "hardhat run scripts/activate-factory-v5.cjs --network arcTestnet --config hardhat.config.cjs",
     "configure:arc-testnet:launch-fee": "hardhat run scripts/set-launch-fee.cjs --network arcTestnet --config hardhat.config.cjs",
+    "governance:deploy:arc-testnet": "hardhat run scripts/deploy-governance-timelock.cjs --network arcTestnet --config hardhat.config.cjs",
+    "governance:handoff:arc-testnet": "hardhat run scripts/handoff-admin-to-timelock.cjs --network arcTestnet --config hardhat.config.cjs",
+    "governance:verify:arc-testnet": "hardhat run scripts/verify-governance.cjs --network arcTestnet --config hardhat.config.cjs",
+    "governance:build-operation:arc-testnet": "hardhat run scripts/build-timelock-operation.cjs --network arcTestnet --config hardhat.config.cjs",
+    "security:audit-admin:arc-testnet": "hardhat run scripts/audit-admin-access.cjs --network arcTestnet --config hardhat.config.cjs",
     "verify:arc-testnet": "hardhat run scripts/verify-deployment.cjs --network arcTestnet --config hardhat.config.cjs",
     "smoke:metadata-upload": "node scripts/smoke-metadata-upload.mjs",
     "test": "pnpm contracts:test"

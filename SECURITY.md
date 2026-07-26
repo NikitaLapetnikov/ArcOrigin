@@ -16,11 +16,11 @@ No direct unauthorized-withdrawal path or reserve-drain path was found in the re
 
 The web application and indexer were hardened during this review:
 
-- quotes accept only a bounded `uint256` amount and a curve emitted by the configured V4 Factory;
+- quotes accept only a bounded `uint256` amount and a curve emitted by the configured active Factory;
 - confirmed trade UI updates decode the actual receipt event instead of reusing a pre-trade quote;
 - forced market refreshes read the latest block, and headline reserves/price come from contract state at that block;
 - holder indexing falls back to RPC when Arcscan unexpectedly returns an empty result;
-- fee analytics derive launch fees from the Factory and protocol fees from known V4 curve `FeeSplit` events, so arbitrary `FeeVault.collectFee` calls cannot spoof displayed categories;
+- fee analytics derive launch fees from the Factory and protocol fees from known curve `FeeSplit` events, so arbitrary `FeeVault.collectFee` calls cannot spoof displayed categories;
 - metadata upload requests are same-origin, size-bounded, one-time-signature authorized, rate-limited, and memory-bounded;
 - token names are validated against the Factory's 64-byte limit and control characters are rejected;
 - metadata uploaded by one wallet is never reused after switching to another wallet;
@@ -28,7 +28,22 @@ The web application and indexer were hardened during this review:
 - RPC, Arcscan, IPFS, and image origins are explicitly constrained by the production Content Security Policy;
 - public refresh paths are cached, deduplicated, and throttled to reduce RPC exhaustion.
 
-The Solidity suite currently covers fixed supply, allocation and metadata bounds, access control, fee changes, fee splitting, slippage, dust rounding, randomized reserve invariants, graduation input caps, price continuity, permanent-liquidity solvency, and FeeVault withdrawal rules.
+The Solidity suite currently covers fixed supply, allocation and metadata bounds, access control, fee changes, fee splitting, slippage, dust rounding, randomized reserve invariants, graduation input caps, price continuity, permanent-liquidity solvency, FeeVault withdrawal rules, and timelocked governance execution.
+
+## Administrative access review
+
+The current Arc Testnet deployment is not yet governed by a multisig. Factory, CreatorRegistry, FeeVault ownership, and the FeeVault recipient all resolve to the deployment EOA `0x2807…9A42`. This is acceptable only for the current testing phase and is a high-severity mainnet blocker.
+
+Administrative reach is bounded:
+
+- Factory changes apply only to future curves because each curve snapshots its fees, economics, launch protection, and migration configuration at deployment.
+- CreatorRegistry ownership can select the Factory allowed to record new launches.
+- FeeVault ownership can rotate the recipient; both owner and recipient may trigger withdrawal, but funds always go to the current recipient.
+- Existing V5 curves and launched tokens have no owner, upgrade, pause, mint, blacklist, or reserve-withdraw path.
+
+The repository now includes a reviewed governance preparation path: an exact 2-of-3 Safe is the sole proposer/canceller of a self-administered OpenZeppelin timelock with a minimum 48-hour delay; protocol ownership moves to the timelock; a 2-of-3 Treasury Safe becomes the FeeVault recipient. Deployment, dry-run handoff, exact-address execution, role verification, and operation-calldata scripts fail closed on an invalid Safe policy or role layout.
+
+No ownership has been transferred yet. The final signer addresses must be selected and tested first. See [`docs/MAINNET_GOVERNANCE_RUNBOOK.md`](./docs/MAINNET_GOVERNANCE_RUNBOOK.md).
 
 ## V5 changes
 
@@ -38,7 +53,7 @@ The external migration boundary is deliberately disabled on Arc Testnet. A curve
 
 This boundary does not make an unknown adapter safe. A production Uniswap or Aerodrome adapter and its LP fee locker remain separate mainnet deliverables requiring official Arc deployment addresses, fork tests, source verification, and an independent audit. Adapter configuration is snapshotted at launch and cannot be retrofitted onto an existing curve.
 
-## V4 contract observations
+## Contract observations
 
 ### Safeguards present
 
@@ -53,9 +68,9 @@ This boundary does not make an unknown adapter safe. A production Uniswap or Aer
 
 | Severity for mainnet | Finding | Impact / required action |
 | --- | --- | --- |
-| High | Factory, Registry, and FeeVault administration currently depends on a single EOA on testnet. | Move ownership to a reviewed multisig and put fee/configuration changes behind a timelock before mainnet. |
-| Medium | Trading fees push the creator share directly during every trade. | A future quote token with transfer restrictions, or a blocked creator recipient, could make that token's trades revert. A V5 design should accrue creator fees for pull-based withdrawal. |
-| Medium | `FeeVault.collectFee` is permissionless by design. | Funds cannot be stolen through it, but callers can create real deposits with arbitrary labels. The application now ignores those labels and derives analytics from trusted Factory/curve events. A V5 Vault should authorize collectors if canonical onchain categories are required. |
+| High | Factory, Registry, and FeeVault administration and the FeeVault recipient currently depend on one EOA on testnet. | Execute and independently verify the prepared 2-of-3 Safe + 48-hour timelock handoff before mainnet. |
+| Medium | Trading fees push the creator share directly during every trade. | A future quote token with transfer restrictions, or a blocked creator recipient, could make that token's trades revert. A future V6 design should accrue creator fees for pull-based withdrawal. |
+| Medium | `FeeVault.collectFee` is permissionless by design. | Funds cannot be stolen through it, but callers can create real deposits with arbitrary labels. The application now ignores those labels and derives analytics from trusted Factory/curve events. A future V6 Vault should authorize collectors if canonical onchain categories are required. |
 | Resolved in V5 | The V4 Factory permits non-canonical supply and creator allocation values within broad bounds. | V5 enforces 1B supply and zero free creator allocation onchain. |
 | Medium | There is no emergency pause or recovery path. | This reduces administrator power but also removes incident containment. Decide and document the mainnet governance/fail-safe model before deployment. |
 | Low | Fee splitting uses integer base units. | Rounding dust goes to the creator share; totals can differ from an exact 70/30 decimal split by base units. |
@@ -73,7 +88,7 @@ This boundary does not make an unknown adapter safe. A production Uniswap or Aer
 
 1. Independent Solidity audit and remediation review by a qualified third party.
 2. Reproducible builds and verified source code for every deployed contract.
-3. Multisig ownership, delayed administration, signer rotation, and an incident-response runbook.
+3. Deploy, exercise, and independently verify the prepared 2-of-3 multisig/timelock administration; complete signer rotation and incident-response drills.
 4. Authorized FeeVault collectors, pull-based creator fees, and a documented emergency-control policy. V5 resolves canonical launch parameters but not these remaining items.
 5. Property/fuzz testing with a dedicated framework and formal or symbolic analysis of curve/graduation invariants.
 6. Redundant authenticated RPC, a durable reorg-aware indexer, edge rate limiting, alerting, and backups.

@@ -37,6 +37,7 @@ async function withRpcRetry(label, operation, attempts = 5) {
 async function main() {
   const manifestPath = path.join(__dirname, "..", "deployment", "arc-testnet.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const expectedOwner = manifest.governance?.timelock ?? manifest.deployer;
   const legacyFactories = manifest.legacyFactories ?? [];
   if (!Array.isArray(legacyFactories)) {
     throw new Error("legacyFactories must be an array when present.");
@@ -92,11 +93,11 @@ async function main() {
     values.push(await withRpcRetry(label, read));
   }
 
-  assertEqual("vault owner", values[0], manifest.deployer);
+  assertEqual("vault owner", values[0], expectedOwner);
   assertEqual("fee recipient", values[1], manifest.feeRecipient);
-  assertEqual("registry owner", values[2], manifest.deployer);
+  assertEqual("registry owner", values[2], expectedOwner);
   assertEqual("registry factory", values[3], manifest.contracts.factory);
-  assertEqual("factory owner", values[4], manifest.deployer);
+  assertEqual("factory owner", values[4], expectedOwner);
   assertEqual("factory USDC", values[5], manifest.contracts.usdc);
   assertEqual("factory fee vault", values[6], manifest.contracts.feeVault);
   assertEqual("factory creator registry", values[7], manifest.contracts.creatorRegistry);
@@ -126,7 +127,7 @@ async function main() {
       legacyValues.push(await withRpcRetry(`${prefix} ${label}`, read));
     }
 
-    assertEqual(`${prefix} owner`, legacyValues[0], manifest.deployer);
+    assertEqual(`${prefix} owner`, legacyValues[0], expectedOwner);
     assertEqual(`${prefix} USDC`, legacyValues[1], manifest.contracts.usdc);
     assertEqual(`${prefix} fee vault`, legacyValues[2], manifest.contracts.feeVault);
     assertEqual(`${prefix} creator registry`, legacyValues[3], manifest.contracts.creatorRegistry);

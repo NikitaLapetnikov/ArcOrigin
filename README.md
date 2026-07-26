@@ -66,6 +66,19 @@ pnpm deploy:arc-testnet:v4
 pnpm deploy:arc-testnet:v4:activate
 ```
 
+### Governance preparation
+
+The repository includes a fail-closed preparation path for a 2-of-3 Governance Safe, 2-of-3 Treasury Safe, and a self-administered OpenZeppelin timelock with a minimum 48-hour delay:
+
+```bash
+pnpm security:audit-admin:arc-testnet
+pnpm governance:deploy:arc-testnet
+pnpm governance:handoff:arc-testnet
+pnpm governance:verify:arc-testnet
+```
+
+The handoff command is dry-run unless both `EXECUTE_ADMIN_HANDOFF=true` and an exact `CONFIRM_ADMIN_HANDOFF` timelock address are provided. No multisig or timelock is currently active in the Arc Testnet manifest. Follow [`docs/MAINNET_GOVERNANCE_RUNBOOK.md`](./docs/MAINNET_GOVERNANCE_RUNBOOK.md); never use placeholder signer addresses or store signer keys in the repository.
+
 ## VPS deployment
 
 On Ubuntu, install Node.js 20, nginx, Certbot, pnpm, and PM2. Clone the repository, then:
@@ -94,7 +107,7 @@ Run package and OS upgrades deliberately rather than unattended on a production 
 2. Independent smart-contract audit and formal deployment review.
 3. Contract source verification on Arcscan.
 4. Durable event indexer and PostgreSQL persistence.
-5. Multisig/timelock administration and a V5 decision for canonical launch parameters, fee collection, creator-fee withdrawals, and emergency controls.
+5. Deploy and exercise the prepared multisig/timelock administration; complete the V6 decision for authorized fee collection, pull-based creator fees, and narrowly scoped emergency controls.
 6. Durable reorg-aware indexing plus resilient transaction-state recovery.
 7. Monitoring, edge rate limiting, backups, and incident response.
 

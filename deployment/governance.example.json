@@ -1,0 +1,14 @@
+{
+  "network": "arc-mainnet",
+  "chainId": null,
+  "governanceSafe": null,
+  "treasurySafe": null,
+  "timelock": null,
+  "minimumDelaySeconds": 172800,
+  "safePolicy": {
+    "owners": [],
+    "threshold": 2
+  },
+  "ownershipTransferred": false,
+  "verifiedAt": null
+}

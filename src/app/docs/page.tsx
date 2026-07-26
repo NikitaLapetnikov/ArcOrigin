@@ -37,6 +37,7 @@ const navigation = [
     label: "Reference",
     items: [
       ["Protocol limits", "limits"],
+      ["Governance", "governance"],
       ["Risks", "risks"],
       ["Security review", "security"],
       ["FAQ", "faq"],
@@ -293,6 +294,30 @@ x · y          = constant before each trade`}</CodeBlock>
           </Callout>
         </DocSection>
 
+        <DocSection id="governance" eyebrow="Administration" title="Governance">
+          <p>The current Arc Testnet deployment still uses one deployment wallet for Factory, Registry, and Fee Vault administration. This is disclosed testnet centralization and is not the intended mainnet configuration.</p>
+          <StepList items={[
+            ["Governance Safe", "Three independent signers with a 2-of-3 confirmation threshold."],
+            ["Timelock", "The Safe schedules exact owner operations with a minimum 48-hour delay."],
+            ["Protocol ownership", "Factory, CreatorRegistry, Fee Vault, and legacy Factories move to the self-administered timelock."],
+            ["Treasury Safe", "Protocol withdrawals go only to a verified 2-of-3 Safe recipient."],
+          ]} />
+          <Callout title="What administration can change" tone="neutral">
+            Factory changes affect only future curves. Existing token supply, fees, reserves, and migration configuration are immutable snapshots. Existing tokens and curves have no owner withdrawal, mint, blacklist, upgrade, or pause control.
+          </Callout>
+          <Callout title="Not activated yet" tone="warn">
+            Governance scripts and tests are prepared, but ownership has not been transferred. Final Safe signers, Testnet schedule/cancel/execute exercises, an independent audit, and exact mainnet deployment verification are required first.
+          </Callout>
+          <a
+            href="https://github.com/VadymManiuk/ArcForge/blob/main/docs/MAINNET_GOVERNANCE_RUNBOOK.md"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex w-fit items-center gap-2 text-sm font-medium text-cyan hover:underline"
+          >
+            Read the governance handoff runbook <ExternalLink className="size-4" />
+          </a>
+        </DocSection>
+
         <DocSection id="risks" eyebrow="Read before trading" title="Risks">
           <p>ArcOrigin is live on testnet and V5 has not completed an independent mainnet audit. User-created tokens can be volatile, illiquid, duplicated, or lose all value.</p>
           <Callout title="Before signing" tone="warn">
@@ -316,7 +341,7 @@ x · y          = constant before each trade`}</CodeBlock>
             </ul>
           </Callout>
           <Callout title="Still required before mainnet" tone="warn">
-            Independent audit, verified reproducible deployments, multisig and timelock administration, a hardened V5 fee/configuration design, durable reorg-aware indexing, monitoring, and edge rate limiting.
+            Independent audit, verified reproducible deployments, execution of the prepared multisig/timelock handoff, a hardened V6 fee/emergency-control decision, durable reorg-aware indexing, monitoring, and edge rate limiting.
           </Callout>
           <a
             href="https://github.com/VadymManiuk/ArcForge/blob/main/SECURITY.md"
