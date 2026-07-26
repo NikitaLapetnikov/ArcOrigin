@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Activity, ArrowUpRight, BarChart3, ChevronLeft, ChevronRight, Clock3, Flame, Rocket, Trophy, Volume2 } from "lucide-react";
+import { Activity, ArrowUpRight, BarChart3, ChevronLeft, ChevronRight, Clock3, Flame, Rocket, Star, Trophy, Volume2 } from "lucide-react";
+import { readWatchlist } from "@/components/watchlist-button";
 import { calculateMomentumScore } from "@/lib/scoring";
 import type { TokenData, Trade } from "@/lib/types";
 import { money, number, utcDateTime } from "@/lib/utils";
 import { Badge, TokenIcon } from "@/components/ui";
 
-type DiscoveryTab = "buys" | "new" | "old" | "trending" | "graduated" | "marketCap" | "volume";
+type DiscoveryTab = "buys" | "new" | "old" | "trending" | "graduated" | "marketCap" | "volume" | "watchlist";
 
 const tabs: { id: DiscoveryTab; label: string; icon: typeof Activity }[] = [
   { id: "buys", label: "Latest buys", icon: Activity },
@@ -18,6 +19,7 @@ const tabs: { id: DiscoveryTab; label: string; icon: typeof Activity }[] = [
   { id: "graduated", label: "Graduated", icon: Trophy },
   { id: "marketCap", label: "Market cap", icon: BarChart3 },
   { id: "volume", label: "Volume", icon: Volume2 },
+  { id: "watchlist", label: "Watchlist", icon: Star },
 ];
 
 type BuyItem = { token: TokenData; trade: Trade; order: number };
@@ -40,6 +42,17 @@ function tradeOrder(token: TokenData, trade: Trade, index: number) {
 export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
   const [activeTab, setActiveTab] = useState<DiscoveryTab>("new");
   const [page, setPage] = useState(1);
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+  useEffect(() => {
+    const sync = () => setWatchlist(readWatchlist());
+    sync();
+    window.addEventListener("storage", sync);
+    window.addEventListener("arcorigin:watchlist-updated", sync);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener("arcorigin:watchlist-updated", sync);
+    };
+  }, []);
   const latestBuys = useMemo(() => tokens.flatMap((token) => token.recentTrades
     .filter((trade) => trade.type === "Buy")
     .map((trade, index): BuyItem => ({
@@ -57,6 +70,10 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
     .sort((left, right) => right.volume24h - left.volume24h), [tokens]);
   const byMarketCap = useMemo(() => [...tokens].sort((left, right) => right.marketCap - left.marketCap), [tokens]);
   const byVolume = useMemo(() => [...tokens].sort((left, right) => right.volume24h - left.volume24h), [tokens]);
+  const watchedTokens = useMemo(
+    () => tokens.filter((token) => watchlist.includes(token.address.toLowerCase())),
+    [tokens, watchlist],
+  );
   const activeTokens = activeTab === "new"
     ? newLaunches
     : activeTab === "old"
@@ -69,6 +86,8 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
             ? byMarketCap
             : activeTab === "volume"
               ? byVolume
+              : activeTab === "watchlist"
+                ? watchedTokens
               : [];
   const totalItems = activeTab === "buys" ? latestBuys.length : activeTokens.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -119,6 +138,8 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
       {activeTab === "buys" && visibleBuys.length === 0 && <EmptyActivity message="No confirmed buys yet. The feed will update after the first onchain trade."/>}
       {activeTab !== "buys" && activeTokens.length === 0 && <EmptyActivity message={activeTab === "graduated"
         ? "No tokens have graduated yet."
+        : activeTab === "watchlist"
+          ? "No saved tokens yet. Use the star on a token page to add it here."
         : "No tokens match this view or search."}/>}
     </div>
     {totalItems > 0 && <Pagination page={page} totalPages={totalPages} onPage={setPage} />}
