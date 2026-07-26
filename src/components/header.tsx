@@ -103,7 +103,7 @@ function WalletButton() {
 }
 
 function NavLink({ href, label, path, onClick }: { href: string; label: string; path: string; onClick?: () => void }) {
-  const active = path === href || path.startsWith(`${href}/`);
+  const active = path === href || path.startsWith(`${href}/`) || (href === "/tokens" && path === "/");
   return <Link
     href={href}
     onClick={onClick}
