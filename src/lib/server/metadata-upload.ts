@@ -15,6 +15,7 @@ const CHALLENGE_RATE_WINDOW_MS = 10 * 60 * 1_000;
 const UPLOAD_RATE_WINDOW_MS = 60 * 60 * 1_000;
 const MAX_CHALLENGES_PER_WINDOW = 12;
 const MAX_UPLOADS_PER_WINDOW = 6;
+const MAX_RATE_ENTRIES = 2_000;
 const PINATA_V3_UPLOAD_URL = process.env.NODE_ENV === "production"
   ? "https://uploads.pinata.cloud/v3/files"
   : process.env.PINATA_UPLOAD_URL ?? "https://uploads.pinata.cloud/v3/files";
@@ -55,6 +56,15 @@ export function metadataUploadAvailable() {
 
 function consumeRate(key: string, limit: number, windowMs: number) {
   const now = Date.now();
+  if (state.rates.size >= MAX_RATE_ENTRIES && !state.rates.has(key)) {
+    for (const [rateKey, rate] of state.rates) {
+      if (now - rate.startedAt >= UPLOAD_RATE_WINDOW_MS) state.rates.delete(rateKey);
+    }
+    if (state.rates.size >= MAX_RATE_ENTRIES) {
+      const oldestKey = state.rates.keys().next().value as string | undefined;
+      if (oldestKey) state.rates.delete(oldestKey);
+    }
+  }
   const entry = state.rates.get(key);
   if (!entry || now - entry.startedAt >= windowMs) {
     state.rates.set(key, { startedAt: now, count: 1 });

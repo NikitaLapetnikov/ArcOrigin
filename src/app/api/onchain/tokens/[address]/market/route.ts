@@ -21,6 +21,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (error instanceof FactoryTokenNotFoundError) {
       return NextResponse.json({ error: error.message }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
+    console.error("Market snapshot refresh failed.", {
+      token: getAddress(address),
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
     return NextResponse.json({
       error: isMarketRpcError(error)
         ? "Arc Testnet RPC is temporarily rate-limited. Retry in a moment."

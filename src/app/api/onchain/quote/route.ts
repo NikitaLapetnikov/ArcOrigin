@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
-import { isAddress, type Address } from "viem";
+import { getAddress, isAddress, maxUint256 } from "viem";
 import { bondingCurveAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
+import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
 
 export const dynamic = "force-dynamic";
 
 function errorResponse(message: string, status = 400) {
-  return NextResponse.json({ error: message }, { status });
+  return NextResponse.json({ error: message }, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
 }
 
 export async function GET(request: Request) {
@@ -17,15 +21,24 @@ export async function GET(request: Request) {
 
   if (!curve || !isAddress(curve)) return errorResponse("A valid curve address is required.");
   if (side !== "Buy" && side !== "Sell") return errorResponse("Side must be Buy or Sell.");
-  if (!rawAmount || !/^\d+$/.test(rawAmount)) return errorResponse("Amount must be a positive integer.");
+  if (!rawAmount || rawAmount.length > 78 || !/^\d+$/.test(rawAmount)) {
+    return errorResponse("Amount must be a positive uint256 integer.");
+  }
 
   const amount = BigInt(rawAmount);
-  if (amount <= 0n) return errorResponse("Amount must be greater than zero.");
+  if (amount <= 0n || amount > maxUint256) return errorResponse("Amount is outside the uint256 range.");
 
   try {
+    const normalizedCurve = getAddress(curve);
+    const index = await getTokenIndexSnapshot();
+    const verifiedCurve = index.snapshot?.tokens.some(
+      (token) => token.curveAddress?.toLowerCase() === normalizedCurve.toLowerCase(),
+    );
+    if (!verifiedCurve) return errorResponse("Curve is not a verified ArcOrigin V4 market.", 404);
+
     const client = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL, 4_000);
     const [output, fee] = await client.readContract({
-      address: curve as Address,
+      address: normalizedCurve,
       abi: bondingCurveAbi,
       functionName: side === "Buy" ? "quoteBuy" : "quoteSell",
       args: [amount],
@@ -35,8 +48,7 @@ export async function GET(request: Request) {
       { input: amount.toString(), output: output.toString(), fee: fee.toString() },
       { headers: { "Cache-Control": "no-store" } },
     );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "The Arc quote request failed.";
-    return errorResponse(message, 503);
+  } catch {
+    return errorResponse("The onchain quote is temporarily unavailable.", 503);
   }
 }

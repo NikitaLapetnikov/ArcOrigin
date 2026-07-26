@@ -23,6 +23,7 @@ const navigation = [
   ["Contracts", "contracts"],
   ["Onchain events", "events"],
   ["Risks", "risks"],
+  ["Security review", "security"],
 ] as const;
 
 const contracts = [
@@ -201,7 +202,7 @@ export default function DocsPage() {
           </div>
         </DocSection>
 
-        <DocSection id="risks" eyebrow="Read before trading" title="Risks" last>
+        <DocSection id="risks" eyebrow="Read before trading" title="Risks">
           <p>ArcOrigin is live on testnet and has not completed an independent mainnet audit. User-created tokens can be volatile, illiquid, duplicated, or lose all value.</p>
           <Callout title="Before signing" tone="warn">
             <ul className="grid gap-2.5">
@@ -211,6 +212,29 @@ export default function DocsPage() {
               <li>ArcOrigin is not financial advice and does not guarantee token quality.</li>
             </ul>
           </Callout>
+        </DocSection>
+
+        <DocSection id="security" eyebrow="Engineering review" title="Security review" last>
+          <p>An internal security and logic review was completed on 26 July 2026 across the V4 contracts, wallet flows, metadata upload, indexing, caching, and production headers. It is not an independent audit or mainnet approval.</p>
+          <Callout title="Review outcome" tone="neutral">
+            <ul className="grid gap-2.5">
+              <li>No direct unauthorized-withdrawal or curve reserve-drain path was found in the reviewed flows.</li>
+              <li>Trade updates now use confirmed receipt events and current contract reserves.</li>
+              <li>Quote, upload, refresh, holder, and fee-indexing trust boundaries were hardened.</li>
+              <li>Production dependencies have no known high-severity advisories; remaining advisories are confined to development tooling.</li>
+            </ul>
+          </Callout>
+          <Callout title="Still required before mainnet" tone="warn">
+            Independent audit, verified reproducible deployments, multisig and timelock administration, a hardened V5 fee/configuration design, durable reorg-aware indexing, monitoring, and edge rate limiting.
+          </Callout>
+          <a
+            href="https://github.com/VadymManiuk/ArcForge/blob/main/SECURITY.md"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex w-fit items-center gap-2 text-sm font-medium text-cyan hover:underline"
+          >
+            Read the full findings and residual-risk register <ExternalLink className="size-4" />
+          </a>
         </DocSection>
       </main>
     </div>

@@ -23,6 +23,7 @@ const curveConfigAbi = [
 ] as const;
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
+const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const REQUEST_WAIT_TIMEOUT_MS = 10_000;
 const PERSISTENT_CACHE_KEY = "arcorigin:v4:token-index";
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
@@ -280,7 +281,8 @@ export async function getTokenIndexSnapshot(forceRefresh = false) {
   }
   const now = Date.now();
   const isFresh = state.snapshot && now - state.cachedAt < CACHE_TTL_MS;
-  const refreshThrottled = !forceRefresh && state.snapshot && now - state.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
+  const refreshThrottled = state.snapshot
+    && now - state.lastAttemptAt < (forceRefresh ? FORCE_REFRESH_INTERVAL_MS : MIN_REFRESH_INTERVAL_MS);
   if (isFresh && !forceRefresh) return { snapshot: state.snapshot, stale: false };
   if (refreshThrottled) return { snapshot: state.snapshot, stale: now - state.cachedAt >= CACHE_TTL_MS };
   if (!state.snapshot && !state.pending && state.lastAttemptAt > 0 && now - state.lastAttemptAt < MIN_REFRESH_INTERVAL_MS) {

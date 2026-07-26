@@ -9,7 +9,7 @@ ArcOrigin is a USDC-native token launch and discovery layer for Arc. This reposi
 - Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
 - Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcOrigin deployment addresses are recorded in `deployment/arc-testnet.json`.
 
-The production interface does not insert simulated token listings or trading activity. Nothing in this repository is an audit claim or investment advice.
+The production interface does not insert simulated token listings or trading activity. The internal review and unresolved mainnet blockers are documented in [`SECURITY.md`](./SECURITY.md). Nothing in this repository is an independent audit claim or investment advice.
 
 ## Local development
 
@@ -94,8 +94,8 @@ Run package and OS upgrades deliberately rather than unattended on a production 
 2. Independent smart-contract audit and formal deployment review.
 3. Contract source verification on Arcscan.
 4. Durable event indexer and PostgreSQL persistence.
-5. Live buy/sell routing for indexed tokens and resilient transaction-state recovery.
-6. Graduation/migration design, implementation, and tests.
-7. Monitoring, rate limiting, backups, and incident response.
+5. Multisig/timelock administration and a V5 decision for canonical launch parameters, fee collection, creator-fee withdrawals, and emergency controls.
+6. Durable reorg-aware indexing plus resilient transaction-state recovery.
+7. Monitoring, edge rate limiting, backups, and incident response.
 
 Not financial advice. Token launches are risky.

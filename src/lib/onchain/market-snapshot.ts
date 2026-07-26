@@ -2,6 +2,7 @@ import "server-only";
 
 import { decodeEventLog, formatUnits, parseAbiItem, type Address, type Hash } from "viem";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
+import { bondingCurveAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
@@ -12,10 +13,14 @@ import type { ChartPoint, Trade } from "@/lib/types";
 const tokenBoughtEvent = parseAbiItem("event TokenBought(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 fee)");
 const tokenSoldEvent = parseAbiItem("event TokenSold(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 fee)");
 const tradeEvents = [tokenBoughtEvent, tokenSoldEvent] as const;
+const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const LOG_BLOCK_RANGE = 9_999n;
 const CHART_TRADE_LIMIT = 240;
+const TRADE_FEED_LIMIT = 500;
+const BLOCK_TIMESTAMP_CONCURRENCY = 6;
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
+const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const MAX_TOKEN_CACHES = 50;
 const MAX_BLOCK_TIMESTAMPS = 1_000;
 
@@ -114,23 +119,19 @@ async function loadBlockTimestamps(blockNumbers: bigint[]) {
     }
     missingBlocks.push(blockKey);
   }
-  const blocks = await Promise.all(missingBlocks.map(async (blockKey) => {
-    const response = await fetch(process.env.ARC_TESTNET_RPC_URL ?? "https://rpc.drpc.testnet.arc.network", {
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: blockKey,
-        method: "eth_getBlockByNumber",
-        params: [`0x${BigInt(blockKey).toString(16)}`, false],
-      }),
-      headers: { "Content-Type": "application/json" },
-      method: "POST",
-      signal: AbortSignal.timeout(15_000),
-    });
-    const payload = await response.json() as { result?: { timestamp?: string } };
-    if (!response.ok || !payload.result?.timestamp) throw new Error("Arc RPC block timestamp is unavailable.");
-    const block = { timestamp: BigInt(payload.result.timestamp) };
-    return { blockKey, block };
-  }));
+  const blocks: Array<{ blockKey: string; block: { timestamp: bigint } }> = [];
+  for (let offset = 0; offset < missingBlocks.length; offset += BLOCK_TIMESTAMP_CONCURRENCY) {
+    blocks.push(...await Promise.all(
+      missingBlocks.slice(offset, offset + BLOCK_TIMESTAMP_CONCURRENCY).map(async (blockKey) => ({
+        blockKey,
+        block: await withRpcRetry(
+          () => publicClient.getBlock({ blockNumber: BigInt(blockKey) }),
+          2,
+        ),
+      })),
+    ));
+    if (offset + BLOCK_TIMESTAMP_CONCURRENCY < missingBlocks.length) await wait(120);
+  }
   for (const { blockKey, block } of blocks) {
     const timestamp = Number(block.timestamp);
     state.blockTimestamps.set(blockKey, timestamp);
@@ -143,7 +144,7 @@ async function loadBlockTimestamps(blockNumbers: bigint[]) {
   return timestamps;
 }
 
-async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot> {
+async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean): Promise<MarketSnapshot> {
   const indexResult = await getTokenIndexSnapshot();
   const indexSnapshot = indexResult.snapshot;
   if (!indexSnapshot) throw new Error("Factory token index is unavailable.");
@@ -157,7 +158,9 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
     || baseToken.virtualUsdcReserve === undefined) {
     throw new Error("Factory token configuration is incomplete.");
   }
-  const indexedBlock = BigInt(indexSnapshot.indexedBlock);
+  const indexedBlock = forceRefresh
+    ? await withRpcRetry(() => publicClient.getBlockNumber(), 2)
+    : BigInt(indexSnapshot.indexedBlock);
   const launch = {
     curve: baseToken.curveAddress as Address,
     launchBlock: BigInt(baseToken.launchBlock),
@@ -166,14 +169,16 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
 
   const events: IndexedTrade[] = [];
   let explorerLogs;
-  try {
-    explorerLogs = await getArcscanLogs({
-      address: launch.curve,
-      fromBlock: launch.launchBlock,
-      toBlock: indexedBlock,
-    });
-  } catch {
-    explorerLogs = null;
+  if (!forceRefresh) {
+    try {
+      explorerLogs = await getArcscanLogs({
+        address: launch.curve,
+        fromBlock: launch.launchBlock,
+        toBlock: indexedBlock,
+      });
+    } catch {
+      explorerLogs = null;
+    }
   }
   if (explorerLogs) {
     for (const log of explorerLogs) {
@@ -252,40 +257,69 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
   const validEvents = events.filter((event) => event.tokens > 0).sort((left, right) => left.blockNumber === right.blockNumber
     ? left.logIndex - right.logIndex
     : left.blockNumber < right.blockNumber ? -1 : 1);
-  let tokenReserve = initialReserve;
-  let tokensDistributed = 0;
-  let raisedUsdc = 0;
-  let graduated = false;
+  let reconstructedTokenReserve = initialReserve;
+  let reconstructedRaisedUsdc = 0;
+  let reconstructedGraduated = false;
   const permanentLiquidityMode = usesPermanentLiquidityMode(virtualUsdc, targetUsdc);
   const priceTicks: IndexedPriceTick[] = [];
   for (const event of validEvents) {
-    tokenReserve += event.type === "Buy" ? -event.tokens : event.tokens;
-    tokensDistributed += event.type === "Buy" ? event.tokens : -event.tokens;
-    raisedUsdc = roundUsdc(Math.max(0, raisedUsdc + event.reserveUsdcDelta));
-    if (tokenReserve <= 0) throw new Error("Curve reserves are invalid at the indexed block.");
-    if (!graduated && raisedUsdc >= targetUsdc) {
-      graduated = true;
+    reconstructedTokenReserve += event.type === "Buy" ? -event.tokens : event.tokens;
+    reconstructedRaisedUsdc = roundUsdc(Math.max(0, reconstructedRaisedUsdc + event.reserveUsdcDelta));
+    if (reconstructedTokenReserve <= 0) throw new Error("Curve reserves are invalid at the indexed block.");
+    if (!reconstructedGraduated && reconstructedRaisedUsdc >= targetUsdc) {
+      reconstructedGraduated = true;
       if (permanentLiquidityMode) {
-        tokenReserve = Math.ceil(raisedUsdc * tokenReserve / (virtualUsdc + raisedUsdc));
+        reconstructedTokenReserve = Math.ceil(
+          reconstructedRaisedUsdc * reconstructedTokenReserve / (virtualUsdc + reconstructedRaisedUsdc),
+        );
       }
     }
     priceTicks.push({
       event,
-      price: (graduated && permanentLiquidityMode ? raisedUsdc : virtualUsdc + raisedUsdc) / tokenReserve,
+      price: (reconstructedGraduated && permanentLiquidityMode
+        ? reconstructedRaisedUsdc
+        : virtualUsdc + reconstructedRaisedUsdc) / reconstructedTokenReserve,
     });
   }
-  if (tokenReserve <= 0 || initialReserve <= 0 || totalSupply <= 0) throw new Error("Curve reserves are invalid at the indexed block.");
+  if (reconstructedTokenReserve <= 0 || initialReserve <= 0 || totalSupply <= 0) {
+    throw new Error("Curve reserves are invalid at the indexed block.");
+  }
+
+  const [tokenReserveRaw, usdcReserveRaw, graduated, tokensSoldRaw] = await withRpcRetry(
+    () => publicClient.multicall({
+      allowFailure: false,
+      blockNumber: indexedBlock,
+      multicallAddress: MULTICALL3_ADDRESS,
+      contracts: [
+        { address: launch.curve, abi: bondingCurveAbi, functionName: "tokenReserve" },
+        { address: launch.curve, abi: bondingCurveAbi, functionName: "usdcReserve" },
+        { address: launch.curve, abi: bondingCurveAbi, functionName: "isGraduated" },
+        { address: launch.curve, abi: bondingCurveAbi, functionName: "tokensSold" },
+      ],
+    }),
+    2,
+  );
+  const tokenReserve = Number(formatUnits(tokenReserveRaw, 18));
+  const raisedUsdc = Number(formatUnits(usdcReserveRaw, 6));
+  const tokensSold = Number(formatUnits(tokensSoldRaw, 18));
+  if (!Number.isFinite(tokenReserve) || tokenReserve <= 0 || !Number.isFinite(raisedUsdc) || raisedUsdc < 0) {
+    throw new Error("Curve state is invalid at the indexed block.");
+  }
   const price = (graduated && permanentLiquidityMode ? raisedUsdc : virtualUsdc + raisedUsdc) / tokenReserve;
 
   const chartTicks = priceTicks.slice(-CHART_TRADE_LIMIT);
-  const chartEvents = chartTicks.map(({ event }) => event);
-  const missingTimestampBlocks = chartEvents.filter((event) => event.timestamp === undefined).map((event) => event.blockNumber);
+  const missingTimestampBlocks = validEvents
+    .filter((event) => event.timestamp === undefined)
+    .map((event) => event.blockNumber);
   const blockTimestamps = missingTimestampBlocks.length > 0
     ? await loadBlockTimestamps(missingTimestampBlocks)
     : new Map<string, number>();
-  const trades: Trade[] = validEvents.slice().reverse().map((event) => ({
+  for (const event of validEvents) {
+    event.timestamp ??= blockTimestamps.get(event.blockNumber.toString());
+  }
+  const trades: Trade[] = validEvents.slice(-TRADE_FEED_LIMIT).reverse().map((event) => ({
     time: `Block ${event.blockNumber.toString()}`,
-    timestamp: event.timestamp ?? blockTimestamps.get(event.blockNumber.toString()),
+    timestamp: event.timestamp,
     type: event.type,
     wallet: event.wallet,
     usdc: event.usdc,
@@ -295,26 +329,34 @@ async function loadMarketSnapshot(tokenAddress: Address): Promise<MarketSnapshot
   }));
   const chart: ChartPoint[] = [
     { time: "Launch", timestamp: launch.launchedAt, price: launchPrice, volume: 0 },
-    ...chartTicks.map(({ event, price: spotPrice }) => ({
+    ...chartTicks.map(({ event, price: reconstructedPrice }, index) => ({
       time: `#${(event.blockNumber % 100_000n).toString()}`,
-      timestamp: event.timestamp ?? blockTimestamps.get(event.blockNumber.toString()),
-      price: spotPrice,
+      timestamp: event.timestamp,
+      price: index === chartTicks.length - 1 ? price : reconstructedPrice,
       volume: event.notional,
     })),
   ];
+  const cutoff24h = Math.floor(Date.now() / 1_000) - 24 * 60 * 60;
+  const recentEvents = validEvents.filter((event) => (event.timestamp ?? 0) >= cutoff24h);
+  const firstTickInWindow = priceTicks.findIndex(({ event }) => (event.timestamp ?? 0) >= cutoff24h);
+  const comparisonPrice = firstTickInWindow < 0
+    ? price
+    : firstTickInWindow > 0
+      ? priceTicks[firstTickInWindow - 1].price
+      : launchPrice;
 
   return {
     price,
-    priceChange: (price / launchPrice - 1) * 100,
+    priceChange: comparisonPrice > 0 ? (price / comparisonPrice - 1) * 100 : 0,
     marketCap: price * totalSupply,
-    volume: validEvents.reduce((sum, event) => roundUsdc(sum + event.notional), 0),
-    buyers: validEvents.filter((event) => event.type === "Buy").length,
-    sellers: validEvents.filter((event) => event.type === "Sell").length,
+    volume: recentEvents.reduce((sum, event) => roundUsdc(sum + event.notional), 0),
+    buyers: recentEvents.filter((event) => event.type === "Buy").length,
+    sellers: recentEvents.filter((event) => event.type === "Sell").length,
     raisedUsdc,
     targetUsdc,
     progress: targetUsdc > 0 ? raisedUsdc / targetUsdc * 100 : 0,
     graduated,
-    tokensSold: Math.max(0, tokensDistributed),
+    tokensSold: Math.max(0, tokensSold),
     tokenReserve,
     chart,
     trades,
@@ -347,7 +389,8 @@ export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = fa
   }
   const now = Date.now();
   const isFresh = cache.snapshot && now - cache.cachedAt < CACHE_TTL_MS;
-  const refreshThrottled = !forceRefresh && cache.snapshot && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
+  const refreshThrottled = cache.snapshot
+    && now - cache.lastAttemptAt < (forceRefresh ? FORCE_REFRESH_INTERVAL_MS : MIN_REFRESH_INTERVAL_MS);
   if (isFresh && !forceRefresh) return { snapshot: cache.snapshot, stale: false };
   if (refreshThrottled) return { snapshot: cache.snapshot, stale: now - cache.cachedAt >= CACHE_TTL_MS };
   if (!cache.snapshot && !cache.pending && cache.lastAttemptAt > 0 && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS) {
@@ -356,7 +399,7 @@ export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = fa
 
   if (!cache.pending) {
     cache.lastAttemptAt = now;
-    cache.pending = loadMarketSnapshot(tokenAddress)
+    cache.pending = loadMarketSnapshot(tokenAddress, forceRefresh)
       .then((snapshot) => {
         cache.snapshot = snapshot;
         cache.cachedAt = Date.now();

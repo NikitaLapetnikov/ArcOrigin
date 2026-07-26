@@ -17,7 +17,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const creator = request.nextUrl.searchParams.get("creator");
     const launchBlock = request.nextUrl.searchParams.get("launchBlock");
     const hint: HolderLaunchHint | undefined = factory && curve && creator && launchBlock
-      && isAddress(factory) && isAddress(curve) && isAddress(creator) && /^\d+$/.test(launchBlock)
+      && isAddress(factory) && isAddress(curve) && isAddress(creator)
+      && launchBlock.length <= 16 && /^\d+$/.test(launchBlock)
       ? {
           factory: getAddress(factory),
           curve: getAddress(curve),

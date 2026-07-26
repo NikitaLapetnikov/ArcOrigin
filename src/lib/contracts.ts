@@ -27,6 +27,9 @@ export const factoryAbi = [
     }],
     outputs: [{ name: "token", type: "address" }, { name: "curve", type: "address" }],
   },
+  { type: "function", name: "launchFee", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "buyFeeBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint16" }] },
+  { type: "function", name: "sellFeeBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint16" }] },
 ] as const;
 
 export const erc20Abi = [
@@ -54,8 +57,34 @@ export const erc20Abi = [
 ] as const;
 
 export const bondingCurveAbi = [
+  {
+    type: "event",
+    name: "TokenBought",
+    anonymous: false,
+    inputs: [
+      { name: "buyer", type: "address", indexed: true },
+      { name: "usdcIn", type: "uint256", indexed: false },
+      { name: "tokensOut", type: "uint256", indexed: false },
+      { name: "fee", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "TokenSold",
+    anonymous: false,
+    inputs: [
+      { name: "seller", type: "address", indexed: true },
+      { name: "tokensIn", type: "uint256", indexed: false },
+      { name: "usdcOut", type: "uint256", indexed: false },
+      { name: "fee", type: "uint256", indexed: false },
+    ],
+  },
   { type: "function", name: "quoteBuy", stateMutability: "view", inputs: [{ name: "usdcAmount", type: "uint256" }], outputs: [{ name: "tokensOut", type: "uint256" }, { name: "fee", type: "uint256" }] },
   { type: "function", name: "quoteSell", stateMutability: "view", inputs: [{ name: "tokenAmount", type: "uint256" }], outputs: [{ name: "usdcOut", type: "uint256" }, { name: "fee", type: "uint256" }] },
+  { type: "function", name: "tokenReserve", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "usdcReserve", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "isGraduated", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "bool" }] },
+  { type: "function", name: "tokensSold", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "buyFeeBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint16" }] },
   { type: "function", name: "sellFeeBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint16" }] },
   { type: "function", name: "CREATOR_FEE_SHARE_BPS", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint16" }] },

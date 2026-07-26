@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings2 } from "lucide-react";
 import {
+  decodeEventLog,
   formatUnits,
   parseUnits,
   publicActions,
@@ -108,7 +109,7 @@ export function BuySellPanel({ token }: { token: TokenData }) {
 function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddress: Address }) {
   const [side, setSide] = useState<Side>("Buy");
   const [amount, setAmount] = useState("1");
-  const [slippageInput, setSlippageInput] = useState("20");
+  const [slippageInput, setSlippageInput] = useState("10");
   const [priority, setPriority] = useState<Priority>("Medium");
   const [status, setStatus] = useState<TransactionStatus>("idle");
   const [notice, setNotice] = useState("");
@@ -353,6 +354,58 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       setTransactionHash(tradeHash);
       const receipt = await withRpcRetry(() => client.waitForTransactionReceipt({ hash: tradeHash }));
       if (receipt.status !== "success") throw new Error(`${side} transaction reverted onchain.`);
+      let confirmedTrade: {
+        wallet: Address;
+        usdc: bigint;
+        tokens: bigint;
+        fee: bigint;
+      } | null = null;
+      for (const log of receipt.logs) {
+        if (log.address.toLowerCase() !== curveAddress.toLowerCase()) continue;
+        try {
+          if (side === "Buy") {
+            const event = decodeEventLog({
+              abi: bondingCurveAbi,
+              eventName: "TokenBought",
+              data: log.data,
+              topics: log.topics,
+            });
+            confirmedTrade = {
+              wallet: event.args.buyer,
+              usdc: event.args.usdcIn,
+              tokens: event.args.tokensOut,
+              fee: event.args.fee,
+            };
+          } else {
+            const event = decodeEventLog({
+              abi: bondingCurveAbi,
+              eventName: "TokenSold",
+              data: log.data,
+              topics: log.topics,
+            });
+            confirmedTrade = {
+              wallet: event.args.seller,
+              usdc: event.args.usdcOut,
+              tokens: event.args.tokensIn,
+              fee: event.args.fee,
+            };
+          }
+          break;
+        } catch {
+          // Receipts also contain ERC-20 transfers and fee-vault events.
+        }
+      }
+      if (!confirmedTrade) throw new Error("Trade confirmed, but its curve event was not found.");
+      let confirmedAt = Math.floor(Date.now() / 1_000);
+      try {
+        const block = await withRpcRetry(
+          () => (client as PublicClient).getBlock({ blockNumber: receipt.blockNumber }),
+          2,
+        );
+        confirmedAt = Number(block.timestamp);
+      } catch {
+        // The confirmed block number remains authoritative if timestamp lookup is rate-limited.
+      }
       setTransactionHash(tradeHash);
       setNotice(`${side} confirmed on Arc Testnet.`);
       setNoticeIsError(false);
@@ -361,12 +414,12 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
           tokenAddress: token.address,
           transactionHash: tradeHash,
           side,
-          wallet: address,
+          wallet: confirmedTrade.wallet,
           blockNumber: receipt.blockNumber.toString(),
-          timestamp: Math.floor(Date.now() / 1_000),
-          usdc: Number(formatUnits(side === "Buy" ? quote.input : quote.output, 6)),
-          fee: Number(formatUnits(quote.fee, 6)),
-          tokens: Number(formatUnits(side === "Buy" ? quote.output : quote.input, 18)),
+          timestamp: confirmedAt,
+          usdc: Number(formatUnits(confirmedTrade.usdc, 6)),
+          fee: Number(formatUnits(confirmedTrade.fee, 6)),
+          tokens: Number(formatUnits(confirmedTrade.tokens, 18)),
         },
       }));
       void refreshBalances();

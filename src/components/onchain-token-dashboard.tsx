@@ -62,6 +62,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
   const [error, setError] = useState("");
   const [stale, setStale] = useState(false);
   const pendingTradeHashes = useRef(new Set<string>());
+  const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
 
   const applyRefreshedSnapshot = useCallback((next: OnchainTokenSnapshot) => {
     setSnapshot((current) => {
@@ -78,9 +79,6 @@ export function useOnchainTokenSnapshot(token: TokenData) {
     setError("");
     try {
       try {
-        applyRefreshedSnapshot(await loadIndexedMarketSnapshot(token));
-        setStale(false);
-      } catch {
         const response = await fetch(`/api/onchain/tokens/${token.address}/market${forceRefresh ? "?refresh=1" : ""}`, {
           cache: forceRefresh ? "no-store" : "default",
           signal: AbortSignal.timeout(12_000),
@@ -90,6 +88,9 @@ export function useOnchainTokenSnapshot(token: TokenData) {
         applyRefreshedSnapshot(payload.snapshot);
         setStale(Boolean(payload.stale));
         if (payload.stale) setError("Showing the latest confirmed market snapshot while Arc Testnet RPC recovers.");
+      } catch {
+        applyRefreshedSnapshot(await loadIndexedMarketSnapshot(token));
+        setStale(false);
       }
     } catch (loadError) {
       setStale(true);
@@ -131,12 +132,20 @@ export function useOnchainTokenSnapshot(token: TokenData) {
       setSnapshot((current) => {
         if (current.trades.some((trade) => trade.txHash.toLowerCase() === hash)) return current;
         const timestamp = detail.timestamp ?? Math.floor(Date.now() / 1_000);
-        const price = usdc / tokens;
         const reserveDelta = side === "Buy"
           ? Math.max(0, usdc - (detail.fee ?? 0))
           : -(usdc + (detail.fee ?? 0));
         const raisedUsdc = Math.max(0, current.raisedUsdc + reserveDelta);
-        const tokenReserve = Math.max(0, current.tokenReserve + (side === "Buy" ? -tokens : tokens));
+        let tokenReserve = Math.max(0, current.tokenReserve + (side === "Buy" ? -tokens : tokens));
+        const nextGraduated = current.graduated || raisedUsdc >= current.targetUsdc;
+        if (!current.graduated && nextGraduated && permanentLiquidityMode) {
+          const effectiveUsdc = (token.virtualUsdcReserve ?? 0) + raisedUsdc;
+          if (effectiveUsdc > 0) tokenReserve = raisedUsdc * tokenReserve / effectiveUsdc;
+        }
+        const quoteReserve = nextGraduated && permanentLiquidityMode
+          ? raisedUsdc
+          : (token.virtualUsdcReserve ?? 0) + raisedUsdc;
+        const price = tokenReserve > 0 ? quoteReserve / tokenReserve : current.price;
         const totalSupply = token.totalSupply ?? 1_000_000_000;
         const trade: Trade = {
           time: detail.blockNumber ? `Block ${detail.blockNumber}` : "Confirmed",
@@ -158,7 +167,10 @@ export function useOnchainTokenSnapshot(token: TokenData) {
           sellers: current.sellers + (side === "Sell" ? 1 : 0),
           raisedUsdc,
           progress: current.targetUsdc > 0 ? raisedUsdc / current.targetUsdc * 100 : 0,
-          tokensSold: Math.max(0, current.tokensSold + (side === "Buy" ? tokens : -tokens)),
+          graduated: nextGraduated,
+          tokensSold: nextGraduated && current.graduated
+            ? current.tokensSold
+            : Math.max(0, current.tokensSold + (side === "Buy" ? tokens : -tokens)),
           tokenReserve,
           chart: [...current.chart, { time: "Now", timestamp, price, volume: usdc }],
           trades: [trade, ...current.trades],
@@ -174,7 +186,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
       window.removeEventListener("arcforge:trade-confirmed", handleTrade);
       retryTimers.forEach(clearTimeout);
     };
-  }, [refresh, token.address, token.price, token.totalSupply]);
+  }, [permanentLiquidityMode, refresh, token.address, token.price, token.totalSupply, token.virtualUsdcReserve]);
 
   return { snapshot, loading, error, stale, refresh };
 }
@@ -202,8 +214,10 @@ export function OnchainTokenDashboard({
     : (token.virtualUsdcReserve ?? 0) + snapshot.raisedUsdc;
   const remainingToGraduation = Math.max(0, token.targetUSDC - snapshot.raisedUsdc);
   const progressLabel = snapshot.progress > 0 && snapshot.progress < 0.01 ? "<0.01%" : `${snapshot.progress.toFixed(2)}%`;
-  const buyTrades = snapshot.trades.filter((trade) => trade.type === "Buy");
-  const sellTrades = snapshot.trades.filter((trade) => trade.type === "Sell");
+  const cutoff24h = Math.floor(Date.now() / 1_000) - 24 * 60 * 60;
+  const recentTrades = snapshot.trades.filter((trade) => (trade.timestamp ?? 0) >= cutoff24h);
+  const buyTrades = recentTrades.filter((trade) => trade.type === "Buy");
+  const sellTrades = recentTrades.filter((trade) => trade.type === "Sell");
   const buyVolume = buyTrades.reduce((sum, trade) => sum + trade.usdc, 0);
   const sellVolume = sellTrades.reduce((sum, trade) => sum + trade.usdc, 0);
   const totalFlow = buyVolume + sellVolume;

@@ -8,7 +8,7 @@ import {
   sha256Hex,
   validateImage,
 } from "@/lib/server/metadata-upload";
-import { isSameOriginRequest } from "@/lib/server/request-security";
+import { isSameOriginRequest, readLimitedBytes, requestClientKey } from "@/lib/server/request-security";
 import { TokenMetadataValidationError, validateTokenMetadataInput, type TokenMetadataInput } from "@/lib/token-metadata";
 
 export const dynamic = "force-dynamic";
@@ -21,20 +21,22 @@ function field(form: FormData, name: string) {
   return value;
 }
 
-function clientKey(request: NextRequest) {
-  return request.headers.get("x-real-ip")
-    ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-    ?? "unknown";
-}
-
 export async function POST(request: NextRequest) {
   try {
     if (!isSameOriginRequest(request)) throw new MetadataUploadError("Cross-origin upload requests are not allowed.", 403);
-    const contentLength = Number(request.headers.get("content-length") ?? 0);
-    if (Number.isFinite(contentLength) && contentLength > MAX_MULTIPART_BYTES) {
+    let uploadBody: Uint8Array<ArrayBuffer>;
+    try {
+      uploadBody = await readLimitedBytes(request, MAX_MULTIPART_BYTES);
+    } catch {
       throw new MetadataUploadError("Metadata upload request is too large.", 413);
     }
-    const form = await request.formData();
+    const contentType = request.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().startsWith("multipart/form-data;")) {
+      throw new MetadataUploadError("Metadata upload must use multipart form data.", 415);
+    }
+    const form = await new Response(uploadBody, {
+      headers: { "Content-Type": contentType },
+    }).formData();
     const input = validateTokenMetadataInput({
       name: field(form, "name"),
       symbol: field(form, "symbol"),
@@ -54,7 +56,7 @@ export async function POST(request: NextRequest) {
       address: field(form, "address"),
       commitment,
       signature: field(form, "signature"),
-      clientKey: clientKey(request),
+      clientKey: requestClientKey(request),
     });
     const normalizedImage = imageBytes ? await normalizeUploadedImage(imageBytes) : null;
     const result = await publishTokenMetadata({ input, creator, image: normalizedImage });

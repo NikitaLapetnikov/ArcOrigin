@@ -14,6 +14,7 @@ const LOG_BLOCK_RANGE = 9_999n;
 const FACTORY_CACHE_TTL_MS = 60_000;
 const HOLDER_CACHE_TTL_MS = 45_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
+const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const MAX_TOKEN_CACHES = 50;
 const RPC_REQUEST_GAP_MS = 220;
 const CURRENT_FACTORY_INDEXES = ARC_TESTNET_FACTORY_INDEXES.filter(
@@ -202,6 +203,9 @@ async function getFactoryLaunches(indexedBlock: bigint, forceRefresh: boolean) {
   if (!state.factoryPending) {
     state.factoryPending = loadFactoryLaunches(indexedBlock)
       .then((launches) => {
+        if (launches.size === 0 && state.factoryLaunches.size > 0) {
+          throw new Error("Factory launch source returned an unexpected empty snapshot.");
+        }
         state.factoryLaunches = launches;
         state.factoryCachedAt = Date.now();
         return launches;
@@ -311,7 +315,7 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
   }
 
   const balances = new Map<string, bigint>();
-  if (explorerLogs) {
+  if (explorerLogs && explorerLogs.length > 0) {
     for (const log of explorerLogs) {
       const decoded = decodeEventLog({ abi: [transferEvent], data: log.data, topics: log.topics });
       const from = decoded.args.from.toLowerCase();
@@ -409,7 +413,8 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
   }
   const now = Date.now();
   const isFresh = cache.snapshot && now - cache.cachedAt < HOLDER_CACHE_TTL_MS;
-  const refreshThrottled = !forceRefresh && cache.snapshot && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
+  const refreshThrottled = cache.snapshot
+    && now - cache.lastAttemptAt < (forceRefresh ? FORCE_REFRESH_INTERVAL_MS : MIN_REFRESH_INTERVAL_MS);
   if (isFresh && !forceRefresh) return { snapshot: cache.snapshot, stale: false };
   if (refreshThrottled) return { snapshot: cache.snapshot, stale: now - cache.cachedAt >= HOLDER_CACHE_TTL_MS };
   if (!cache.snapshot && !cache.pending && cache.lastAttemptAt > 0 && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS) {

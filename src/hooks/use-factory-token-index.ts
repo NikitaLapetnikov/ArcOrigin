@@ -181,7 +181,7 @@ async function loadFactoryTokens(
       return applySnapshot(base, marketResult.snapshot);
     } catch (loadError) {
       try {
-        const snapshot = await loadIndexedMarketSnapshot(base, BigInt(indexResult.snapshot.indexedBlock));
+        const snapshot = await loadIndexedMarketSnapshot(base);
         return applySnapshot(base, snapshot);
       } catch (fallbackError) {
         marketDataError ??= fallbackError ?? loadError;

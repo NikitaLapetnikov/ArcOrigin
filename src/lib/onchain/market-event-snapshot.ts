@@ -8,6 +8,7 @@ const tokenBoughtEvent = parseAbiItem("event TokenBought(address indexed buyer, 
 const tokenSoldEvent = parseAbiItem("event TokenSold(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 fee)");
 const tradeEvents = [tokenBoughtEvent, tokenSoldEvent] as const;
 const CHART_TRADE_LIMIT = 240;
+const TRADE_FEED_LIMIT = 500;
 
 export type MarketSnapshot = {
   price: number;
@@ -149,7 +150,7 @@ export async function loadIndexedMarketSnapshot(token: TokenData, indexedBlock?:
   const price = (graduated && permanentLiquidityMode ? raisedUsdc : virtualUsdc + raisedUsdc) / tokenReserve;
   const launchPrice = virtualUsdc / initialReserve;
   const chartTicks = priceTicks.slice(-CHART_TRADE_LIMIT);
-  const trades: Trade[] = validEvents.slice().reverse().map((event) => ({
+  const trades: Trade[] = validEvents.slice(-TRADE_FEED_LIMIT).reverse().map((event) => ({
     time: `Block ${event.blockNumber.toString()}`,
     timestamp: event.timestamp,
     type: event.type,
@@ -169,13 +170,22 @@ export async function loadIndexedMarketSnapshot(token: TokenData, indexedBlock?:
     })),
   ];
 
+  const cutoff24h = Math.floor(Date.now() / 1_000) - 24 * 60 * 60;
+  const recentEvents = validEvents.filter((event) => event.timestamp >= cutoff24h);
+  const firstTickInWindow = priceTicks.findIndex(({ event }) => event.timestamp >= cutoff24h);
+  const comparisonPrice = firstTickInWindow < 0
+    ? price
+    : firstTickInWindow > 0
+      ? priceTicks[firstTickInWindow - 1].price
+      : launchPrice;
+
   return {
     price,
-    priceChange: (price / launchPrice - 1) * 100,
+    priceChange: comparisonPrice > 0 ? (price / comparisonPrice - 1) * 100 : 0,
     marketCap: price * totalSupply,
-    volume: validEvents.reduce((sum, event) => roundUsdc(sum + event.notional), 0),
-    buyers: validEvents.filter((event) => event.type === "Buy").length,
-    sellers: validEvents.filter((event) => event.type === "Sell").length,
+    volume: recentEvents.reduce((sum, event) => roundUsdc(sum + event.notional), 0),
+    buyers: recentEvents.filter((event) => event.type === "Buy").length,
+    sellers: recentEvents.filter((event) => event.type === "Sell").length,
     raisedUsdc,
     targetUsdc,
     progress: raisedUsdc / targetUsdc * 100,

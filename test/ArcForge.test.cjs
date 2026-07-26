@@ -91,6 +91,27 @@ describe("ArcForgeFactory and ArcForgeToken", function () {
     await expect(factory.connect(creator).launchToken(launchParams({ graduationThreshold: 50_000n * USDC })))
       .to.be.revertedWithCustomError(factory, "InvalidConfiguration");
   });
+
+  it("restricts fee administration and applies trading-fee changes only to future curves", async function () {
+    const platform = await deployPlatform();
+    const { owner, stranger, factory } = platform;
+    const { curve: existingCurve } = await launch(platform);
+
+    await expect(factory.connect(stranger).setLaunchFee(30n * USDC))
+      .to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount")
+      .withArgs(stranger.address);
+    await expect(factory.connect(owner).setTradingFees(1_001, 100))
+      .to.be.revertedWithCustomError(factory, "InvalidConfiguration");
+    await expect(factory.connect(owner).setTradingFees(125, 150))
+      .to.emit(factory, "TradingFeesUpdated")
+      .withArgs(125, 150);
+
+    const { curve: futureCurve } = await launch(platform);
+    expect(await existingCurve.buyFeeBps()).to.equal(100n);
+    expect(await existingCurve.sellFeeBps()).to.equal(100n);
+    expect(await futureCurve.buyFeeBps()).to.equal(125n);
+    expect(await futureCurve.sellFeeBps()).to.equal(150n);
+  });
 });
 
 describe("ArcForgeBondingCurve", function () {
@@ -305,6 +326,22 @@ describe("ArcForgeFeeVault", function () {
     await expect(vault.connect(owner).withdraw(await usdc.getAddress(), fee)).to.emit(vault, "FeeWithdrawn");
     expect(await usdc.balanceOf(recipient.address)).to.equal(fee);
   });
+
+  it("lets only the owner rotate the recipient and always withdraws to the active recipient", async function () {
+    const { owner, creator, recipient, stranger, usdc, vault } = await deployPlatform();
+    const fee = 10n * USDC;
+    const feeType = ethers.keccak256(ethers.toUtf8Bytes("TEST_FEE"));
+    await expect(vault.connect(stranger).setFeeRecipient(stranger.address))
+      .to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount")
+      .withArgs(stranger.address);
+    await vault.connect(owner).setFeeRecipient(stranger.address);
+    await usdc.connect(creator).approve(await vault.getAddress(), fee);
+    await vault.connect(creator).collectFee(await usdc.getAddress(), creator.address, feeType, fee);
+    await expect(vault.connect(recipient).withdraw(await usdc.getAddress(), fee))
+      .to.be.revertedWithCustomError(vault, "Unauthorized");
+    await vault.connect(stranger).withdraw(await usdc.getAddress(), fee);
+    expect(await usdc.balanceOf(stranger.address)).to.equal(fee);
+  });
 });
 
 describe("ArcForgeCreatorRegistry", function () {
@@ -313,5 +350,18 @@ describe("ArcForgeCreatorRegistry", function () {
     await expect(registry.connect(creator).registerCreator("ipfs://profile")).to.emit(registry, "CreatorRegistered");
     await expect(registry.connect(creator).updateCreatorMetadata("ipfs://profile-v2")).to.emit(registry, "CreatorUpdated");
     expect((await registry.getCreatorProfile(creator.address)).metadataURI).to.equal("ipfs://profile-v2");
+  });
+
+  it("allows only the owner to select the factory and only that factory to record launches", async function () {
+    const { owner, creator, stranger, registry } = await deployPlatform();
+    await expect(registry.connect(stranger).setFactory(stranger.address))
+      .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount")
+      .withArgs(stranger.address);
+    await expect(registry.connect(creator).recordLaunch(creator.address, stranger.address))
+      .to.be.revertedWithCustomError(registry, "Unauthorized");
+    await registry.connect(owner).setFactory(stranger.address);
+    await expect(registry.connect(stranger).recordLaunch(creator.address, stranger.address))
+      .to.emit(registry, "CreatorLaunchRecorded")
+      .withArgs(creator.address, stranger.address, 1);
   });
 });

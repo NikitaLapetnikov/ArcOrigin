@@ -9,9 +9,9 @@ const contentSecurityPolicy = [
   "object-src 'none'",
   `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
+  "img-src 'self' data: blob: https://ipfs.io https://gateway.pinata.cloud",
   "font-src 'self' data:",
-  `connect-src 'self' https://rpc.testnet.arc.network https://testnet.arcscan.app${isDevelopment ? " ws:" : ""}`,
+  `connect-src 'self' https://rpc.drpc.testnet.arc.network https://rpc.blockdaemon.testnet.arc.network https://rpc.quicknode.testnet.arc.network https://rpc.testnet.arc.network https://testnet.arcscan.app https://ipfs.io https://gateway.pinata.cloud${isDevelopment ? " ws:" : ""}`,
   "worker-src 'self' blob:",
   ...(!isDevelopment ? ["upgrade-insecure-requests"] : []),
 ].join("; ");

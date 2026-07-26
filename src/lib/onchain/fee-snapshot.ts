@@ -3,7 +3,6 @@ import "server-only";
 import { formatUnits, keccak256, parseAbiItem, toHex, type Address, type Hash } from "viem";
 import {
   ARC_TESTNET_CONTRACTS,
-  ARC_TESTNET_FIRST_LAUNCH_BLOCK,
   ARC_TESTNET_V4_FACTORY,
   ARC_TESTNET_V4_FACTORY_BLOCK,
 } from "@/lib/chains";
@@ -11,9 +10,9 @@ import { erc20Abi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 
-const feeReceivedEvent = parseAbiItem("event FeeReceived(address indexed asset, address indexed payer, bytes32 indexed feeType, uint256 amount)");
 const feeWithdrawnEvent = parseAbiItem("event FeeWithdrawn(address indexed asset, address indexed recipient, uint256 amount)");
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
+const launchFeePaidEvent = parseAbiItem("event LaunchFeePaid(address indexed creator, uint256 amount)");
 const feeSplitEvent = parseAbiItem("event FeeSplit(address indexed payer, bytes32 indexed feeType, address indexed creator, uint256 creatorAmount, uint256 protocolAmount)");
 const feeTypes = {
   [keccak256(toHex("LAUNCH_FEE"))]: "Launch",
@@ -54,6 +53,7 @@ type FeeCache = {
 
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
+const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const LOG_BLOCK_RANGE = 9_999n;
 const PERSISTENT_CACHE_KEY = "arcorigin:v4:fees";
 const publicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL);
@@ -101,16 +101,16 @@ function roundUsdc(value: number) {
 
 async function loadFeeSnapshot(): Promise<FeeSnapshot> {
   const indexedBlock = await withRpcRetry(() => publicClient.getBlockNumber());
-  const feeLogs = [];
-  for (let fromBlock = ARC_TESTNET_FIRST_LAUNCH_BLOCK; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
+  const withdrawalLogs = [];
+  for (let fromBlock = ARC_TESTNET_V4_FACTORY_BLOCK; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
     const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
     const logs = await withRpcRetry(() => publicClient.getLogs({
       address: ARC_TESTNET_CONTRACTS.feeVault,
-      events: [feeReceivedEvent, feeWithdrawnEvent],
+      event: feeWithdrawnEvent,
       fromBlock,
       toBlock,
     }));
-    feeLogs.push(...logs);
+    withdrawalLogs.push(...logs);
   }
   const vaultBalanceRaw = await withRpcRetry(() => publicClient.readContract({
     address: ARC_TESTNET_CONTRACTS.usdc,
@@ -120,16 +120,35 @@ async function loadFeeSnapshot(): Promise<FeeSnapshot> {
     blockNumber: indexedBlock,
   }));
   const v4Curves: Address[] = [];
+  const receivedRows: FeeRow[] = [];
   for (let fromBlock = ARC_TESTNET_V4_FACTORY_BLOCK; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
     const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
-    const launches = await withRpcRetry(() => publicClient.getLogs({
-      address: ARC_TESTNET_V4_FACTORY,
-      event: tokenLaunchedEvent,
-      fromBlock,
-      toBlock,
-    }));
+    const [launches, launchFees] = await Promise.all([
+      withRpcRetry(() => publicClient.getLogs({
+        address: ARC_TESTNET_V4_FACTORY,
+        event: tokenLaunchedEvent,
+        fromBlock,
+        toBlock,
+      })),
+      withRpcRetry(() => publicClient.getLogs({
+        address: ARC_TESTNET_V4_FACTORY,
+        event: launchFeePaidEvent,
+        fromBlock,
+        toBlock,
+      })),
+    ]);
     for (const launch of launches) {
       if (launch.args.curve) v4Curves.push(launch.args.curve);
+    }
+    for (const launchFee of launchFees) {
+      receivedRows.push({
+        blockNumber: (launchFee.blockNumber ?? 0n).toString(),
+        logIndex: launchFee.logIndex ?? 0,
+        source: "Launch",
+        amount: Number(formatUnits(launchFee.args.amount ?? 0n, 6)),
+        account: launchFee.args.creator as Address,
+        transactionHash: launchFee.transactionHash as Hash,
+      });
     }
   }
   let creatorTradingFees = 0;
@@ -144,38 +163,34 @@ async function loadFeeSnapshot(): Promise<FeeSnapshot> {
         toBlock,
       }));
       for (const split of splits) {
+        const source = sourceFor(split.args.feeType as Hash);
+        if (source !== "Buy" && source !== "Sell") continue;
         creatorTradingFees = roundUsdc(
           creatorTradingFees + Number(formatUnits(split.args.creatorAmount ?? 0n, 6)),
         );
+        receivedRows.push({
+          blockNumber: (split.blockNumber ?? 0n).toString(),
+          logIndex: split.logIndex ?? 0,
+          source,
+          amount: Number(formatUnits(split.args.protocolAmount ?? 0n, 6)),
+          account: split.args.payer as Address,
+          transactionHash: split.transactionHash as Hash,
+        });
       }
     }
   }
 
-  const receivedRows: FeeRow[] = [];
-  const withdrawalRows: FeeRow[] = [];
   const usdcAddress = ARC_TESTNET_CONTRACTS.usdc.toLowerCase();
-  for (const log of feeLogs) {
-    if (log.args.asset?.toLowerCase() !== usdcAddress) continue;
-    if (log.eventName === "FeeReceived") {
-      receivedRows.push({
-        blockNumber: (log.blockNumber ?? 0n).toString(),
-        logIndex: log.logIndex ?? 0,
-        source: sourceFor(log.args.feeType as Hash),
-        amount: Number(formatUnits(log.args.amount ?? 0n, 6)),
-        account: log.args.payer as Address,
-        transactionHash: log.transactionHash as Hash,
-      });
-    } else {
-      withdrawalRows.push({
-        blockNumber: (log.blockNumber ?? 0n).toString(),
-        logIndex: log.logIndex ?? 0,
-        source: "Withdrawal",
-        amount: Number(formatUnits(log.args.amount ?? 0n, 6)),
-        account: log.args.recipient as Address,
-        transactionHash: log.transactionHash as Hash,
-      });
-    }
-  }
+  const withdrawalRows: FeeRow[] = withdrawalLogs
+    .filter((log) => log.args.asset?.toLowerCase() === usdcAddress)
+    .map((log) => ({
+      blockNumber: (log.blockNumber ?? 0n).toString(),
+      logIndex: log.logIndex ?? 0,
+      source: "Withdrawal",
+      amount: Number(formatUnits(log.args.amount ?? 0n, 6)),
+      account: log.args.recipient as Address,
+      transactionHash: log.transactionHash as Hash,
+    }));
   const ascending = receivedRows.slice().sort((left, right) => {
     const leftBlock = BigInt(left.blockNumber);
     const rightBlock = BigInt(right.blockNumber);
@@ -219,7 +234,8 @@ export async function getFeeSnapshot(forceRefresh = false) {
   }
   const now = Date.now();
   const isFresh = cache.snapshot && now - cache.cachedAt < CACHE_TTL_MS;
-  const refreshThrottled = !forceRefresh && cache.snapshot && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
+  const refreshThrottled = cache.snapshot
+    && now - cache.lastAttemptAt < (forceRefresh ? FORCE_REFRESH_INTERVAL_MS : MIN_REFRESH_INTERVAL_MS);
   if (isFresh && !forceRefresh) return { snapshot: cache.snapshot, stale: false };
   if (refreshThrottled) return { snapshot: cache.snapshot, stale: now - cache.cachedAt >= CACHE_TTL_MS };
   if (!cache.snapshot && !cache.pending && cache.lastAttemptAt > 0 && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS) {

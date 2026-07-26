@@ -33,7 +33,12 @@ type FormData = {
 
 type TransactionStatus = "idle" | "checking" | "signing_metadata" | "uploading_metadata" | "approving" | "launching" | "initial_buy_approving" | "initial_buy";
 type LaunchResult = { token: Address; curve: Address; hash: Hash; metadataURI: string; metadataURL: string; initialBuyHash?: Hash; initialBuyError?: string };
-type UploadedMetadata = { commitment: string; metadataURI: string; gatewayURL: string };
+type UploadedMetadata = {
+  commitment: string;
+  creator: Address;
+  metadataURI: string;
+  gatewayURL: string;
+};
 
 const defaults: FormData = {
   name: "",
@@ -51,7 +56,7 @@ const confirmations = [
   "I understand the fee and launch risk",
 ];
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const LAUNCH_FEE = 25n * 10n ** 6n;
+const DEFAULT_LAUNCH_FEE = 25n * 10n ** 6n;
 const TOTAL_SUPPLY = 1_000_000_000n * 10n ** 18n;
 const VIRTUAL_USDC_RESERVE = BigInt(DEFAULT_VIRTUAL_USDC_RESERVE) * 10n ** 6n;
 const GRADUATION_THRESHOLD = BigInt(DEFAULT_GRADUATION_THRESHOLD) * 10n ** 6n;
@@ -134,9 +139,12 @@ export function LaunchForm() {
   const [status, setStatus] = useState<TransactionStatus>("idle");
   const [storageStatus, setStorageStatus] = useState<"unknown" | "available" | "unavailable">("unknown");
   const [uploadedMetadata, setUploadedMetadata] = useState<UploadedMetadata | null>(null);
+  const [launchFee, setLaunchFee] = useState(DEFAULT_LAUNCH_FEE);
+  const [tradingFees, setTradingFees] = useState({ buy: 100, sell: 100 });
   const [error, setError] = useState("");
   const [result, setResult] = useState<LaunchResult | null>(null);
   const previewUrl = useRef("");
+  const launchLockRef = useRef(false);
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient({ chainId: arcTestnet.id });
   const { data: walletClient } = useWalletClient();
@@ -152,6 +160,37 @@ export function LaunchForm() {
       if (previewUrl.current) URL.revokeObjectURL(previewUrl.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!publicClient) return;
+    let cancelled = false;
+    void Promise.all([
+      withRpcRetry(() => publicClient.readContract({
+        address: ARC_TESTNET_CONTRACTS.factory,
+        abi: factoryAbi,
+        functionName: "launchFee",
+      }), 2),
+      withRpcRetry(() => publicClient.readContract({
+        address: ARC_TESTNET_CONTRACTS.factory,
+        abi: factoryAbi,
+        functionName: "buyFeeBps",
+      }), 2),
+      withRpcRetry(() => publicClient.readContract({
+        address: ARC_TESTNET_CONTRACTS.factory,
+        abi: factoryAbi,
+        functionName: "sellFeeBps",
+      }), 2),
+    ]).then(([nextLaunchFee, buyFeeBps, sellFeeBps]) => {
+      if (cancelled) return;
+      setLaunchFee(nextLaunchFee);
+      setTradingFees({ buy: Number(buyFeeBps), sell: Number(sellFeeBps) });
+    }).catch(() => {
+      // The launch transaction re-reads the fee before approving, so a failed preview read is safe.
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [publicClient]);
 
   const metadataInput = useMemo<TokenMetadataInput>(() => ({
     name: form.name,
@@ -175,10 +214,16 @@ export function LaunchForm() {
     const maximumTokens = 50_000_000;
     if (curveTokens <= maximumTokens) return 0;
     const netUsdc = DEFAULT_VIRTUAL_USDC_RESERVE * maximumTokens / (curveTokens - maximumTokens);
-    return Math.floor(netUsdc / 0.99 * 100) / 100;
-  }, []);
+    const netMultiplier = 1 - tradingFees.buy / 10_000;
+    return netMultiplier > 0 ? Math.floor(netUsdc / netMultiplier * 100) / 100 : 0;
+  }, [tradingFees.buy]);
   const developerBuyAmount = Math.max(0, Number(form.developerBuy) || 0);
-  const totalWalletPayment = 25 + developerBuyAmount;
+  const launchFeeAmount = Number(formatUnits(launchFee, 6));
+  const launchFeeLabel = `${launchFeeAmount.toLocaleString()} USDC`;
+  const tradingFeeLabel = tradingFees.buy === tradingFees.sell
+    ? `${(tradingFees.buy / 100).toLocaleString()}% · 70/30 split`
+    : `${(tradingFees.buy / 100).toLocaleString()}% buy · ${(tradingFees.sell / 100).toLocaleString()}% sell`;
+  const totalWalletPayment = launchFeeAmount + developerBuyAmount;
   const canContinue = step === 1
     ? identityValid && !imageProcessing
     : step === 2
@@ -229,7 +274,10 @@ export function LaunchForm() {
     const normalized = validateTokenMetadataInput(metadataInput);
     const imageSha256 = image ? await sha256Hex(await image.arrayBuffer()) : "";
     const commitment = await sha256Hex(canonicalMetadataCommitment(normalized, imageSha256));
-    if (uploadedMetadata?.commitment === commitment) return uploadedMetadata;
+    if (uploadedMetadata?.commitment === commitment
+      && uploadedMetadata.creator.toLowerCase() === creator.toLowerCase()) {
+      return uploadedMetadata;
+    }
 
     setStatus("signing_metadata");
     const challengeResponse = await fetch("/api/metadata/challenge", {
@@ -260,7 +308,12 @@ export function LaunchForm() {
     if (!uploadResponse.ok || !upload.metadataURI || !upload.gatewayURL) {
       throw new Error(upload.error ?? "Token metadata upload failed.");
     }
-    const uploaded = { commitment, metadataURI: upload.metadataURI, gatewayURL: upload.gatewayURL };
+    const uploaded = {
+      commitment,
+      creator,
+      metadataURI: upload.metadataURI,
+      gatewayURL: upload.gatewayURL,
+    };
     setUploadedMetadata(uploaded);
     return uploaded;
   }
@@ -275,6 +328,8 @@ export function LaunchForm() {
       return;
     }
 
+    if (launchLockRef.current) return;
+    launchLockRef.current = true;
     setError("");
     setStatus("checking");
     try {
@@ -290,8 +345,14 @@ export function LaunchForm() {
         functionName: "balanceOf",
         args: [address],
       }));
+      const currentLaunchFee = await withRpcRetry(() => transactionClient.readContract({
+        address: ARC_TESTNET_CONTRACTS.factory,
+        abi: factoryAbi,
+        functionName: "launchFee",
+      }));
+      setLaunchFee(currentLaunchFee);
       const developerBuy = parseUnits(form.developerBuy || "0", 6);
-      const requiredBalance = LAUNCH_FEE + developerBuy;
+      const requiredBalance = currentLaunchFee + developerBuy;
       if (balance < requiredBalance) {
         throw new Error(`You have ${formatUnits(balance, 6)} USDC, but launch plus developer buy requires ${formatUnits(requiredBalance, 6)} USDC.`);
       }
@@ -303,13 +364,13 @@ export function LaunchForm() {
         functionName: "allowance",
         args: [address, ARC_TESTNET_CONTRACTS.factory],
       }));
-      if (allowance < LAUNCH_FEE) {
+      if (allowance < currentLaunchFee) {
         setStatus("approving");
         const approvalHash = await writeContractAsync({
           address: ARC_TESTNET_CONTRACTS.usdc,
           abi: erc20Abi,
           functionName: "approve",
-          args: [ARC_TESTNET_CONTRACTS.factory, LAUNCH_FEE],
+          args: [ARC_TESTNET_CONTRACTS.factory, currentLaunchFee],
         });
         const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: approvalHash }));
         if (approvalReceipt.status !== "success") throw new Error("USDC approval reverted onchain.");
@@ -371,6 +432,9 @@ export function LaunchForm() {
             args: [developerBuy],
           }));
           if (tokensOut <= 0n) throw new Error("The curve returned no tokens for the developer buy.");
+          if (tokensOut > TOTAL_SUPPLY * 5n / 100n) {
+            throw new Error("The current curve quote exceeds the 5% developer-buy cap. Reduce the USDC amount.");
+          }
           setStatus("initial_buy");
           const initialBuyHash = await writeContractAsync({
             address: launched.curve,
@@ -392,6 +456,7 @@ export function LaunchForm() {
     } catch (launchError) {
       setError(transactionError(launchError));
     } finally {
+      launchLockRef.current = false;
       setStatus("idle");
     }
   }
@@ -442,7 +507,7 @@ export function LaunchForm() {
       : status === "uploading_metadata"
         ? "Publishing to IPFS…"
         : status === "approving"
-          ? "Approving 25 USDC…"
+          ? `Approving ${launchFeeLabel}…`
           : status === "launching"
             ? "Launching on Arc…"
             : status === "initial_buy_approving"
@@ -485,9 +550,9 @@ export function LaunchForm() {
       {step === 2 && <div className="grid gap-5">
         <div><p className="eyebrow">02 · Economics</p><h2 className="mt-2 text-xl font-semibold">Configure transparent terms</h2></div>
         <Field label="Developer buy · separate USDC payment (optional)" value={form.developerBuy} onChange={(value) => update("developerBuy", value)} type="number" min="0" max={String(developerBuyMax)} step="0.01" />
-        <p className="-mt-3 text-[11px] text-slate-500">Paid separately from the 25 USDC launch fee and executed as a real bonding-curve purchase after launch. Maximum {developerBuyMax.toLocaleString()} USDC, capped at 5% of supply.</p>
+        <p className="-mt-3 text-[11px] text-slate-500">Paid separately from the {launchFeeLabel} launch fee and executed as a real bonding-curve purchase after launch. Maximum {developerBuyMax.toLocaleString()} USDC, capped at 5% of supply.</p>
         <dl className="grid gap-2 rounded-xl border border-line bg-black/20 p-4 text-xs">
-          <Row label="Launch fee" value="25 USDC" />
+          <Row label="Launch fee" value={launchFeeLabel} />
           <Row label="Developer buy payment" value={`${developerBuyAmount.toLocaleString()} USDC`} />
           <div className="mt-1 border-t border-line pt-3"><Row label="Total wallet payment" value={`${totalWalletPayment.toLocaleString()} USDC`} /></div>
         </dl>
@@ -506,7 +571,7 @@ export function LaunchForm() {
           <input type="checkbox" className="accent-cyan" checked={checks.includes(item)} onChange={() => setChecks((current) => current.includes(item) ? current.filter((value) => value !== item) : [...current, item])} />
           {item}
         </label>)}</div>
-        <WarningBox>Your wallet will request a free metadata signature, the 25 USDC launch-fee approval, and the launch transaction. If developer buy is above zero, an additional curve approval and buy follow after launch.</WarningBox>
+        <WarningBox>Your wallet will request a free metadata signature, the {launchFeeLabel} launch-fee approval, and the launch transaction. If developer buy is above zero, an additional curve approval and buy follow after launch.</WarningBox>
       </div>}
 
       {error && <p role="alert" className="mt-5 rounded-xl border border-rose-400/20 bg-rose-400/[.07] p-3 text-xs leading-5 text-rose-200">{error}</p>}
@@ -530,9 +595,9 @@ export function LaunchForm() {
         <Row label="Supply" value="1,000,000,000" />
         <Row label="Curve target" value={`${DEFAULT_GRADUATION_THRESHOLD.toLocaleString()} USDC`} />
         <Row label="Developer buy" value={`${developerBuyAmount.toLocaleString()} USDC`} />
-        <Row label="Launch fee" value="25 USDC" />
+        <Row label="Launch fee" value={launchFeeLabel} />
         <Row label="Total wallet payment" value={`${totalWalletPayment.toLocaleString()} USDC`} />
-        <Row label="Trading fee" value="1% · 70/30 split" />
+        <Row label="Trading fee" value={tradingFeeLabel} />
         <Row label="Network" value="Arc Testnet" />
         <Row label="Factory" value={shortAddress(ARC_TESTNET_CONTRACTS.factory)} />
       </dl>

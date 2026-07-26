@@ -87,7 +87,10 @@ export function validateTokenMetadataInput(input: TokenMetadataInput): TokenMeta
   const name = input.name.trim();
   const symbol = input.symbol.trim().toUpperCase();
   const description = input.description.trim();
-  if (name.length < 2 || name.length > 64) throw new TokenMetadataValidationError("Token name must be 2–64 characters.");
+  const nameBytes = new TextEncoder().encode(name).byteLength;
+  if (name.length < 2 || nameBytes > 64 || /[\u0000-\u001F\u007F]/u.test(name)) {
+    throw new TokenMetadataValidationError("Token name must be 2–64 UTF-8 bytes with no control characters.");
+  }
   if (!/^[A-Za-z0-9]{2,10}$/.test(symbol)) throw new TokenMetadataValidationError("Ticker must be 2–10 letters or numbers.");
   if (!description) throw new TokenMetadataValidationError("Description is required.");
   return {
