@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { useAccount } from "wagmi";
@@ -13,10 +12,10 @@ import { EXPLORER_URL } from "@/lib/chains";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import type { TokenData, Trade } from "@/lib/types";
-import { money, number, utcDateTime } from "@/lib/utils";
+import { money, number } from "@/lib/utils";
 
 export type OnchainTokenSnapshot = MarketSnapshot;
-type TerminalTab = "Trades" | "My position" | "Top traders" | "Holders" | "Creator tokens" | "Curve";
+type TerminalTab = "Trades" | "My position" | "Top traders" | "Holders" | "Curve";
 
 type TraderSummary = {
   wallet: string;
@@ -181,11 +180,9 @@ export function useOnchainTokenSnapshot(token: TokenData) {
 
 export function OnchainTokenDashboard({
   token,
-  creatorTokens,
   rightRail,
 }: {
   token: TokenData;
-  creatorTokens: TokenData[];
   rightRail?: React.ReactNode;
 }) {
   const { snapshot, loading, error, stale, refresh } = useOnchainTokenSnapshot(token);
@@ -237,7 +234,6 @@ export function OnchainTokenDashboard({
     { label: "My position", count: address && walletHolder ? "1" : undefined },
     { label: "Top traders", count: traderSummaries.length > 0 ? String(traderSummaries.length) : undefined },
     { label: "Holders", count: holderSnapshot ? number(holderSnapshot.holders) : token.holders > 0 ? number(token.holders) : undefined },
-    { label: "Creator tokens", count: String(creatorTokens.length) },
     { label: "Curve" },
   ];
 
@@ -359,7 +355,7 @@ export function OnchainTokenDashboard({
       {activeTab === "Holders" && <div className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow">Holder distribution</p><p className="mt-2 text-sm text-slate-400">Confirmed holder balances, cached locally for instant repeat visits.</p></div><div className="flex items-center gap-2"><Badge tone={holderSnapshot ? "good" : "neutral"}>{holderLoading ? "Refreshing" : holderSnapshot ? "Ready" : "Unavailable"}</Badge><Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={holderLoading} onClick={() => void refreshHolders(true)}>Refresh</Button></div></div>
         {holderLoading && !holderSnapshot && <div className="mt-8 rounded-xl border border-line bg-black/15 px-4 py-10 text-center text-sm text-slate-500">Loading holder analytics in the background…</div>}
-        {holderSnapshot && <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{[["Creator", holderSnapshot.creatorPercent], ["Top 10 excluding curve", holderSnapshot.topTenExcludingCurvePercent], ["Trading curve", holderSnapshot.curvePercent], ["Permanent lock", holderSnapshot.permanentLiquidityLockPercent]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-line bg-black/15 p-4"><div className="mb-3 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-200">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
+        {holderSnapshot && <div className="mt-6 grid gap-5 sm:grid-cols-3">{[["Creator", holderSnapshot.creatorPercent], ["Top 10 excluding curve", holderSnapshot.topTenExcludingCurvePercent], ["Trading curve", holderSnapshot.curvePercent]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-line bg-black/15 p-4"><div className="mb-3 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-200">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
         {holderSnapshot && <div className="mt-5 overflow-x-auto rounded-xl border border-line">
           <table className="w-full min-w-[700px] text-left text-xs">
             <thead><tr className="border-b border-line bg-black/15 font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="px-4 py-3">#</th><th>Holder</th><th>Balance</th><th>Supply share</th><th>Role</th><th>Explorer</th></tr></thead>
@@ -374,22 +370,6 @@ export function OnchainTokenDashboard({
           </table>
         </div>}
         {holderError && <div className="mt-4"><WarningBox>{holderError}</WarningBox></div>}
-      </div>}
-
-      {activeTab === "Creator tokens" && <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] text-left text-xs">
-          <thead><tr className="border-b border-line font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="px-4 py-3">Token</th><th>Contract</th><th>Launched</th><th>Block</th><th>Factory proof</th><th className="pr-4 text-right">Action</th></tr></thead>
-          <tbody>{creatorTokens.map((creatorToken) => <tr key={creatorToken.address} className="border-b border-line/60 last:border-0 hover:bg-white/[.02]">
-            <td className="px-4 py-3"><div className="flex items-center gap-3"><TokenIcon label={creatorToken.icon} image={creatorToken.image} className="size-8 rounded-lg"/><div><p className="font-semibold text-white">{creatorToken.name}</p><p className="mt-0.5 font-mono text-[9px] text-slate-600">{creatorToken.ticker}</p></div>{creatorToken.address.toLowerCase() === token.address.toLowerCase() && <Badge tone="cyan">Current</Badge>}</div></td>
-            <td><AddressPill address={creatorToken.address}/></td>
-            <td className="text-slate-400">{utcDateTime(creatorToken.launchedAt)}</td>
-            <td className="text-slate-400">{creatorToken.launchBlock ?? "—"}</td>
-            <td>{creatorToken.launchTxHash ? <ArcscanLink hash={creatorToken.launchTxHash} label="Launch tx"/> : "—"}</td>
-            <td className="pr-4 text-right"><Link href={`/tokens/${creatorToken.address}`} className="inline-flex h-8 items-center rounded-lg border border-line px-3 text-xs text-slate-300 transition hover:border-cyan/30 hover:text-white">Open</Link></td>
-          </tr>)}
-          {creatorTokens.length === 0 && <tr><td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-500">No other verified Factory launches were found for this creator.</td></tr>}</tbody>
-        </table>
-        <p className="border-t border-line px-4 py-3 text-[10px] leading-5 text-slate-600">Factory launch facts only. Live market data is loaded on each token page.</p>
       </div>}
 
       {activeTab === "Curve" && <div className="p-5">

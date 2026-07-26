@@ -50,7 +50,6 @@ export function IndexedTokenDetail({ address }: { address: string }) {
     ["Creator holding", `${(holderSnapshot?.creatorPercent ?? token.creatorAllocationPercent ?? 0).toFixed(2)}%`],
     ["Top 10", holderSnapshot ? `${holderSnapshot.topTenExcludingCurvePercent.toFixed(2)}%` : "—"],
     ["Curve inventory", holderSnapshot ? `${holderSnapshot.curvePercent.toFixed(2)}%` : "—"],
-    ["Permanent lock", holderSnapshot ? `${holderSnapshot.permanentLiquidityLockPercent.toFixed(2)}%` : "—"],
     ["Supply", token.totalSupply ? number(token.totalSupply) : "—"],
   ];
 
@@ -83,7 +82,7 @@ export function IndexedTokenDetail({ address }: { address: string }) {
           </div>
         </div>
       </div>
-        <dl className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-black/15 sm:grid-cols-3 xl:grid-cols-6">
+        <dl className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-black/15 sm:grid-cols-3 xl:grid-cols-5">
           {heroStats.map(([label, value]) => <div key={label} className="min-w-0 border-b border-r border-line/70 px-3.5 py-3.5 last:border-r-0 sm:[&:nth-child(n+5)]:border-b-0 xl:border-b-0">
             <dt className="truncate font-mono text-[10px] uppercase tracking-[.08em] text-slate-500">{label}</dt>
             <dd className="mt-1.5 truncate text-sm font-semibold text-slate-100" title={value}>{value}</dd>
@@ -98,7 +97,6 @@ export function IndexedTokenDetail({ address }: { address: string }) {
 
     <OnchainTokenDashboard
       token={token}
-      creatorTokens={tokens.filter((item) => item.creator.toLowerCase() === token.creator.toLowerCase())}
       rightRail={<>
         <BuySellPanel token={token} />
         <TokenInfoPanel token={token} />
