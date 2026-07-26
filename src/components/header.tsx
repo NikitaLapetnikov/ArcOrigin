@@ -109,7 +109,7 @@ function NavLink({ href, label, path, onClick }: { href: string; label: string; 
     onClick={onClick}
     aria-current={active ? "page" : undefined}
     className={cn(
-      "relative rounded-lg px-3.5 py-2 text-[13px] font-medium transition",
+      "relative rounded-xl px-4 py-2.5 text-sm font-medium transition",
       active ? "bg-white/[.06] text-white" : "text-slate-400 hover:bg-white/[.03] hover:text-slate-100",
     )}
   >{label}</Link>;
@@ -120,20 +120,20 @@ export function Header() {
   const [open, setOpen] = useState(false);
   useEffect(() => setOpen(false), [path]);
 
-  return <header className="sticky top-0 z-50 border-b border-line/70 bg-ink/80 backdrop-blur-2xl">
-    <div className="container-shell flex h-16 items-center justify-between gap-4">
-      <Link href="/" className="flex items-center gap-2.5">
+  return <header className="sticky top-0 z-50 border-b border-line/70 bg-ink/90 shadow-[0_12px_40px_rgba(0,0,0,.18)] backdrop-blur-2xl">
+    <div className="mx-auto flex h-[72px] w-full max-w-[1800px] items-center justify-between gap-5 px-3 sm:px-4">
+      <Link href="/" className="flex items-center gap-3 rounded-xl outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-cyan/50">
         <Image
           src="/brand/arcorigin-logo.png"
           alt="ArcOrigin"
-          width={36}
-          height={36}
+          width={44}
+          height={44}
           priority
-          className="size-9 rounded-[10px] border border-cyan/15 shadow-[0_0_24px_rgba(57,189,248,.14)]"
+          className="size-11 rounded-xl border border-cyan/20 shadow-[0_0_28px_rgba(57,189,248,.18)]"
         />
-        <span className="text-[15px] font-semibold tracking-[-.025em] text-white">ArcOrigin</span>
+        <span className="text-lg font-semibold tracking-[-.035em] text-white">ArcOrigin</span>
       </Link>
-      <nav className="hidden items-center gap-1 lg:flex">
+      <nav className="hidden items-center gap-1.5 rounded-2xl border border-line/60 bg-black/10 p-1 lg:flex">
         {nav.map(([label, href]) => <NavLink key={href} label={label} href={href} path={path} />)}
       </nav>
       <div className="hidden items-center gap-2 md:flex">
@@ -148,7 +148,7 @@ export function Header() {
         aria-controls="mobile-navigation"
       >{open ? <X className="size-5" /> : <Menu className="size-5" />}</button>
     </div>
-    {open && <div id="mobile-navigation" className="container-shell grid gap-1 border-t border-line py-3 lg:hidden">
+    {open && <div id="mobile-navigation" className="mx-auto grid w-full max-w-[1800px] gap-1 border-t border-line px-3 py-3 sm:px-4 lg:hidden">
       {nav.map(([label, href]) => <NavLink key={href} label={label} href={href} path={path} onClick={() => setOpen(false)} />)}
       <div className="my-2 h-px bg-line md:hidden" />
       <div className="mt-2 md:hidden"><WalletButton /></div>

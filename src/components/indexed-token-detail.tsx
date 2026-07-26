@@ -55,43 +55,43 @@ export function IndexedTokenDetail({ address }: { address: string }) {
   ];
 
   return <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-4">
-    <div className="mb-3 rounded-xl border border-line bg-panel p-3.5 sm:p-4">
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(480px,.9fr)_minmax(680px,1.1fr)_auto] xl:items-center">
-        <div className="flex min-w-0 items-start gap-3 sm:items-center">
-        <Link href="/tokens" aria-label="Back to markets" className="mt-2 grid size-10 shrink-0 place-items-center rounded-[10px] border border-line text-slate-500 transition hover:border-slate-500/40 hover:text-white sm:mt-0"><ArrowLeft className="size-4"/></Link>
-        <TokenIcon label={token.icon} image={token.image} className="size-16 rounded-2xl text-base shadow-[0_12px_32px_rgba(0,0,0,.28)]" />
+    <div className="mb-3 rounded-2xl border border-line bg-panel p-4 shadow-[0_18px_50px_rgba(0,0,0,.14)] sm:p-5">
+      <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(600px,1fr)_minmax(640px,1.05fr)_auto] 2xl:items-center">
+        <div className="flex min-w-0 items-start gap-4 sm:items-center">
+        <Link href="/tokens" aria-label="Back to markets" className="mt-3 grid size-11 shrink-0 place-items-center rounded-xl border border-line bg-black/10 text-slate-400 transition hover:border-cyan/30 hover:text-white sm:mt-0"><ArrowLeft className="size-5"/></Link>
+        <TokenIcon label={token.icon} image={token.image} className="size-20 rounded-2xl text-xl shadow-[0_14px_36px_rgba(0,0,0,.34)] sm:size-24" />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
-            <h1 className="truncate text-xl font-semibold tracking-[-.035em] text-white">{token.name}</h1>
-            <span className="font-mono text-[11px] text-slate-500">{token.ticker}</span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h1 className="truncate text-2xl font-semibold tracking-[-.04em] text-white sm:text-[28px]">{token.name}</h1>
+            <span className="font-mono text-sm text-slate-400">{token.ticker}</span>
             <Badge tone="cyan">{token.status}</Badge>
           </div>
-          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-[10px] text-slate-500">
+          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-400">
             <button
               type="button"
               onClick={() => void copyContract(token.address)}
               title={token.address}
               aria-label={copied ? "Contract copied" : "Copy token contract"}
-              className="flex min-w-0 max-w-[360px] items-center gap-2 rounded-lg border border-line bg-black/20 px-2.5 py-1.5 text-left transition hover:border-cyan/30 hover:bg-white/[.025]"
+              className="flex min-w-0 max-w-[410px] items-center gap-2.5 rounded-xl border border-line bg-black/20 px-3 py-2 text-left transition hover:border-cyan/30 hover:bg-white/[.025]"
             >
-              <span className={`shrink-0 text-[9px] font-medium uppercase tracking-[.08em] ${copied ? "text-emerald-300" : "text-slate-600"}`}>{copied ? "Copied" : "Contract"}</span>
-              <code className="min-w-0 flex-1 truncate text-[10px] text-slate-300">{token.address}</code>
-              {copied ? <Check className="size-3.5 shrink-0 text-emerald-300"/> : <Copy className="size-3.5 shrink-0 text-slate-500"/>}
+              <span className={`shrink-0 text-[11px] font-medium uppercase tracking-[.08em] ${copied ? "text-emerald-300" : "text-slate-500"}`}>{copied ? "Copied" : "Contract"}</span>
+              <code className="min-w-0 flex-1 truncate text-xs text-slate-200">{token.address}</code>
+              {copied ? <Check className="size-4 shrink-0 text-emerald-300"/> : <Copy className="size-4 shrink-0 text-slate-400"/>}
             </button>
             <span className="whitespace-nowrap">{utcDateTime(token.launchedAt)}</span>
             <span className="whitespace-nowrap">Creator <Link href={`/creators/${token.creator}`} className="ml-1 text-slate-300 transition hover:text-cyan">{shortAddress(token.creator)}</Link></span>
           </div>
         </div>
       </div>
-        <dl className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-line bg-black/15 sm:grid-cols-3 xl:grid-cols-6">
-          {heroStats.map(([label, value]) => <div key={label} className="min-w-0 border-b border-r border-line/70 px-3 py-2.5 last:border-r-0 sm:[&:nth-child(n+5)]:border-b-0 xl:border-b-0">
-            <dt className="truncate font-mono text-[8px] uppercase tracking-[.08em] text-slate-600">{label}</dt>
-            <dd className="mt-1 truncate text-[11px] font-semibold text-slate-200" title={value}>{value}</dd>
+        <dl className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-black/15 sm:grid-cols-3 xl:grid-cols-6">
+          {heroStats.map(([label, value]) => <div key={label} className="min-w-0 border-b border-r border-line/70 px-3.5 py-3.5 last:border-r-0 sm:[&:nth-child(n+5)]:border-b-0 xl:border-b-0">
+            <dt className="truncate font-mono text-[10px] uppercase tracking-[.08em] text-slate-500">{label}</dt>
+            <dd className="mt-1.5 truncate text-sm font-semibold text-slate-100" title={value}>{value}</dd>
           </div>)}
         </dl>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 2xl:justify-end">
           <WatchlistButton address={token.address} />
-          <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-[10px] border border-line px-3 text-xs text-slate-300 transition hover:border-cyan/30 hover:text-white">Arcscan <ExternalLink className="size-3" /></a>
+          <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-2 rounded-xl border border-line px-4 text-sm text-slate-200 transition hover:border-cyan/30 hover:text-white">Arcscan <ExternalLink className="size-4" /></a>
         </div>
       </div>
     </div>
