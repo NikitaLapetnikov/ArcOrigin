@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const result = await getFeeSnapshot(forceRefresh);
     return NextResponse.json(result, {
       headers: {
-        "Cache-Control": "public, max-age=10, stale-while-revalidate=60",
+        "Cache-Control": forceRefresh ? "no-store" : "public, max-age=10, stale-while-revalidate=60",
       },
     });
   } catch (error) {

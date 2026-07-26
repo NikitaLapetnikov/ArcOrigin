@@ -7,9 +7,9 @@ import type { TokenData } from "@/lib/types";
 
 const STORAGE_PREFIX = "arcorigin:5042002:holders:";
 const STORAGE_TTL_MS = 24 * 60 * 60 * 1_000;
-const BACKGROUND_REFRESH_MS = 2 * 60 * 1_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 const pendingRequests = new Map<string, Promise<HolderSnapshot>>();
+const HOLDER_REFRESH_DELAYS_MS = [1_500, 5_000, 12_000] as const;
 
 type CachedHolderSnapshot = {
   savedAt: number;
@@ -65,6 +65,57 @@ function writeCached(address: string, snapshot: HolderSnapshot) {
   return cached;
 }
 
+function applyConfirmedTransfer(
+  snapshot: HolderSnapshot,
+  token: TokenData,
+  detail: { side: "Buy" | "Sell"; wallet: string; tokens: number; blockNumber?: string },
+) {
+  if (!token.curveAddress || !Number.isFinite(detail.tokens) || detail.tokens <= 0) return snapshot;
+  const wallet = detail.wallet.toLowerCase();
+  const curve = token.curveAddress.toLowerCase();
+  const creator = token.creator.toLowerCase();
+  const balances = new Map(snapshot.topHolders.map((holder) => [holder.address.toLowerCase(), Number(holder.balance)]));
+  const walletWasKnown = balances.has(wallet);
+  const walletBefore = balances.get(wallet) ?? 0;
+  const curveBefore = balances.get(curve) ?? 0;
+  const direction = detail.side === "Buy" ? 1 : -1;
+  const walletAfter = Math.max(0, walletBefore + direction * detail.tokens);
+  const curveAfter = Math.max(0, curveBefore - direction * detail.tokens);
+  balances.set(wallet, walletAfter);
+  balances.set(curve, curveAfter);
+
+  const totalSupply = token.totalSupply ?? [...balances.values()].reduce((sum, balance) => sum + balance, 0);
+  if (!Number.isFinite(totalSupply) || totalSupply <= 0) return snapshot;
+  const percent = (balance: number) => balance / totalSupply * 100;
+  const entries = [...balances.entries()]
+    .filter(([, balance]) => balance > 0)
+    .sort((left, right) => right[1] - left[1]);
+  const topHolders: HolderSnapshot["topHolders"] = entries.slice(0, 100).map(([holderAddress, balance]) => ({
+    address: holderAddress as `0x${string}`,
+    balance: String(balance),
+    percent: percent(balance),
+    role: holderAddress === curve ? "Curve" : holderAddress === creator ? "Creator" : "Holder",
+  }));
+  const topTenExcludingCurvePercent = entries
+    .filter(([address]) => address !== curve)
+    .slice(0, 10)
+    .reduce((sum, [, balance]) => sum + percent(balance), 0);
+  let holders = snapshot.holders;
+  if (detail.side === "Buy" && !walletWasKnown && snapshot.holders <= snapshot.topHolders.length) holders += 1;
+  if (detail.side === "Sell" && walletWasKnown && walletBefore > 0 && walletAfter === 0) holders = Math.max(0, holders - 1);
+
+  return {
+    ...snapshot,
+    holders,
+    topHolders,
+    creatorPercent: percent(balances.get(creator) ?? 0),
+    curvePercent: percent(curveAfter),
+    topTenExcludingCurvePercent,
+    indexedBlock: detail.blockNumber ?? snapshot.indexedBlock,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 async function requestSnapshot(token: TokenData, forceRefresh: boolean) {
   const address = token.address;
   const key = address.toLowerCase();
@@ -79,6 +130,7 @@ async function requestSnapshot(token: TokenData, forceRefresh: boolean) {
     query.set("launchBlock", String(token.launchBlock));
   }
   const request = fetch(`/api/onchain/tokens/${address}/holders?${query.toString()}`, {
+    cache: forceRefresh ? "no-store" : "default",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   }).then(async (response) => {
     const payload = await response.json() as { snapshot?: HolderSnapshot; error?: string };
@@ -126,9 +178,7 @@ export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = fa
       setSnapshot(null);
       setSavedAt(0);
     }
-    if (autoRefresh && (!cached || Date.now() - cached.savedAt > BACKGROUND_REFRESH_MS)) {
-      void refresh(false);
-    }
+    if (autoRefresh) void refresh(false);
     const handleUpdate = (event: Event) => {
       const detail = (event as CustomEvent<{ address?: string; cached?: CachedHolderSnapshot }>).detail;
       if (detail.address?.toLowerCase() !== address.toLowerCase() || !detail.cached) return;
@@ -138,6 +188,42 @@ export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = fa
     window.addEventListener("arcorigin:holders-updated", handleUpdate);
     return () => window.removeEventListener("arcorigin:holders-updated", handleUpdate);
   }, [address, autoRefresh, refresh]);
+
+  useEffect(() => {
+    if (!token || !address) return;
+    const retryTimers: Array<ReturnType<typeof setTimeout>> = [];
+    const handleTrade = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        tokenAddress?: string;
+        side?: "Buy" | "Sell";
+        wallet?: string;
+        tokens?: number;
+        blockNumber?: string;
+      }>).detail;
+      if (detail?.tokenAddress?.toLowerCase() !== address.toLowerCase()
+        || !detail.side
+        || !detail.wallet
+        || !detail.tokens) return;
+      const side = detail.side;
+      const wallet = detail.wallet;
+      const tokens = detail.tokens;
+
+      setSnapshot((current) => current ? applyConfirmedTransfer(current, token, {
+        side,
+        wallet,
+        tokens,
+        blockNumber: detail.blockNumber,
+      }) : current);
+      for (const delay of HOLDER_REFRESH_DELAYS_MS) {
+        retryTimers.push(setTimeout(() => void refresh(true), delay));
+      }
+    };
+    window.addEventListener("arcforge:trade-confirmed", handleTrade);
+    return () => {
+      window.removeEventListener("arcforge:trade-confirmed", handleTrade);
+      retryTimers.forEach(clearTimeout);
+    };
+  }, [address, refresh, token]);
 
   return { snapshot, savedAt, loading, error, refresh };
 }

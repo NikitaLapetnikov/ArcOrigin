@@ -82,6 +82,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
         setStale(false);
       } catch {
         const response = await fetch(`/api/onchain/tokens/${token.address}/market${forceRefresh ? "?refresh=1" : ""}`, {
+          cache: forceRefresh ? "no-store" : "default",
           signal: AbortSignal.timeout(12_000),
         });
         const payload = await response.json() as { snapshot?: OnchainTokenSnapshot; stale?: boolean; error?: string };

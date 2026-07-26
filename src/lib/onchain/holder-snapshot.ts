@@ -409,7 +409,7 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
   }
   const now = Date.now();
   const isFresh = cache.snapshot && now - cache.cachedAt < HOLDER_CACHE_TTL_MS;
-  const refreshThrottled = cache.snapshot && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
+  const refreshThrottled = !forceRefresh && cache.snapshot && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
   if (isFresh && !forceRefresh) return { snapshot: cache.snapshot, stale: false };
   if (refreshThrottled) return { snapshot: cache.snapshot, stale: now - cache.cachedAt >= HOLDER_CACHE_TTL_MS };
   if (!cache.snapshot && !cache.pending && cache.lastAttemptAt > 0 && now - cache.lastAttemptAt < MIN_REFRESH_INTERVAL_MS) {

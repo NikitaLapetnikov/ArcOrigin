@@ -266,7 +266,7 @@ export async function getTokenIndexSnapshot(forceRefresh = false) {
   }
   const now = Date.now();
   const isFresh = state.snapshot && now - state.cachedAt < CACHE_TTL_MS;
-  const refreshThrottled = state.snapshot && now - state.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
+  const refreshThrottled = !forceRefresh && state.snapshot && now - state.lastAttemptAt < MIN_REFRESH_INTERVAL_MS;
   if (isFresh && !forceRefresh) return { snapshot: state.snapshot, stale: false };
   if (refreshThrottled) return { snapshot: state.snapshot, stale: now - state.cachedAt >= CACHE_TTL_MS };
   if (!state.snapshot && !state.pending && state.lastAttemptAt > 0 && now - state.lastAttemptAt < MIN_REFRESH_INTERVAL_MS) {

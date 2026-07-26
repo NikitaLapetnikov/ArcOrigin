@@ -129,7 +129,10 @@ function preserveMarketValues(base: TokenData, previous?: TokenData) {
 
 async function loadServerSnapshot<T>(path: string): Promise<{ snapshot: T; stale: boolean }> {
   try {
-    const response = await fetch(path, { signal: AbortSignal.timeout(SNAPSHOT_REQUEST_TIMEOUT_MS) });
+    const response = await fetch(path, {
+      cache: path.includes("refresh=1") ? "no-store" : "default",
+      signal: AbortSignal.timeout(SNAPSHOT_REQUEST_TIMEOUT_MS),
+    });
     const payload = await response.json() as { snapshot?: T; stale?: boolean; error?: string };
     if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Onchain snapshot is unavailable.");
     return { snapshot: payload.snapshot, stale: Boolean(payload.stale) };

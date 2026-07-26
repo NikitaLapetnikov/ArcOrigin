@@ -15,7 +15,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
     const result = await getMarketSnapshot(getAddress(address), forceRefresh);
     return NextResponse.json(result, {
-      headers: { "Cache-Control": "public, max-age=15, s-maxage=30, stale-while-revalidate=300" },
+      headers: { "Cache-Control": forceRefresh ? "no-store" : "public, max-age=15, s-maxage=30, stale-while-revalidate=300" },
     });
   } catch (error) {
     if (error instanceof FactoryTokenNotFoundError) {

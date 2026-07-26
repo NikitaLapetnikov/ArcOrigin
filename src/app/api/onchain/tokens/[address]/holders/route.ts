@@ -27,7 +27,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       : undefined;
     const result = await getHolderSnapshot(getAddress(address), forceRefresh, hint);
     return NextResponse.json(result, {
-      headers: { "Cache-Control": "public, max-age=30, s-maxage=60, stale-while-revalidate=600" },
+      headers: { "Cache-Control": forceRefresh ? "no-store" : "public, max-age=30, s-maxage=60, stale-while-revalidate=600" },
     });
   } catch (error) {
     if (error instanceof FactoryTokenNotFoundError) {

@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
     const result = await getTokenIndexSnapshot(forceRefresh);
     return NextResponse.json(result, {
-      headers: { "Cache-Control": "public, max-age=15, s-maxage=30, stale-while-revalidate=300" },
+      headers: { "Cache-Control": forceRefresh ? "no-store" : "public, max-age=15, s-maxage=30, stale-while-revalidate=300" },
     });
   } catch (error) {
     return NextResponse.json({
