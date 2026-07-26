@@ -4,38 +4,42 @@
   "contracts": {
     "feeVault": "0x7bfcdA8108Db53B3cCAe02B29C6e5B3905950fB4",
     "creatorRegistry": "0x07287313ee649efcF22EAEE4361cd6c512219B61",
-    "factory": "0x09e8b251392dc289e94B2242A12949aAbC722045",
+    "factory": "0x7a0FB240bcB691555A51DE238aAA3a58c1DB337c",
     "usdc": "0x3600000000000000000000000000000000000000"
   },
   "deployer": "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
   "feeRecipient": "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
-  "deployedAt": "2026-07-24T11:40:43.045Z",
+  "deployedAt": "2026-07-26T12:00:41.312Z",
   "explorerBaseUrl": "https://testnet.arcscan.app",
-  "status": "V4_ACTIVE",
+  "status": "V5_ACTIVE",
   "legacyFactories": [
+    "0x09e8b251392dc289e94B2242A12949aAbC722045",
     "0x54382b7329FAB9BA0532f607b73027ee0AFB04Ba",
     "0xc5FB127934782D5A147d5EE67Be741EC233036D2",
     "0xA4DbA45B199287d3163199A86B4618968d8f8424"
   ],
   "migration": {
-    "type": "FACTORY_ONLY",
+    "type": "FACTORY_V5",
     "preservesFeeVault": true,
     "preservesCreatorRegistry": true,
-    "previousFactory": "0x54382b7329FAB9BA0532f607b73027ee0AFB04Ba",
-    "factoryDeploymentTx": "0xce734b1446e3e030d386b516995b93f06f446b9d5e8b9715045c6a5c085aa3c2",
-    "factoryDeploymentBlock": 53413988,
-    "registryActivationTx": "0x1a690bde18b67ad08dde807b030ed8e1f57845af7314a014f4d7ae1898eedd51",
-    "registryActivationBlock": 53414342,
-    "activatedAt": "2026-07-24T11:43:43.516Z"
+    "previousFactory": "0x09e8b251392dc289e94B2242A12949aAbC722045",
+    "factoryDeploymentTx": "0x2a43d5bbbcecbb5fc1d060ee6f2494fdc2e08d86ff1b700d73d952f6d55c3816",
+    "factoryDeploymentBlock": 53751918,
+    "registryActivationTx": "0xf36369e562585b497dd403162fb9532877c17b6b79c15afbacf47b32136999ff",
+    "registryActivationBlock": 53752849,
+    "activatedAt": "2026-07-26T12:08:38.486Z"
   },
   "curveModel": {
-    "version": 4,
+    "version": 5,
     "virtualUsdcReserve": 2500,
     "graduationThreshold": 10000,
-    "curveInventorySoldPercent": 80,
-    "permanentLiquidityTvl": 20000,
     "creatorFeeShareBps": 7000,
     "protocolFeeShareBps": 3000,
-    "postGraduationVenue": "ARCFORGE_PERMANENT_AMM"
+    "protectionBlocks": 3,
+    "maxProtectionHoldingBps": 500,
+    "maxProtectionPurchaseBps": 550,
+    "postGraduationVenue": "ARCFORGE_PERMANENT_AMM",
+    "dexMigrationReady": true,
+    "dexMigrationEnabled": false
   }
 }
