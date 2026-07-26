@@ -444,9 +444,11 @@ export function LaunchForm() {
         }
       }
       setResult(launched);
+      window.localStorage.setItem("arcorigin:5042002:last-launch-confirmed-at", String(Date.now()));
       window.dispatchEvent(new CustomEvent("arcforge:launch-confirmed", {
         detail: { tokenAddress: launched.token, curveAddress: launched.curve, transactionHash: launchHash },
       }));
+      void fetch("/api/onchain/tokens?refresh=1", { cache: "no-store" }).catch(() => undefined);
     } catch (launchError) {
       setError(transactionError(launchError));
     } finally {

@@ -177,7 +177,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     graduated: 0,
     flagged: 0,
     totalVolume: 0,
-    totalFees: 25,
+    totalFees: 10,
     verified: false,
   };
   const launchPrice = virtualUsdcReserve / initialReserve;
@@ -227,12 +227,12 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
 
 async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot> {
   const { launches, indexedBlock } = await getFactoryLaunchIndex(forceRefresh);
-  const v4Launches = launches.filter(
+  const activeLaunches = launches.filter(
     (launch) => launch.factory.toLowerCase() === ARC_TESTNET_ACTIVE_FACTORY.toLowerCase(),
   );
-  if (v4Launches.length === 0) {
+  if (activeLaunches.length === 0) {
     if (verifiedV4Tokens.length > 0) {
-      throw new Error("The V4 Factory log source returned an unexpected empty snapshot.");
+      throw new Error("The active Factory log source returned an unexpected empty snapshot.");
     }
     return {
       tokens: [],
@@ -241,11 +241,11 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
     };
   }
   const creatorCounts = new Map<string, number>();
-  for (const launch of v4Launches) {
+  for (const launch of activeLaunches) {
     const creator = launch.creator.toLowerCase();
     creatorCounts.set(creator, (creatorCounts.get(creator) ?? 0) + 1);
   }
-  const reversedLaunches = v4Launches.slice().reverse();
+  const reversedLaunches = activeLaunches.slice().reverse();
   const tokens: TokenData[] = [];
   for (let index = 0; index < reversedLaunches.length; index += 2) {
     tokens.push(...await Promise.all(reversedLaunches.slice(index, index + 2).map((launch) => hydrateLaunch(
@@ -255,7 +255,7 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
   }
   const currentTokens = currentV4Tokens(tokens);
   if (currentTokens.length === 0 && verifiedV4Tokens.length > 0) {
-    throw new Error("The V4 Factory snapshot did not contain its confirmed launch.");
+    throw new Error("The active Factory snapshot did not contain its confirmed launch.");
   }
   return {
     tokens: currentTokens,

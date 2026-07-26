@@ -1,5 +1,5 @@
 import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector } from "viem";
-import { ARC_TESTNET_FACTORY_INDEXES } from "@/lib/chains";
+import { ARC_TESTNET_ACTIVE_FACTORY, ARC_TESTNET_FACTORY_INDEXES } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
@@ -21,6 +21,9 @@ const curveConfigAbi = [
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const METADATA_TIMEOUT_MS = 2_000;
 const MAX_METADATA_BYTES = 2 * 1024 * 1024;
+const ACTIVE_FACTORY_INDEXES = ARC_TESTNET_FACTORY_INDEXES.filter(
+  (factory) => factory.address.toLowerCase() === ARC_TESTNET_ACTIVE_FACTORY.toLowerCase(),
+);
 const verifiedBootstrapByAddress = new Map(
   getVerifiedBootstrapTokens().map((token) => [token.address.toLowerCase(), token]),
 );
@@ -109,7 +112,7 @@ function createPendingToken(launch: ClientLaunch, creatorLaunches: number): Toke
       graduated: 0,
       flagged: 0,
       totalVolume: 0,
-      totalFees: 25,
+      totalFees: 10,
       verified: false,
     },
     socials: {},
@@ -240,7 +243,7 @@ async function hydrateLaunch(launch: ClientLaunch, creatorLaunches: number): Pro
     graduated: 0,
     flagged: 0,
     totalVolume: 0,
-    totalFees: 25,
+    totalFees: 10,
     verified: false,
   };
   const launchPrice = virtualUsdcReserve / initialReserve;
@@ -290,7 +293,7 @@ export async function loadClientTokenIndex(
   onLaunchesLoaded?: (snapshot: { tokens: TokenData[]; indexedBlock: string; generatedAt: string }) => void,
 ) {
   const indexedBlockPromise = publicClient.getBlockNumber();
-  const logGroups = await Promise.all(ARC_TESTNET_FACTORY_INDEXES.map((factory) => getArcscanLogs({
+  const logGroups = await Promise.all(ACTIVE_FACTORY_INDEXES.map((factory) => getArcscanLogs({
     address: factory.address,
     fromBlock: factory.fromBlock,
     toBlock: "latest",
@@ -299,7 +302,7 @@ export async function loadClientTokenIndex(
   const launches: ClientLaunch[] = logGroups.flatMap((logs, factoryIndex) => logs.map((log) => {
     const decoded = decodeEventLog({ abi: [tokenLaunchedEvent], data: log.data, topics: log.topics });
     return {
-      factory: ARC_TESTNET_FACTORY_INDEXES[factoryIndex].address,
+      factory: ACTIVE_FACTORY_INDEXES[factoryIndex].address,
       token: decoded.args.token,
       curve: decoded.args.curve,
       creator: decoded.args.creator,

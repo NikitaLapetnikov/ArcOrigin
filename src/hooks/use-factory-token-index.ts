@@ -9,6 +9,7 @@ import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tok
 import type { TokenData } from "@/lib/types";
 
 const TOKEN_INDEX_CACHE_KEY = "arcorigin:5042002:factory-index-v7";
+const LAST_CONFIRMED_LAUNCH_KEY = "arcorigin:5042002:last-launch-confirmed-at";
 const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
 const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
 
@@ -250,6 +251,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
   }, [allowCache, includeMarketData]);
 
   useEffect(() => {
+    let forceInitialRefresh = true;
     if (allowCache) {
       const cached = readCachedIndex();
       if (cached) {
@@ -257,9 +259,11 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         setIsCached(true);
         setIsPartial(false);
         setCachedAt(cached.savedAt);
+        const lastConfirmedLaunchAt = Number(window.localStorage.getItem(LAST_CONFIRMED_LAUNCH_KEY) ?? 0);
+        forceInitialRefresh = cached.tokens.length === 0 || lastConfirmedLaunchAt > cached.savedAt;
       }
     }
-    void refresh(false);
+    void refresh(forceInitialRefresh);
     const handleRefresh = () => void refresh(true);
     window.addEventListener("arcforge:launch-confirmed", handleRefresh);
     window.addEventListener("arcforge:trade-confirmed", handleRefresh);
