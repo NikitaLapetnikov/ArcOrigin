@@ -308,7 +308,7 @@ x · y          = constant before each trade`}</CodeBlock>
             Governance scripts and tests are prepared, but ownership has not been transferred. Final Safe signers, Testnet schedule/cancel/execute exercises, an independent audit, and exact mainnet deployment verification are required first.
           </Callout>
           <a
-            href="https://github.com/VadymManiuk/ArcForge/blob/main/docs/MAINNET_GOVERNANCE_RUNBOOK.md"
+            href="https://github.com/NikitaLapetnikov/ArcOrigin/blob/main/docs/MAINNET_GOVERNANCE_RUNBOOK.md"
             target="_blank"
             rel="noreferrer"
             className="inline-flex w-fit items-center gap-2 text-sm font-medium text-cyan hover:underline"
@@ -343,7 +343,7 @@ x · y          = constant before each trade`}</CodeBlock>
             Independent audit, verified reproducible deployments, execution of the prepared multisig/timelock handoff, a hardened V6 fee/emergency-control decision, durable reorg-aware indexing, monitoring, and edge rate limiting.
           </Callout>
           <a
-            href="https://github.com/VadymManiuk/ArcForge/blob/main/SECURITY.md"
+            href="https://github.com/NikitaLapetnikov/ArcOrigin/blob/main/SECURITY.md"
             target="_blank"
             rel="noreferrer"
             className="inline-flex w-fit items-center gap-2 text-sm font-medium text-cyan hover:underline"
