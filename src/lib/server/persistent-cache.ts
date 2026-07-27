@@ -46,8 +46,11 @@ export async function readPersistentSnapshot<T>(key: string): Promise<T | null> 
 export async function writePersistentSnapshot(key: string, value: unknown, ttlSeconds = 86_400) {
   try {
     const client = await redisClient();
-    if (client) await client.set(key, JSON.stringify(value), { EX: ttlSeconds });
+    if (!client) return false;
+    await client.set(key, JSON.stringify(value), { EX: ttlSeconds });
+    return true;
   } catch {
     // Persistent caching must never make an onchain request fail.
+    return false;
   }
 }
