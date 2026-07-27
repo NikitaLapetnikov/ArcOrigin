@@ -22,6 +22,7 @@ import { ARC_TESTNET_CONTRACTS, arcTestnet } from "@/lib/chains";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import { bondingCurveAbi, erc20Abi } from "@/lib/contracts";
 import type { TokenData } from "@/lib/types";
+import { tickerLabel } from "@/lib/utils";
 import { ArcscanLink, Badge, Button } from "./ui";
 
 type Side = "Buy" | "Sell";
@@ -130,7 +131,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const inputDecimals = side === "Buy" ? 6 : 18;
-  const inputSymbol = side === "Buy" ? "USDC" : token.ticker;
+  const inputSymbol = side === "Buy" ? "USDC" : tickerLabel(token.ticker);
   const isPending = status !== "idle";
   const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
   const buyDisabled = side === "Buy" && token.status === "Graduated" && !permanentLiquidityMode;
@@ -442,7 +443,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
           ? `${side} pending…`
           : buyDisabled
             ? "Buying closed at graduation"
-            : `${side} ${token.ticker}`;
+            : `${side} ${tickerLabel(token.ticker)}`;
 
   const balanceLabel = !address
     ? "Connect wallet"
@@ -454,11 +455,11 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
           ? balanceError ? "Balance unavailable · Retry" : "Balance unavailable"
           : `Balance ${displayUnits(activeBalance, inputDecimals)} ${inputSymbol}`;
   const outputDecimals = side === "Buy" ? 18 : 6;
-  const outputSymbol = side === "Buy" ? token.ticker : "USDC";
+  const outputSymbol = side === "Buy" ? tickerLabel(token.ticker) : "USDC";
 
   return <div id="trade-panel" className="panel scroll-mt-28 rounded-xl p-4 shadow-none">
     <div className="-mx-4 -mt-4 mb-4 flex items-center justify-between border-b border-line bg-black/10 px-4 py-3">
-      <div><p className="text-base font-semibold text-white">Trade {token.ticker}</p><p className="mt-0.5 text-[13px] font-medium uppercase tracking-[.08em] text-slate-500">Bonding curve</p></div>
+      <div><p className="text-base font-semibold text-white">Trade {tickerLabel(token.ticker)}</p><p className="mt-0.5 text-[13px] font-medium uppercase tracking-[.08em] text-slate-500">Bonding curve</p></div>
       <p className="text-[13px] font-medium uppercase tracking-[.08em] text-slate-500">Arc Testnet</p>
     </div>
     <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/25 p-1">{(["Buy", "Sell"] as const).map((item) => <button key={item} disabled={isPending} onClick={() => setSide(item)} className={`h-9 rounded-lg text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${side === item ? item === "Buy" ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300" : "text-slate-500"}`}>{item}</button>)}</div>
@@ -524,6 +525,6 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       ? permanentLiquidityMode
         ? "Graduated into a permanent real-reserve AMM. Both buys and sells continue."
         : "Buying is closed on this legacy curve after graduation. Selling remains available while the curve has USDC reserves."
-      : `Trades execute against the deployed ${token.ticker} curve. Your wallet may request an exact-token approval first.`}</p>
+      : `Trades execute against the deployed ${tickerLabel(token.ticker)} curve. Your wallet may request an exact-token approval first.`}</p>
   </div>;
 }

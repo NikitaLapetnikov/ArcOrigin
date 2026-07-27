@@ -17,7 +17,7 @@ import {
   validateTokenMetadataInput,
   type TokenMetadataInput,
 } from "@/lib/token-metadata";
-import { shortAddress } from "@/lib/utils";
+import { shortAddress, tickerLabel } from "@/lib/utils";
 import { Button, LinkButton, WarningBox } from "./ui";
 
 type FormData = {
@@ -457,7 +457,7 @@ export function LaunchForm() {
     return <div className="panel mx-auto max-w-2xl p-8 text-center md:p-10">
       <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-cyan/10 text-cyan"><Rocket /></div>
       <p className="eyebrow mt-6">Onchain launch confirmed</p>
-      <h2 className="mt-3 text-3xl font-semibold text-white">{form.name} · {form.ticker.toUpperCase()}</h2>
+      <h2 className="mt-3 text-3xl font-semibold text-white">{form.name} · {tickerLabel(form.ticker.toUpperCase())}</h2>
       <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">Your token metadata is pinned to public IPFS and the fixed-supply token with its USDC curve is deployed on Arc Testnet.</p>
       <dl className="mx-auto mt-6 grid max-w-lg gap-3 rounded-xl border border-line bg-black/25 p-4 text-left text-xs">
         <ResultRow label="Token" address={result.token} />
@@ -550,7 +550,7 @@ export function LaunchForm() {
             {imagePreview ? <span role="img" aria-label="Token preview" className="size-full bg-cover bg-center" style={{ backgroundImage: `url(${imagePreview})` }} /> : form.ticker.slice(0, 2) || "—"}
           </div>
           <p className="mt-6 truncate text-2xl font-semibold tracking-[-.03em] text-white">{form.name || "Your token"}</p>
-          <p className="mt-1 font-mono text-xs text-slate-500">{form.ticker || "TICKER"}</p>
+          <p className="mt-1 font-mono text-xs text-slate-500">{form.ticker ? tickerLabel(form.ticker) : "$TICKER"}</p>
           {form.description && <p className="mt-4 line-clamp-3 text-xs leading-5 text-slate-500">{form.description}</p>}
           {(form.website || form.x || form.telegram) && <div className="mt-4 flex flex-wrap gap-2">{form.website && <PreviewTag icon={<Globe className="size-3" />} label="Website" />}{form.x && <PreviewTag icon={<AtSign className="size-3" />} label="X" />}{form.telegram && <PreviewTag icon={<Send className="size-3" />} label="Telegram" />}</div>}
           <dl className="mt-6 grid gap-3 border-t border-line pt-5 text-xs">

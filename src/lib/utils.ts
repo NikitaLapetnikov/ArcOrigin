@@ -3,6 +3,10 @@ import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 export function shortAddress(value: string, size = 4) { return `${value.slice(0, size + 2)}…${value.slice(-size)}`; }
+export function tickerLabel(value: string) {
+  const ticker = value.trim().replace(/^\$+/, "");
+  return ticker ? `$${ticker}` : "$";
+}
 export function money(value: number, compact = false) {
   const sign = value < 0 ? "-" : "";
   const absolute = Math.abs(value);

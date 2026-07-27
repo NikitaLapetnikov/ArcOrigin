@@ -6,7 +6,7 @@ import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { readWatchlist } from "@/components/watchlist-button";
 import { calculateMomentumScore } from "@/lib/scoring";
 import type { TokenData, Trade } from "@/lib/types";
-import { money, number, utcDateTime } from "@/lib/utils";
+import { money, number, tickerLabel, utcDateTime } from "@/lib/utils";
 import { Badge, TokenIcon } from "@/components/ui";
 
 type DiscoveryTab = "buys" | "new" | "old" | "trending" | "graduated" | "marketCap" | "volume" | "watchlist";
@@ -119,14 +119,14 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
       {activeTab === "buys" && visibleBuys.map(({ token, trade }, index) => <Link
         href={`/tokens/${token.address}`}
         key={`${token.address}-${trade.txHash}-${index}`}
-        className="group min-w-0 rounded-xl border border-line bg-black/15 p-3 transition hover:-translate-y-0.5 hover:border-cyan/25 hover:bg-white/[.025]"
+        className="group min-w-0 rounded-2xl border border-line bg-black/15 p-3.5 transition hover:-translate-y-0.5 hover:border-cyan/25 hover:bg-white/[.025]"
       >
         <TokenIcon label={token.icon} image={token.image} className="aspect-square size-auto w-full rounded-xl text-3xl" />
-        <div className="mt-3 flex items-start justify-between gap-3">
-          <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{token.name}</p><p className="mt-1 font-mono text-[10px] text-slate-500">{token.ticker}</p></div>
+        <div className="mt-4 flex items-start justify-between gap-3">
+          <div className="min-w-0"><p className="truncate text-base font-semibold tracking-[-.02em] text-white">{token.name}</p><p className="mt-1.5 font-mono text-xs text-slate-400">{tickerLabel(token.ticker)}</p></div>
           <Badge tone="good">Buy</Badge>
         </div>
-        <div className="mt-4 flex items-end justify-between gap-3 border-t border-line/70 pt-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-emerald-300">+{number(trade.tokens)} {token.ticker}</p><p className="mt-1 text-xs text-slate-500">for {money(trade.usdc)}</p></div><p className="shrink-0 text-[10px] text-slate-500">{utcDateTime(trade.timestamp)}</p></div>
+        <div className="mt-4 flex items-end justify-between gap-3 border-t border-line/70 pt-3.5"><div className="min-w-0"><p className="truncate text-[15px] font-semibold text-emerald-300">+{number(trade.tokens)} {tickerLabel(token.ticker)}</p><p className="mt-1 text-[13px] text-slate-500">for {money(trade.usdc)}</p></div><p className="shrink-0 text-[11px] text-slate-500">{utcDateTime(trade.timestamp)}</p></div>
       </Link>)}
 
       {activeTab !== "buys" && visibleTokens.map((token, index) => <TokenMarketCard
@@ -149,29 +149,29 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
 function TokenMarketCard({ token, rank }: { token: TokenData; rank?: number }) {
   return <Link
     href={`/tokens/${token.address}`}
-    className="group min-w-0 rounded-xl border border-line bg-black/15 p-3 transition hover:-translate-y-0.5 hover:border-cyan/25 hover:bg-white/[.025]"
+    className="group min-w-0 rounded-2xl border border-line bg-black/15 p-3.5 transition hover:-translate-y-0.5 hover:border-cyan/25 hover:bg-white/[.025]"
   >
     <div className="relative">
       <TokenIcon label={token.icon} image={token.image} className="aspect-square size-auto w-full rounded-xl text-3xl"/>
       {rank && <span className="absolute left-2 top-2 rounded-lg border border-white/10 bg-black/70 px-2 py-1 font-mono text-[10px] text-slate-200 backdrop-blur-md">#{rank}</span>}
     </div>
-    <div className="mt-3 flex items-start justify-between gap-3">
+    <div className="mt-4 flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-white">{token.name}</p>
-        <p className="mt-1 font-mono text-[10px] text-slate-500">{token.ticker}</p>
+        <p className="truncate text-base font-semibold tracking-[-.02em] text-white">{token.name}</p>
+        <p className="mt-1.5 font-mono text-xs text-slate-400">{tickerLabel(token.ticker)}</p>
       </div>
-      <ArrowUpRight className="size-4 shrink-0 text-slate-600 transition group-hover:text-cyan"/>
+      <ArrowUpRight className="mt-0.5 size-[18px] shrink-0 text-slate-600 transition group-hover:text-cyan"/>
     </div>
-    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line/70 pt-3">
+    <div className="mt-4 grid grid-cols-2 gap-4 border-t border-line/70 pt-3.5">
       <CardMetric label="Market cap" value={money(token.marketCap, true)} />
       <CardMetric label="Volume" value={money(token.volume24h, true)} />
     </div>
-    <p className="mt-3 truncate text-[10px] text-slate-600">{launchTime(token)}</p>
+    <p className="mt-3.5 truncate text-[11px] text-slate-500">{launchTime(token)}</p>
   </Link>;
 }
 
 function CardMetric({ label, value }: { label: string; value: string }) {
-  return <div className="min-w-0"><p className="truncate text-[8px] font-medium uppercase tracking-[.07em] text-slate-600">{label}</p><p className="mt-1 truncate text-[11px] font-medium text-slate-200">{value}</p></div>;
+  return <div className="min-w-0"><p className="truncate text-[10px] font-medium uppercase tracking-[.07em] text-slate-500">{label}</p><p className="mt-1.5 truncate text-sm font-semibold text-slate-100">{value}</p></div>;
 }
 
 function EmptyActivity({ message }: { message: string }) {

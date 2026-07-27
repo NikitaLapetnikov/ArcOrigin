@@ -6,7 +6,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react";
 import { readWatchlist } from "@/components/watchlist-button";
 import { calculateMomentumScore } from "@/lib/scoring";
 import type { TokenData } from "@/lib/types";
-import { money, number, utcDateTime } from "@/lib/utils";
+import { money, number, tickerLabel, utcDateTime } from "@/lib/utils";
 import { Badge, Button, Progress, TokenIcon } from "./ui";
 
 const filters = ["All", "Watchlist", "New", "Trending", "Graduating", "High volume"] as const;
@@ -128,7 +128,7 @@ export function TokenTable({
         const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
         return <Link key={token.address} href={`/tokens/${token.address}`} className="min-w-0 rounded-xl border border-line bg-black/15 p-4 transition active:border-cyan/40">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span></div></div></div>
+            <div className="flex min-w-0 items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{tickerLabel(token.ticker)}</span></div></div></div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-xs sm:grid-cols-4">
             <MobileMetric label="Created" value={createdLabel(token)}/>
@@ -160,7 +160,7 @@ export function TokenTable({
           const awaitingLive = onchainState === "unavailable" && token.price <= 0;
           const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
           return <tr key={token.address} className="border-b border-line/60 transition last:border-0 hover:bg-white/[.025]">
-            <td className="px-4 py-3"><Link href={`/tokens/${token.address}`} className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div><p className="font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span><span className="text-[10px] text-slate-600">{token.status}</span></div></div></Link></td>
+            <td className="px-4 py-3"><Link href={`/tokens/${token.address}`} className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div><p className="font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{tickerLabel(token.ticker)}</span><span className="text-[10px] text-slate-600">{token.status}</span></div></div></Link></td>
             {!compact && <td className="whitespace-nowrap text-slate-400">{createdLabel(token)}</td>}
             <td>{awaitingLive ? <span className="text-slate-600">—</span> : <><p className="text-slate-200">{money(token.price)}</p><button type="button" onClick={() => changeSort("priceChange24h")} className={token.priceChange24h >= 0 ? "mt-1 text-emerald-400" : "mt-1 text-rose-400"}>Since launch {token.priceChange24h > 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%</button></>}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.marketCap, true)}</td>

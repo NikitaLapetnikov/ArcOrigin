@@ -33,7 +33,7 @@ import type {
   UTCTimestamp,
 } from "lightweight-charts";
 import type { ChartPoint, Trade } from "@/lib/types";
-import { money } from "@/lib/utils";
+import { money, tickerLabel } from "@/lib/utils";
 
 const timeframes = ["1s", "30s", "1m", "5m", "15m", "1h", "4h", "1d"] as const;
 export type ChartTimeframe = (typeof timeframes)[number];
@@ -689,7 +689,7 @@ export function TokenChart({
     {screenshotDataUrl && <div role="dialog" aria-label="Chart screenshot preview" className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4 backdrop-blur-sm">
       <div className="w-full max-w-5xl rounded-2xl border border-line bg-[#11161a] p-4 shadow-2xl">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div><p className="text-sm font-semibold text-white">Chart screenshot</p><p className="mt-1 text-[10px] text-slate-500">{ticker} · {timeframe} · {displayMode}</p></div>
+          <div><p className="text-sm font-semibold text-white">Chart screenshot</p><p className="mt-1 text-[10px] text-slate-500">{tickerLabel(ticker)} · {timeframe} · {displayMode}</p></div>
           <button type="button" onClick={() => setScreenshotDataUrl("")} className="h-8 rounded-lg px-3 text-xs text-slate-400 transition hover:bg-white/[.05] hover:text-white">Close</button>
         </div>
         {/* The source is a locally generated canvas data URL, never remote user content. */}

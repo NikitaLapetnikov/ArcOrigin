@@ -11,7 +11,7 @@ import { WatchlistButton } from "@/components/watchlist-button";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
 import { EXPLORER_URL } from "@/lib/chains";
-import { number, shortAddress, utcDateTime } from "@/lib/utils";
+import { number, shortAddress, tickerLabel, utcDateTime } from "@/lib/utils";
 
 export function IndexedTokenDetail({ address }: { address: string }) {
   const [copied, setCopied] = useState(false);
@@ -62,7 +62,7 @@ export function IndexedTokenDetail({ address }: { address: string }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <h1 className="truncate text-2xl font-semibold tracking-[-.04em] text-white sm:text-[28px]">{token.name}</h1>
-            <span className="font-mono text-sm text-slate-400">{token.ticker}</span>
+            <span className="font-mono text-sm text-slate-400">{tickerLabel(token.ticker)}</span>
             <Badge tone="cyan">{token.status}</Badge>
           </div>
           <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-400">

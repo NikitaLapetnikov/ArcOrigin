@@ -5,7 +5,7 @@ import { Check, Copy, Download, Image as ImageIcon, X } from "lucide-react";
 import { useAccount } from "wagmi";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import type { TokenData } from "@/lib/types";
-import { money, shortAddress } from "@/lib/utils";
+import { money, shortAddress, tickerLabel } from "@/lib/utils";
 import { Button } from "./ui";
 
 type PnlMetrics = {
@@ -173,7 +173,7 @@ function drawShareCard(
   context.fillText(token.name, 202, 199);
   context.fillStyle = "#84919f";
   context.font = "500 21px ui-monospace, monospace";
-  context.fillText(`${token.ticker} · ${wallet ? shortAddress(wallet) : "WALLET UNAVAILABLE"}`, 202, 235);
+  context.fillText(`${tickerLabel(token.ticker)} · ${wallet ? shortAddress(wallet) : "WALLET UNAVAILABLE"}`, 202, 235);
 
   context.fillStyle = "#84919f";
   context.font = "600 16px ui-monospace, monospace";
@@ -301,7 +301,7 @@ export function PnlShareCard({ token, snapshot }: { token: TokenData; snapshot: 
                       style={{ backgroundImage: `url("${token.image}")` }}
                     /> : token.icon}
                   </div>
-                  <div><p className="text-sm font-semibold text-white sm:text-xl">{token.name}</p><p className="font-mono text-[8px] text-slate-500 sm:text-[10px]">{token.ticker}</p></div>
+                  <div><p className="text-sm font-semibold text-white sm:text-xl">{token.name}</p><p className="font-mono text-[8px] text-slate-500 sm:text-[10px]">{tickerLabel(token.ticker)}</p></div>
                 </div>
                 <p className="mt-5 font-mono text-[7px] uppercase tracking-[.15em] text-slate-500 sm:text-[9px]">Estimated onchain PnL</p>
                 <p className={`mt-1 text-4xl font-bold tracking-tight sm:text-6xl ${positive ? "text-emerald-300" : "text-rose-300"}`}>{positive ? "+" : ""}{metrics.pnlPercent.toFixed(2)}%</p>

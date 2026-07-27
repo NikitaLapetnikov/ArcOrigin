@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import type { CandleType, Chart as KLineChart, KLineData, Overlay, OverlayCreate, Period } from "klinecharts";
 import type { ChartPoint, Trade } from "@/lib/types";
-import { money } from "@/lib/utils";
+import { money, tickerLabel } from "@/lib/utils";
 import { buildCandles, type ChartTimeframe } from "@/components/token-chart";
 
 const timeframes = ["1s", "30s", "1m", "5m", "15m", "1h", "4h", "1d"] as const;
@@ -83,6 +83,7 @@ export function KLineTokenChart({
   tokenAddress = ticker,
   totalSupply = 1_000_000_000,
 }: TokenChartProps) {
+  const displayTicker = tickerLabel(ticker);
   const [timeframe, setTimeframe] = useState<ChartTimeframe>("1m");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("Price");
   const [activeIndicators, setActiveIndicators] = useState<Set<IndicatorName>>(new Set(["VOL"]));
@@ -123,13 +124,13 @@ export function KLineTokenChart({
     dataRef.current = candles;
     const chart = chartRef.current;
     if (!chart) return;
-    chart.setSymbol({ ticker, pricePrecision: precisionFor(latest?.close ?? 0.00000001), volumePrecision: 2 });
+    chart.setSymbol({ ticker: displayTicker, pricePrecision: precisionFor(latest?.close ?? 0.00000001), volumePrecision: 2 });
     chart.setPeriod(periodFor(compact ? "1h" : timeframe));
     chart.resetData();
     chart.setBarSpace(compact ? 9 : DEFAULT_BAR_SPACE);
     chart.setOffsetRightDistance(RIGHT_EDGE_DISTANCE);
     window.requestAnimationFrame(() => chart.scrollToRealTime());
-  }, [candles, compact, latest?.close, ticker, timeframe]);
+  }, [candles, compact, displayTicker, latest?.close, timeframe]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -201,7 +202,7 @@ export function KLineTokenChart({
       chart.setDataLoader({
         getBars: ({ callback }) => callback(dataRef.current, { backward: false, forward: false }),
       });
-      chart.setSymbol({ ticker, pricePrecision: 8, volumePrecision: 2 });
+      chart.setSymbol({ ticker: displayTicker, pricePrecision: 8, volumePrecision: 2 });
       chart.setPeriod(periodFor(compact ? "1h" : "1m"));
       chart.setBarSpace(compact ? 9 : DEFAULT_BAR_SPACE);
       chart.setOffsetRightDistance(RIGHT_EDGE_DISTANCE);
@@ -220,7 +221,7 @@ export function KLineTokenChart({
       chartRef.current = null;
       indicatorIdsRef.current = { MA: null, EMA: null, BOLL: null, SAR: null, VOL: null, MACD: null, RSI: null, KDJ: null };
     };
-  }, [compact, ticker]);
+  }, [compact, displayTicker]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -445,7 +446,7 @@ export function KLineTokenChart({
     <div className="flex min-h-10 items-center justify-end border-t border-line bg-[#0e1114] px-3 py-1"><div className="flex items-center gap-1"><ChartButton onClick={moveToLatest}>Latest</ChartButton><IconButton label="Reset chart" onClick={fit}><Focus className="size-3.5" /></IconButton></div></div>
     {snapshot && <div role="dialog" aria-label="Chart screenshot preview" className="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4">
       <div className="w-full max-w-5xl rounded-2xl border border-line bg-[#11161a] p-4">
-        <div className="mb-3 flex justify-between"><b className="text-white">{ticker} chart</b><button type="button" onClick={() => setSnapshot("")} className="text-xs text-slate-400">Close</button></div>
+        <div className="mb-3 flex justify-between"><b className="text-white">{displayTicker} chart</b><button type="button" onClick={() => setSnapshot("")} className="text-xs text-slate-400">Close</button></div>
         {/* The generated source is an in-memory canvas data URL, not untrusted remote content. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={snapshot} alt={`${ticker} onchain chart`} className="max-h-[70vh] w-full rounded-xl object-contain" />
