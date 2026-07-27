@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { Copy, ExternalLink, ImagePlus, LogOut, Pencil, RefreshCw, Share2, Trash2, UserRound, X } from "lucide-react";
 import { formatUnits, type Address } from "viem";
 import { useAccount, useDisconnect, useReadContracts, useWalletClient } from "wagmi";
@@ -369,6 +376,7 @@ function PortfolioChart({
   currentValue: number;
   onRange: (range: PortfolioRange) => void;
 }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const width = 1_000;
   const height = 250;
   const plot = { left: 18, right: 82, top: 22, bottom: 36 };
@@ -391,6 +399,39 @@ function PortfolioChart({
   const changePercent = first && first.value > 0 ? change / first.value * 100 : null;
   const yTicks = [maximum, (maximum + minimum) / 2, minimum];
   const xTicks = points.length > 1 ? [points[0], points[Math.floor((points.length - 1) / 2)], points[points.length - 1]] : [];
+  const activePoint = activeIndex === null ? null : points[activeIndex];
+  const activeX = activePoint ? xFor(activeIndex ?? 0) : 0;
+  const activeY = activePoint ? yFor(activePoint.value) : 0;
+  const activeXPercent = activeX / width * 100;
+  const activeYPercent = activeY / height * 100;
+  const tooltipXPercent = Math.max(12, Math.min(88, activeXPercent));
+
+  useEffect(() => {
+    setActiveIndex(null);
+  }, [points, range]);
+
+  function selectNearestPoint(clientX: number, element: HTMLDivElement) {
+    if (points.length < 2) return;
+    const bounds = element.getBoundingClientRect();
+    const plotLeft = bounds.width * plot.left / width;
+    const plotRight = bounds.width * plot.right / width;
+    const usableWidth = Math.max(1, bounds.width - plotLeft - plotRight);
+    const progress = Math.max(0, Math.min(1, (clientX - bounds.left - plotLeft) / usableWidth));
+    setActiveIndex(Math.round(progress * (points.length - 1)));
+  }
+
+  function moveCursor(event: ReactPointerEvent<HTMLDivElement>) {
+    selectNearestPoint(event.clientX, event.currentTarget);
+  }
+
+  function moveCursorWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (points.length < 2 || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+    event.preventDefault();
+    setActiveIndex((current) => {
+      const startingIndex = current ?? points.length - 1;
+      return Math.max(0, Math.min(points.length - 1, startingIndex + (event.key === "ArrowLeft" ? -1 : 1)));
+    });
+  }
 
   return <div className="mt-7 overflow-hidden rounded-2xl border border-line bg-black/15">
     <div className="flex flex-col gap-4 border-b border-line/80 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -416,7 +457,17 @@ function PortfolioChart({
         >{option}</button>)}
       </div>
     </div>
-    <div className="relative h-[260px] w-full sm:h-[300px]">
+    <div
+      className="relative h-[260px] w-full cursor-crosshair touch-pan-y select-none outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan/40 sm:h-[300px]"
+      tabIndex={points.length > 1 ? 0 : -1}
+      aria-label={`${range} portfolio chart. Move the pointer or use the left and right arrow keys to inspect balance over time.`}
+      onPointerDown={moveCursor}
+      onPointerMove={moveCursor}
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "touch") setActiveIndex(null);
+      }}
+      onKeyDown={moveCursorWithKeyboard}
+    >
       {points.length > 1 ? <svg className="absolute inset-0 size-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${range} portfolio value line chart`}>
         <defs>
           <linearGradient id="portfolio-area-gradient" x1="0" y1="0" x2="0" y2="1">
@@ -440,12 +491,49 @@ function PortfolioChart({
         </text>)}
         <path d={areaPath} fill="url(#portfolio-area-gradient)" />
         <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" filter="url(#portfolio-line-glow)" />
+        {activePoint && <g aria-hidden="true">
+          <line
+            x1={activeX}
+            x2={activeX}
+            y1={plot.top}
+            y2={height - plot.bottom}
+            stroke="var(--text-secondary)"
+            strokeWidth="1"
+            strokeOpacity=".7"
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={plot.left}
+            x2={width - plot.right}
+            y1={activeY}
+            y2={activeY}
+            stroke="var(--text-tertiary)"
+            strokeWidth="1"
+            strokeDasharray="3 5"
+            strokeOpacity=".42"
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle cx={activeX} cy={activeY} r="5.5" fill="var(--accent)" stroke="var(--surface-1)" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+        </g>}
         {last && <circle cx={xFor(points.length - 1)} cy={yFor(last.value)} r="4.5" fill="var(--accent)" stroke="var(--surface-1)" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
       </svg> : <div className="absolute inset-0 grid place-items-center px-6 text-center">
         <div>
           <p className="text-sm font-semibold text-slate-300">No confirmed history for this period</p>
           <p className="mt-2 text-xs font-medium text-slate-500">The chart uses confirmed wallet trades and indexed onchain prices only.</p>
         </div>
+      </div>}
+      {activePoint && <div
+        className="pointer-events-none absolute z-10 min-w-[132px] rounded-xl border border-line bg-[#0b101a]/95 px-3 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,.38)] backdrop-blur-xl"
+        style={{
+          left: `${tooltipXPercent}%`,
+          top: `${Math.max(12, Math.min(88, activeYPercent))}%`,
+          transform: activeYPercent < 38 ? "translate(-50%, 14px)" : "translate(-50%, calc(-100% - 14px))",
+        }}
+        role="status"
+        aria-live="polite"
+      >
+        <p className="text-sm font-semibold tracking-[-.02em] text-white">{money(activePoint.value)}</p>
+        <p className="mt-1 whitespace-nowrap text-[11px] font-medium text-slate-400">{formatPortfolioTooltipTime(activePoint.timestamp)}</p>
       </div>}
     </div>
   </div>;
@@ -455,6 +543,16 @@ function formatPortfolioTime(timestamp: number, range: PortfolioRange) {
   return new Intl.DateTimeFormat("en-GB", range === "1D"
     ? { hour: "2-digit", minute: "2-digit", hour12: false }
     : { day: "2-digit", month: "short" }).format(new Date(timestamp * 1_000));
+}
+
+function formatPortfolioTooltipTime(timestamp: number) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(timestamp * 1_000));
 }
 
 function PositionsTable({ positions, loading }: { positions: Position[]; loading: boolean }) {
