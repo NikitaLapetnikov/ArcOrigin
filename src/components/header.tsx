@@ -168,14 +168,14 @@ export function Header() {
 
   return <header className="sticky top-0 z-50 border-b border-line/70 bg-ink/90 shadow-[0_12px_40px_rgba(0,0,0,.18)] backdrop-blur-2xl">
     <div className="mx-auto flex h-[72px] w-full max-w-[1800px] items-center justify-between gap-5 px-3 sm:px-4">
-      <Link href="/" className="flex items-center gap-3 rounded-xl outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-cyan/50">
+      <Link href="/" className="flex shrink-0 items-center gap-2.5 rounded-xl outline-none transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-cyan/50">
         <Image
-          src="/brand/arcorigin-logo.png"
+          src="/brand/arcorigin-logo-v2.png"
           alt="ArcOrigin"
           width={48}
           height={48}
           priority
-          className="size-12 rounded-[14px] border border-cyan/25 bg-[#030713] object-contain p-[3px] shadow-[0_0_28px_rgba(57,189,248,.2)]"
+          className="size-12 rounded-[13px] border border-cyan/25 bg-[#030713] object-cover shadow-[0_0_28px_rgba(57,189,248,.2)]"
         />
         <span className="text-lg font-semibold tracking-[-.035em] text-white">ArcOrigin</span>
       </Link>

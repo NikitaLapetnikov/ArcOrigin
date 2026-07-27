@@ -15,8 +15,8 @@ export const metadata: Metadata = {
   title: { default: "ArcOrigin — Launch and discover tokens on Arc", template: "%s · ArcOrigin" },
   description: "Launch, discover, and trade Arc-native tokens through transparent USDC bonding curves on Arc Testnet.",
   icons: {
-    icon: [{ url: "/icon.png", type: "image/png", sizes: "192x192" }],
-    apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
+    icon: [{ url: "/brand/arcorigin-favicon-v2.png", type: "image/png", sizes: "192x192" }],
+    apple: [{ url: "/brand/arcorigin-apple-icon-v2.png", type: "image/png", sizes: "180x180" }],
   },
   openGraph: {
     type: "website",

@@ -20,7 +20,7 @@ export function Footer() {
       <div className="grid gap-10 px-6 py-8 md:grid-cols-[1.25fr_.7fr_.7fr_1.35fr] md:px-9 md:py-10">
         <div>
           <Link href="/" className="inline-flex items-center gap-3 text-white transition hover:opacity-85">
-            <Image src="/brand/arcorigin-logo.png" alt="" width={42} height={42} className="size-10 rounded-xl border border-cyan/20 bg-[#030713] object-contain p-[3px]" />
+            <Image src="/brand/arcorigin-logo-v2.png" alt="" width={42} height={42} className="size-10 rounded-xl border border-cyan/20 bg-[#030713] object-cover" />
             <span className="text-lg font-semibold tracking-[-.035em]">ArcOrigin</span>
           </Link>
           <p className="mt-4 max-w-[310px] text-[13px] leading-6 text-slate-400">
