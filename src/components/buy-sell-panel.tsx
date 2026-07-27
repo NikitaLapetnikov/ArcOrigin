@@ -70,10 +70,10 @@ function transactionError(error: unknown) {
   return message;
 }
 
-function displayUnits(value: bigint, decimals: number) {
+function displayUnits(value: bigint, decimals: number, maximumFractionDigits = decimals === 6 ? 6 : 4) {
   const parsed = Number(formatUnits(value, decimals));
   return Number.isFinite(parsed)
-    ? parsed.toLocaleString("en-US", { maximumFractionDigits: decimals === 6 ? 6 : 4 })
+    ? parsed.toLocaleString("en-US", { maximumFractionDigits })
     : "—";
 }
 
@@ -469,12 +469,12 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       <div className="flex items-center justify-between gap-3">
         <span className="text-[15px] font-medium text-slate-300">You receive</span>
         <span className="text-right font-mono text-base font-semibold text-white">
-          {quoteLoading ? "Reading…" : liveQuote ? `${displayUnits(liveQuote.output, outputDecimals)} ${outputSymbol}` : `— ${outputSymbol}`}
+          {quoteLoading ? "Reading…" : liveQuote ? `${displayUnits(liveQuote.output, outputDecimals, side === "Buy" ? 0 : 6)} ${outputSymbol}` : `— ${outputSymbol}`}
         </span>
       </div>
       <div className="mt-2 flex items-center justify-between gap-3 text-sm text-slate-400">
         <span>Minimum received</span>
-        <span className="font-mono">{liveQuote ? `${displayUnits(liveQuote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</span>
+        <span className="font-mono">{liveQuote ? `${displayUnits(liveQuote.minimumOutput, outputDecimals, side === "Buy" ? 0 : 6)} ${outputSymbol}` : "—"}</span>
       </div>
       {quoteError && <p role="status" className="mt-2 text-sm text-amber-300">{quoteError}</p>}
     </div>
