@@ -245,20 +245,20 @@ export function ProfileDashboard() {
 
   return <div className="container-shell py-8 md:py-12">
     <section className="overflow-hidden rounded-[22px] border border-line bg-panel shadow-glow">
-      <div className="flex flex-col gap-5 border-b border-line p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between">
+      <div className="grid gap-5 border-b border-line p-5 sm:p-7 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
         <div className="flex min-w-0 items-center gap-4">
           <ProfileAvatar avatar={profile?.avatar} size="large" />
           <div className="min-w-0">
-            <h1 className="break-safe text-xl font-semibold tracking-[-.035em] text-white sm:text-2xl">{profile?.username ? `@${profile.username}` : address}</h1>
-            <p className="mt-1 text-sm font-medium text-slate-400">{profile?.username ? address : "Your ArcOrigin profile"}</p>
+            <h1 className="truncate text-xl font-semibold tracking-[-.035em] text-white sm:text-[22px]" title={profile?.username ? `@${profile.username}` : address}>{profile?.username ? `@${profile.username}` : address}</h1>
+            <p className="mt-1 truncate text-sm font-medium text-slate-400" title={profile?.username ? address : undefined}>{profile?.username ? address : "Your ArcOrigin profile"}</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={openProfileEditor}><Pencil className="size-4" />Edit profile</Button>
-          <Button variant="secondary" onClick={() => void copyAddress()}><Copy className="size-4" />Copy address</Button>
-          <Button variant="secondary" onClick={() => void shareProfile()}><Share2 className="size-4" />Share</Button>
-          <a href={`${EXPLORER_URL}/address/${address}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border border-line bg-white/[.035] px-4 text-[13px] font-semibold text-slate-100 transition hover:bg-white/[.06]">Arcscan <ExternalLink className="size-4" /></a>
-          <Button variant="danger" onClick={() => disconnect()}><LogOut className="size-4" />Disconnect</Button>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center xl:flex-nowrap xl:justify-end">
+          <Button className="h-9 whitespace-nowrap px-3 text-xs" variant="secondary" onClick={openProfileEditor}><Pencil className="size-3.5" />Edit profile</Button>
+          <Button className="h-9 whitespace-nowrap px-3 text-xs" variant="secondary" onClick={() => void copyAddress()}><Copy className="size-3.5" />Copy address</Button>
+          <Button className="h-9 whitespace-nowrap px-3 text-xs" variant="secondary" onClick={() => void shareProfile()}><Share2 className="size-3.5" />Share</Button>
+          <a href={`${EXPLORER_URL}/address/${address}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] border border-line bg-white/[.035] px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/[.06]">Arcscan <ExternalLink className="size-3.5" /></a>
+          <Button className="h-9 whitespace-nowrap px-3 text-xs max-sm:col-span-2" variant="danger" onClick={() => disconnect()}><LogOut className="size-3.5" />Disconnect</Button>
         </div>
       </div>
       <div className="p-5 sm:p-7">
