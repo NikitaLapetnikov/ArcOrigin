@@ -458,9 +458,8 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const outputSymbol = side === "Buy" ? tickerLabel(token.ticker) : "USDC";
 
   return <div id="trade-panel" className="panel scroll-mt-28 rounded-xl p-4 shadow-none">
-    <div className="-mx-4 -mt-4 mb-4 flex items-center justify-between border-b border-line bg-black/10 px-4 py-3">
-      <div><p className="text-base font-semibold text-white">Trade {tickerLabel(token.ticker)}</p><p className="mt-0.5 text-[13px] font-medium uppercase tracking-[.08em] text-slate-500">Bonding curve</p></div>
-      <p className="text-[13px] font-medium uppercase tracking-[.08em] text-slate-500">Arc Testnet</p>
+    <div className="-mx-4 -mt-4 mb-3 flex min-h-12 items-center border-b border-line bg-black/10 px-4 py-3">
+      <p className="text-[15px] font-semibold tracking-[-.02em] text-white">Trade {tickerLabel(token.ticker)}</p>
     </div>
     <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/25 p-1">{(["Buy", "Sell"] as const).map((item) => <button key={item} disabled={isPending} onClick={() => setSide(item)} className={`h-9 rounded-lg text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${side === item ? item === "Buy" ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300" : "text-slate-500"}`}>{item}</button>)}</div>
     <div className="mt-5 flex items-center justify-between gap-3"><label className="label mb-0 text-[15px]">You pay</label><div className="flex items-center gap-3"><button type="button" disabled={!balanceError || balanceLoading} onClick={() => void refreshBalances()} className={`max-w-[170px] truncate text-sm disabled:cursor-default ${balanceError ? "text-cyan" : "text-slate-400"}`} title={balanceLabel}>{balanceLabel}</button><span className="flex items-center gap-1 text-sm text-slate-400"><Settings2 className="size-4" />{slippageValid ? `${slippage}%` : "Invalid"} · {priority}</span></div></div>
