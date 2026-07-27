@@ -3,4 +3,4 @@ import { TokenScreener } from "@/components/token-screener";
 import { PageIntro } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Token Screener" };
-export default function TokensPage() { return <><PageIntro compact eyebrow="Markets" title="Explore tokens"/><TokenScreener/></>; }
+export default function TokensPage() { return <><PageIntro compact title="Explore tokens"/><TokenScreener/></>; }
