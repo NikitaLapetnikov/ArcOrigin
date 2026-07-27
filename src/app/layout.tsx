@@ -43,7 +43,7 @@ export const viewport: Viewport = {
   themeColor: "#060811",
 };
 
-const themeBootstrap = `(()=>{try{const saved=localStorage.getItem("arcorigin-theme");const theme=saved==="light"||saved==="dark"?saved:matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme;const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==="light"?"#f4f7fb":"#060811"}catch{document.documentElement.dataset.theme="dark"}})();`;
+const themeBootstrap = `(()=>{try{const saved=localStorage.getItem("arcorigin-theme");const theme=saved==="light"||saved==="dark"?saved:matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";localStorage.setItem("arcorigin-theme",theme);document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme;const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==="light"?"#f0f7fc":"#060811"}catch{document.documentElement.dataset.theme="dark";document.documentElement.style.colorScheme="dark"}})();`;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
