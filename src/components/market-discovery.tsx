@@ -154,7 +154,6 @@ function TokenMarketCard({ token, rank }: { token: TokenData; rank?: number }) {
     <div className="relative">
       <TokenIcon label={token.icon} image={token.image} className="aspect-square size-auto w-full rounded-xl text-3xl"/>
       {rank && <span className="absolute left-2 top-2 rounded-lg border border-white/10 bg-black/70 px-2 py-1 font-mono text-[10px] text-slate-200 backdrop-blur-md">#{rank}</span>}
-      <div className="absolute bottom-2 right-2"><Badge tone={token.status === "Graduated" ? "good" : token.status === "Graduating soon" ? "warn" : "cyan"}>{token.status}</Badge></div>
     </div>
     <div className="mt-3 flex items-start justify-between gap-3">
       <div className="min-w-0">
