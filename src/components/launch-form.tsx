@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
-import { AtSign, Check, ChevronRight, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, Send, X } from "lucide-react";
+import { AtSign, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, Send, X } from "lucide-react";
 import { decodeEventLog, formatUnits, parseUnits, publicActions, type Address, type Hash } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, arcTestnet } from "@/lib/chains";
 import {
   DEFAULT_GRADUATION_THRESHOLD,
   DEFAULT_VIRTUAL_USDC_RESERVE,
-  calculateCurveEconomics,
 } from "@/lib/bonding-curve";
 import { bondingCurveAbi, erc20Abi, factoryAbi } from "@/lib/contracts";
 import {
@@ -19,7 +18,7 @@ import {
   type TokenMetadataInput,
 } from "@/lib/token-metadata";
 import { shortAddress } from "@/lib/utils";
-import { Button, LinkButton, Progress, WarningBox } from "./ui";
+import { Button, LinkButton, WarningBox } from "./ui";
 
 type FormData = {
   name: string;
@@ -49,12 +48,6 @@ const defaults: FormData = {
   telegram: "",
   developerBuy: "0",
 };
-const confirmations = [
-  "Fixed supply with no hidden mint",
-  "No blacklist or transfer tax",
-  "Token media and links will be public on IPFS",
-  "I understand the fee and launch risk",
-];
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const DEFAULT_LAUNCH_FEE = 10n * 10n ** 6n;
 const TOTAL_SUPPLY = 1_000_000_000n * 10n ** 18n;
@@ -127,13 +120,11 @@ async function optimizeImage(file: File) {
 
 export function LaunchForm() {
   const descriptionId = useId();
-  const [step, setStep] = useState(1);
   const [form, setForm] = useState(defaults);
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState("");
   const [imageError, setImageError] = useState("");
   const [imageProcessing, setImageProcessing] = useState(false);
-  const [checks, setChecks] = useState<string[]>([]);
   const [status, setStatus] = useState<TransactionStatus>("idle");
   const [storageStatus, setStorageStatus] = useState<"unknown" | "available" | "unavailable">("unknown");
   const [uploadedMetadata, setUploadedMetadata] = useState<UploadedMetadata | null>(null);
@@ -222,18 +213,11 @@ export function LaunchForm() {
     ? `${(tradingFees.buy / 100).toLocaleString()}% · 70/30 split`
     : `${(tradingFees.buy / 100).toLocaleString()}% buy · ${(tradingFees.sell / 100).toLocaleString()}% sell`;
   const totalWalletPayment = launchFeeAmount + developerBuyAmount;
-  const canContinue = step === 1
-    ? identityValid && !imageProcessing
-    : step === 2
-      ? Number(form.developerBuy) >= 0 && Number(form.developerBuy) <= developerBuyMax
-      : checks.length === confirmations.length;
+  const canLaunch = identityValid
+    && !imageProcessing
+    && Number(form.developerBuy) >= 0
+    && Number(form.developerBuy) <= developerBuyMax;
   const isPending = status !== "idle";
-  const curveEconomics = useMemo(() => calculateCurveEconomics({
-    totalSupply: 1_000_000_000,
-    creatorAllocationPercent: 0,
-    virtualUsdcReserve: DEFAULT_VIRTUAL_USDC_RESERVE,
-    graduationThreshold: DEFAULT_GRADUATION_THRESHOLD,
-  }), []);
 
   function update(key: keyof FormData, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -459,19 +443,13 @@ export function LaunchForm() {
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (step < 3) {
-      setStep((current) => current + 1);
-      return;
-    }
-    if (canContinue && !isPending) void launch();
+    if (canLaunch && !isPending) void launch();
   }
 
   function reset() {
     setResult(null);
-    setChecks([]);
     setForm(defaults);
     setUploadedMetadata(null);
-    setStep(1);
     removeImage();
   }
 
@@ -510,95 +488,81 @@ export function LaunchForm() {
               ? "Approving developer buy…"
               : status === "initial_buy"
                 ? "Executing developer buy…"
-            : step === 3 ? "Launch on Arc Testnet" : "Continue";
+                : "Launch token";
 
-  return <form onSubmit={submit} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-    <div className="panel p-5 md:p-7">
-      <div className="mb-7 flex items-center gap-3">
-        {[1, 2, 3].map((item) => <div key={item} className="flex flex-1 items-center gap-3">
-          <span className={`grid size-8 shrink-0 place-items-center rounded-full border text-xs ${step >= item ? "border-cyan/40 bg-cyan/10 text-cyan" : "border-line text-slate-600"}`}>{step > item ? <Check className="size-4" /> : item}</span>
-          {item < 3 && <div className="h-px flex-1 bg-line" />}
-        </div>)}
+  return <form onSubmit={submit} className="overflow-hidden rounded-3xl border border-line bg-panel shadow-glow lg:grid lg:grid-cols-[minmax(0,1fr)_380px]">
+    <div className="p-5 sm:p-8 lg:p-10">
+      <div className="mb-8">
+        <h1 className="text-[34px] font-semibold tracking-[-.045em] text-white sm:text-[40px]">Launch token</h1>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">Create a fixed-supply token with a USDC bonding curve.</p>
       </div>
 
-      {step === 1 && <div className="grid gap-5">
-        <div><p className="eyebrow">01 · Identity</p><h2 className="mt-2 text-xl font-semibold">Create the token profile</h2></div>
-        <div className="grid gap-5 md:grid-cols-[152px_minmax(0,1fr)]">
-          <ImagePicker preview={imagePreview} processing={imageProcessing} error={imageError} onSelect={selectImage} onRemove={removeImage} />
-          <div className="grid content-start gap-4">
-            <Field label="Token name" required value={form.name} onChange={(value) => update("name", value)} placeholder="Forge Network" maxLength={64} />
-            <Field label="Ticker" required value={form.ticker} onChange={(value) => update("ticker", value.toUpperCase())} placeholder="FORGE" maxLength={10} />
-          </div>
+      <div className="grid gap-5">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Name" required value={form.name} onChange={(value) => update("name", value)} placeholder="Token name" maxLength={64} />
+          <Field label="Ticker" required value={form.ticker} onChange={(value) => update("ticker", value.toUpperCase())} placeholder="SYMBOL" maxLength={10} />
         </div>
+
         <label htmlFor={descriptionId}>
           <span className="label">Description *</span>
-          <textarea id={descriptionId} className="input min-h-28 resize-y py-3" required value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="What is this token and what should holders know?" />
+          <textarea id={descriptionId} className="input min-h-28 resize-y py-3" required value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="A short description of the token" />
         </label>
-        <div className="grid gap-4 md:grid-cols-3">
-          <Field icon={<Globe className="size-4" />} label="Website (optional)" value={form.website} onChange={(value) => update("website", value)} placeholder="yourproject.xyz" maxLength={200} />
-          <Field icon={<AtSign className="size-4" />} label="X / Twitter (optional)" value={form.x} onChange={(value) => update("x", value)} placeholder="@yourproject" maxLength={200} />
-          <Field icon={<Send className="size-4" />} label="Telegram (optional)" value={form.telegram} onChange={(value) => update("telegram", value)} placeholder="t.me/community" maxLength={200} />
+
+        <div className="grid gap-5 md:grid-cols-[160px_minmax(0,1fr)]">
+          <ImagePicker preview={imagePreview} processing={imageProcessing} error={imageError} onSelect={selectImage} onRemove={removeImage} />
+          <div className="grid content-start gap-4">
+            <Field icon={<Globe className="size-4" />} label="Website (optional)" value={form.website} onChange={(value) => update("website", value)} placeholder="https://yourproject.xyz" maxLength={200} />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field icon={<AtSign className="size-4" />} label="X / Twitter (optional)" value={form.x} onChange={(value) => update("x", value)} placeholder="@yourproject" maxLength={200} />
+              <Field icon={<Send className="size-4" />} label="Telegram (optional)" value={form.telegram} onChange={(value) => update("telegram", value)} placeholder="t.me/community" maxLength={200} />
+            </div>
+          </div>
         </div>
-        {storageStatus === "unavailable" && <WarningBox>Media storage is not configured yet. Launching with a public token profile is temporarily disabled.</WarningBox>}
-        <p className="text-[11px] leading-5 text-slate-500">Images are resized to 1024 px and converted to WebP before upload. Metadata is public and content-addressed on IPFS; the contract stores only its immutable CID.</p>
-      </div>}
 
-      {step === 2 && <div className="grid gap-5">
-        <div><p className="eyebrow">02 · Economics</p><h2 className="mt-2 text-xl font-semibold">Configure transparent terms</h2></div>
-        <Field label="Developer buy · separate USDC payment (optional)" value={form.developerBuy} onChange={(value) => update("developerBuy", value)} type="number" min="0" max={String(developerBuyMax)} step="0.01" />
-        <p className="-mt-3 text-[11px] text-slate-500">Paid separately from the {launchFeeLabel} launch fee and executed as a real bonding-curve purchase after launch. Maximum {developerBuyMax.toLocaleString()} USDC, capped at 5% of supply.</p>
-        <dl className="grid gap-2 rounded-xl border border-line bg-black/20 p-4 text-xs">
-          <Row label="Launch fee" value={launchFeeLabel} />
-          <Row label="Developer buy payment" value={`${developerBuyAmount.toLocaleString()} USDC`} />
-          <div className="mt-1 border-t border-line pt-3"><Row label="Total wallet payment" value={`${totalWalletPayment.toLocaleString()} USDC`} /></div>
-        </dl>
-        <WarningBox>Graduation occurs at 10,000 real USDC. ArcOrigin launches use zero free creator allocation: creators receive tokens only through the optional paid developer buy. Supply is fixed and post-graduation liquidity is permanent.</WarningBox>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <EconomicsMetric label="Curve sold at graduation" value={`${curveEconomics.curveInventorySoldPercent.toFixed(0)}%`} />
-          <EconomicsMetric label="Permanent LP TVL" value={`$${curveEconomics.permanentLiquidityTvl.toLocaleString()}`} />
-          <EconomicsMetric label="Graduation FDV" value={`$${Math.round(curveEconomics.graduationMarketCap).toLocaleString()}`} />
+        <div>
+          <Field label="Developer buy (optional)" value={form.developerBuy} onChange={(value) => update("developerBuy", value)} type="number" min="0" max={String(developerBuyMax)} step="0.01" />
+          <p className="mt-2 text-[11px] leading-5 text-slate-500">Separate USDC purchase after launch · maximum {developerBuyMax.toLocaleString()} USDC or 5% of supply.</p>
+          {Number(form.developerBuy) > developerBuyMax && <p className="mt-2 text-xs text-rose-300">Reduce the developer buy to {developerBuyMax.toLocaleString()} USDC or less.</p>}
         </div>
-        <p className="text-[11px] leading-5 text-slate-500">The optimized curve graduates after 80% of its inventory is sold. Real USDC and price-matched tokens then become permanently locked two-sided liquidity with no withdrawal function.</p>
-      </div>}
 
-      {step === 3 && <div className="grid gap-5">
-        <div><p className="eyebrow">03 · Verify</p><h2 className="mt-2 text-xl font-semibold">Confirm launch conditions</h2></div>
-        <div className="grid gap-2">{confirmations.map((item) => <label key={item} className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-white/[.018] p-3 text-sm text-slate-300">
-          <input type="checkbox" className="accent-cyan" checked={checks.includes(item)} onChange={() => setChecks((current) => current.includes(item) ? current.filter((value) => value !== item) : [...current, item])} />
-          {item}
-        </label>)}</div>
-        <WarningBox>Your wallet will request a free metadata signature, the {launchFeeLabel} launch-fee approval, and the launch transaction. If developer buy is above zero, an additional curve approval and buy follow after launch.</WarningBox>
-      </div>}
+        <div className="grid overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2">
+          <PaymentSummary label="Launch fee" value={launchFeeLabel} />
+          <PaymentSummary label="Total wallet payment" value={`${totalWalletPayment.toLocaleString()} USDC`} />
+        </div>
 
-      {error && <p role="alert" className="mt-5 rounded-xl border border-rose-400/20 bg-rose-400/[.07] p-3 text-xs leading-5 text-rose-200">{error}</p>}
-      <div className="mt-8 flex justify-between border-t border-line pt-5">
-        {step > 1 ? <Button type="button" variant="ghost" disabled={isPending} onClick={() => setStep((current) => current - 1)}>Back</Button> : <span />}
-        <Button type="submit" disabled={!canContinue || isPending}>{isPending && <LoaderCircle className="size-4 animate-spin" />}{actionLabel}{!isPending && <ChevronRight className="size-4" />}</Button>
+        {storageStatus === "unavailable" && <WarningBox>Token metadata storage is temporarily unavailable. Launching is disabled until it reconnects.</WarningBox>}
+        {error && <p role="alert" className="rounded-xl border border-rose-400/20 bg-rose-400/[.07] p-3 text-xs leading-5 text-rose-200">{error}</p>}
+
+        <Button className="mt-1 h-12 w-full text-sm" type="submit" disabled={!canLaunch || isPending}>
+          {isPending && <LoaderCircle className="size-4 animate-spin" />}
+          {actionLabel}
+        </Button>
+        <p className="text-center text-[11px] leading-5 text-slate-500">
+          Token metadata is public on IPFS. Your wallet will show each required approval and transaction before submission.
+        </p>
       </div>
     </div>
 
-    <aside className="panel h-fit p-5 lg:sticky lg:top-24">
-      <p className="eyebrow">Launch preview</p>
-      <div className="mt-5 flex items-center gap-3">
-        <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl border border-cyan/20 bg-cyan/[.08] font-mono text-xs text-cyan">
-          {imagePreview ? <span role="img" aria-label="Token preview" className="size-full bg-cover bg-center" style={{ backgroundImage: `url(${imagePreview})` }} /> : form.ticker.slice(0, 2) || "??"}
+    <aside className="border-t border-line bg-black/15 p-6 sm:p-8 lg:border-l lg:border-t-0">
+      <div className="mx-auto max-w-[310px] lg:sticky lg:top-24 lg:pt-12">
+        <div className="rounded-2xl border border-line bg-[#0a0f18] p-6 shadow-[0_24px_70px_rgba(0,0,0,.28)]">
+          <div className="grid size-20 place-items-center overflow-hidden rounded-2xl border border-cyan/20 bg-cyan/[.08] font-mono text-sm font-semibold text-cyan">
+            {imagePreview ? <span role="img" aria-label="Token preview" className="size-full bg-cover bg-center" style={{ backgroundImage: `url(${imagePreview})` }} /> : form.ticker.slice(0, 2) || "—"}
+          </div>
+          <p className="mt-6 truncate text-2xl font-semibold tracking-[-.03em] text-white">{form.name || "Your token"}</p>
+          <p className="mt-1 font-mono text-xs text-slate-500">{form.ticker || "TICKER"}</p>
+          {form.description && <p className="mt-4 line-clamp-3 text-xs leading-5 text-slate-500">{form.description}</p>}
+          {(form.website || form.x || form.telegram) && <div className="mt-4 flex flex-wrap gap-2">{form.website && <PreviewTag icon={<Globe className="size-3" />} label="Website" />}{form.x && <PreviewTag icon={<AtSign className="size-3" />} label="X" />}{form.telegram && <PreviewTag icon={<Send className="size-3" />} label="Telegram" />}</div>}
+          <dl className="mt-6 grid gap-3 border-t border-line pt-5 text-xs">
+            <Row label="Supply" value="1 billion" />
+            <Row label="Launch fee" value={launchFeeLabel} />
+            <Row label="Trading fee" value={tradingFeeLabel} />
+            <Row label="Graduation" value={`${DEFAULT_GRADUATION_THRESHOLD.toLocaleString()} USDC`} />
+            <Row label="Developer buy" value={`${developerBuyAmount.toLocaleString()} USDC`} />
+            <Row label="Network" value="Arc Testnet" />
+          </dl>
         </div>
-        <div className="min-w-0"><p className="truncate font-semibold text-white">{form.name || "Untitled token"}</p><p className="font-mono text-xs text-slate-500">{form.ticker || "TICKER"}</p></div>
       </div>
-      {form.description && <p className="mt-4 line-clamp-3 text-xs leading-5 text-slate-500">{form.description}</p>}
-      {(form.website || form.x || form.telegram) && <div className="mt-4 flex flex-wrap gap-2">{form.website && <PreviewTag icon={<Globe className="size-3" />} label="Website" />}{form.x && <PreviewTag icon={<AtSign className="size-3" />} label="X" />}{form.telegram && <PreviewTag icon={<Send className="size-3" />} label="Telegram" />}</div>}
-      <dl className="mt-6 grid gap-3 text-xs">
-        <Row label="Supply" value="1,000,000,000" />
-        <Row label="Curve target" value={`${DEFAULT_GRADUATION_THRESHOLD.toLocaleString()} USDC`} />
-        <Row label="Developer buy" value={`${developerBuyAmount.toLocaleString()} USDC`} />
-        <Row label="Launch fee" value={launchFeeLabel} />
-        <Row label="Total wallet payment" value={`${totalWalletPayment.toLocaleString()} USDC`} />
-        <Row label="Trading fee" value={tradingFeeLabel} />
-        <Row label="Network" value="Arc Testnet" />
-        <Row label="Factory" value={shortAddress(ARC_TESTNET_CONTRACTS.factory)} />
-      </dl>
-      <div className="mt-5"><Progress value={step * 33.33} /></div>
-      <p className="mt-2 text-[10px] text-slate-600">Step {step} of 3 · onchain launch</p>
     </aside>
   </form>;
 }
@@ -613,7 +577,7 @@ function ImagePicker({ preview, processing, error, onSelect, onRemove }: { previ
     void onSelect(event.dataTransfer.files?.[0] ?? null);
   }
   return <div>
-    <span className="label">Token image</span>
+    <span className="label">Token image (optional)</span>
     <label onDragOver={(event) => event.preventDefault()} onDrop={drop} className="relative grid aspect-square cursor-pointer place-items-center overflow-hidden rounded-2xl border border-dashed border-line bg-black/20 text-center transition hover:border-cyan/40 hover:bg-cyan/[.025]">
       <input type="file" className="sr-only" accept={IMAGE_TYPES.join(",")} onChange={accept} />
       {preview ? <span role="img" aria-label="Selected token" className="size-full bg-cover bg-center" style={{ backgroundImage: `url(${preview})` }} /> : <div className="p-4"><ImagePlus className="mx-auto size-6 text-cyan"/><p className="mt-3 text-xs font-medium text-slate-300">Choose image</p><p className="mt-1 text-[10px] leading-4 text-slate-600">PNG, JPG, WebP<br/>up to 8 MB</p></div>}
@@ -641,8 +605,11 @@ function PreviewTag({ icon, label }: { icon: React.ReactNode; label: string }) {
   return <span className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white/[.025] px-2 py-1 text-[10px] text-slate-400">{icon}{label}</span>;
 }
 
-function EconomicsMetric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl border border-line bg-black/20 p-3"><p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">{label}</p><p className="mt-2 text-sm font-semibold text-slate-200">{value}</p></div>;
+function PaymentSummary({ label, value }: { label: string; value: string }) {
+  return <div className="bg-[#090e17] px-4 py-3.5">
+    <p className="text-[11px] text-slate-500">{label}</p>
+    <p className="mt-1.5 text-sm font-semibold text-white">{value}</p>
+  </div>;
 }
 
 function Row({ label, value }: { label: string; value: string }) {
