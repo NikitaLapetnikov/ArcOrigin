@@ -185,7 +185,13 @@ export function Header() {
       </nav>
       <div className="hidden items-center gap-2 md:flex">
         <ThemeToggle />
-        <Badge tone="neutral" className="hidden gap-1.5 xl:inline-flex"><Radio className="size-3 text-emerald-400" />Arc Testnet</Badge>
+        <Badge
+          tone="cyan"
+          className="hidden h-10 gap-2 rounded-[10px] px-3 text-[11px] normal-case tracking-[-.01em] xl:inline-flex"
+        >
+          <Radio className="size-3.5 text-cyan" />
+          Arc Testnet
+        </Badge>
         <WalletButton />
       </div>
       <button
