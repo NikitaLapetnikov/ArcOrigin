@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { Menu, Radio, Wallet, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useAccount, useConnect, useDisconnect, useSwitchChain, type Connector } from "wagmi";
+import { useAccount, useConnect, useSwitchChain, type Connector } from "wagmi";
 import { arcTestnet } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 import { Badge, Button } from "./ui";
@@ -14,6 +14,7 @@ import { Badge, Button } from "./ui";
 const nav = [
   ["Markets", "/tokens"],
   ["Launch", "/launch"],
+  ["Profile", "/profile"],
   ["Docs", "/docs"],
 ] as const;
 
@@ -22,7 +23,6 @@ function WalletButton() {
   const [selectorOpen, setSelectorOpen] = useState(false);
   const { address, isConnected, chainId } = useAccount();
   const { connectors, connectAsync, isPending, error } = useConnect();
-  const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
   const availableConnectors = connectors.filter((connector, index, items) =>
     items.findIndex((item) => item.uid === connector.uid || item.name === connector.name) === index,
@@ -48,9 +48,10 @@ function WalletButton() {
   if (isConnected && chainId !== arcTestnet.id) {
     return <Button variant="secondary" onClick={() => switchChain({ chainId: arcTestnet.id })}>Switch to Arc</Button>;
   }
-  if (isConnected) {
-    return <Button variant="secondary" onClick={() => disconnect()}><span className="size-2 rounded-full bg-emerald-400" />{shortAddress(address ?? "")}</Button>;
-  }
+  if (isConnected) return <Link
+    href="/profile"
+    className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border border-line bg-white/[.035] px-4 text-[13px] font-semibold text-slate-100 transition hover:border-slate-500/40 hover:bg-white/[.06]"
+  ><span className="size-2 rounded-full bg-emerald-400" />{shortAddress(address ?? "")}</Link>;
 
   async function connectWallet(connector: Connector) {
     try {

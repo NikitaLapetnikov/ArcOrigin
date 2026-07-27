@@ -3,6 +3,7 @@ import "@fontsource-variable/manrope";
 import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
 import { Providers } from "./providers";
+import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
 
 // Railway's edge cache can otherwise retain prerendered HTML across deployments.
@@ -46,7 +47,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en"><body className="antialiased">
       <a href="#main-content" className="skip-link">Skip to content</a>
-      <Providers><Header /><main id="main-content">{children}</main></Providers>
+      <Providers><Header /><main id="main-content">{children}</main><Footer /></Providers>
     </body></html>
   );
 }

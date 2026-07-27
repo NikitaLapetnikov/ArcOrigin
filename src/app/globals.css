@@ -63,6 +63,10 @@ p { text-wrap: pretty; }
   .label { @apply mb-2 block text-[13px] font-medium text-slate-300; }
   .grid-line { background-image: linear-gradient(rgba(125,145,179,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(125,145,179,.025) 1px, transparent 1px); background-size: 64px 64px; }
   .break-safe { overflow-wrap: anywhere; word-break: break-word; }
+  .legal-copy h2 { @apply text-2xl font-semibold tracking-[-.035em] text-white; }
+  .legal-copy p { @apply mt-4 text-sm leading-7 text-slate-400; }
+  .legal-copy ul { @apply mt-4 grid list-disc gap-2 pl-5 text-sm leading-7 text-slate-400; }
+  .legal-copy a { @apply font-medium text-cyan underline decoration-cyan/30 underline-offset-4 hover:decoration-cyan; }
 }
 
 .recharts-cartesian-grid-horizontal line, .recharts-cartesian-grid-vertical line { stroke: #1c2535; }
