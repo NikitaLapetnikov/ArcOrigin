@@ -377,39 +377,47 @@ export function KLineTokenChart({
 
   if (compact) return <div ref={shellRef} className="h-36 overflow-hidden"><div ref={containerRef} className="h-36 w-full" aria-label="ArcOrigin onchain candlestick chart" /></div>;
 
-  return <div ref={shellRef} className={`relative overflow-hidden bg-[#111417] ${isFullscreen ? "h-screen w-screen p-3" : "rounded-xl border border-line"}`}>
-    <div className="relative z-20 flex min-h-12 flex-wrap items-center justify-between gap-2 border-b border-line bg-[#0e1114] px-2 py-1.5">
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-        {timeframes.map((item) => <ChartButton key={item} active={timeframe === item} onClick={() => setTimeframe(item)}>{item}</ChartButton>)}
-        <span className="mx-1 h-5 w-px bg-line" />
-        <div className="relative">
-          <ChartButton active={chartTypeOpen} onClick={() => { setChartTypeOpen((value) => !value); setIndicatorsOpen(false); setSettingsOpen(false); }}><CandlestickChart className="size-4" /><span className="sr-only">Chart type</span><ChevronDown className="size-3" /></ChartButton>
-          {chartTypeOpen && <ChartMenu>
-            <MenuItem label="Candles" active={chartType === "candle_solid"} icon={<CandlestickChart className="size-4" />} onClick={() => { setChartType("candle_solid"); setChartTypeOpen(false); }} />
-            <MenuItem label="Hollow candles" active={chartType === "candle_stroke"} icon={<Sparkles className="size-4" />} onClick={() => { setChartType("candle_stroke"); setChartTypeOpen(false); }} />
-            <MenuItem label="OHLC bars" active={chartType === "ohlc"} icon={<BarChart3 className="size-4" />} onClick={() => { setChartType("ohlc"); setChartTypeOpen(false); }} />
-            <MenuItem label="Area" active={chartType === "area"} icon={<AreaChart className="size-4" />} onClick={() => { setChartType("area"); setChartTypeOpen(false); }} />
-          </ChartMenu>}
+  return <div ref={shellRef} className={`relative w-full min-w-0 overflow-hidden bg-[#111417] ${isFullscreen ? "h-screen w-screen p-3" : "rounded-xl border border-line"}`}>
+    <div className="relative z-20 flex min-h-12 w-full min-w-0 flex-col gap-1 border-b border-line bg-[#0e1114] px-2 py-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+      <div className="flex w-full min-w-0 flex-col gap-1 sm:flex-1 sm:flex-row sm:items-center">
+        <div className="flex w-full min-w-0 flex-nowrap items-center gap-1 overflow-x-auto overscroll-x-contain pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto sm:overflow-visible sm:pb-0">
+          {timeframes.map((item) => <ChartButton key={item} active={timeframe === item} onClick={() => setTimeframe(item)}>{item}</ChartButton>)}
         </div>
-        <div className="relative">
-          <ChartButton active={indicatorsOpen || activeIndicators.size > 1} onClick={() => { setIndicatorsOpen((value) => !value); setSettingsOpen(false); setChartTypeOpen(false); }}><Activity className="size-4" />Indicators<ChevronDown className="size-3" /></ChartButton>
-          {indicatorsOpen && <ChartMenu>
-            <MenuSection>Price overlays</MenuSection>
-            <Toggle label="Moving average" value="MA 20" active={activeIndicators.has("MA")} onClick={() => toggleIndicator("MA")} />
-            <Toggle label="Exponential MA" value="EMA 20" active={activeIndicators.has("EMA")} onClick={() => toggleIndicator("EMA")} />
-            <Toggle label="Bollinger Bands" value="BOLL" active={activeIndicators.has("BOLL")} onClick={() => toggleIndicator("BOLL")} />
-            <Toggle label="Parabolic SAR" value="SAR" active={activeIndicators.has("SAR")} onClick={() => toggleIndicator("SAR")} />
-            <MenuSection>Lower panes</MenuSection>
-            <Toggle label="Volume" value="Onchain USDC" active={activeIndicators.has("VOL")} onClick={() => toggleIndicator("VOL")} />
-            <Toggle label="MACD" value="Momentum" active={activeIndicators.has("MACD")} onClick={() => toggleIndicator("MACD")} />
-            <Toggle label="RSI" value="Relative strength" active={activeIndicators.has("RSI")} onClick={() => toggleIndicator("RSI")} />
-            <Toggle label="KDJ" value="Stochastic oscillator" active={activeIndicators.has("KDJ")} onClick={() => toggleIndicator("KDJ")} />
-          </ChartMenu>}
+        <div className="flex min-w-0 items-center gap-1">
+          <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
+          <div className="relative">
+            <ChartButton active={chartTypeOpen} onClick={() => { setChartTypeOpen((value) => !value); setIndicatorsOpen(false); setSettingsOpen(false); }}><CandlestickChart className="size-4" /><span className="sr-only">Chart type</span><ChevronDown className="size-3" /></ChartButton>
+            {chartTypeOpen && <ChartMenu>
+              <MenuItem label="Candles" active={chartType === "candle_solid"} icon={<CandlestickChart className="size-4" />} onClick={() => { setChartType("candle_solid"); setChartTypeOpen(false); }} />
+              <MenuItem label="Hollow candles" active={chartType === "candle_stroke"} icon={<Sparkles className="size-4" />} onClick={() => { setChartType("candle_stroke"); setChartTypeOpen(false); }} />
+              <MenuItem label="OHLC bars" active={chartType === "ohlc"} icon={<BarChart3 className="size-4" />} onClick={() => { setChartType("ohlc"); setChartTypeOpen(false); }} />
+              <MenuItem label="Area" active={chartType === "area"} icon={<AreaChart className="size-4" />} onClick={() => { setChartType("area"); setChartTypeOpen(false); }} />
+            </ChartMenu>}
+          </div>
+          <div className="relative">
+            <ChartButton active={indicatorsOpen || activeIndicators.size > 1} onClick={() => { setIndicatorsOpen((value) => !value); setSettingsOpen(false); setChartTypeOpen(false); }}><Activity className="size-4" />Indicators<ChevronDown className="size-3" /></ChartButton>
+            {indicatorsOpen && <ChartMenu>
+              <MenuSection>Price overlays</MenuSection>
+              <Toggle label="Moving average" value="MA 20" active={activeIndicators.has("MA")} onClick={() => toggleIndicator("MA")} />
+              <Toggle label="Exponential MA" value="EMA 20" active={activeIndicators.has("EMA")} onClick={() => toggleIndicator("EMA")} />
+              <Toggle label="Bollinger Bands" value="BOLL" active={activeIndicators.has("BOLL")} onClick={() => toggleIndicator("BOLL")} />
+              <Toggle label="Parabolic SAR" value="SAR" active={activeIndicators.has("SAR")} onClick={() => toggleIndicator("SAR")} />
+              <MenuSection>Lower panes</MenuSection>
+              <Toggle label="Volume" value="Onchain USDC" active={activeIndicators.has("VOL")} onClick={() => toggleIndicator("VOL")} />
+              <Toggle label="MACD" value="Momentum" active={activeIndicators.has("MACD")} onClick={() => toggleIndicator("MACD")} />
+              <Toggle label="RSI" value="Relative strength" active={activeIndicators.has("RSI")} onClick={() => toggleIndicator("RSI")} />
+              <Toggle label="KDJ" value="Stochastic oscillator" active={activeIndicators.has("KDJ")} onClick={() => toggleIndicator("KDJ")} />
+            </ChartMenu>}
+          </div>
+          <span className="mx-1 hidden h-5 w-px bg-line sm:block" />
+          {(["Price", "MCap"] as const).map((item) => <ChartButton key={item} active={displayMode === item} onClick={() => setDisplayMode(item)}>{item}</ChartButton>)}
+          <div className="ml-auto flex items-center sm:hidden">
+            <IconButton label="Fit chart" onClick={fit}><Focus className="size-4" /></IconButton>
+            <IconButton label={isFullscreen ? "Exit fullscreen" : "Fullscreen"} active={isFullscreen} onClick={() => void toggleFullscreen()}><Expand className="size-4" /></IconButton>
+          </div>
         </div>
-        <span className="mx-1 h-5 w-px bg-line" />
-        {(["Price", "MCap"] as const).map((item) => <ChartButton key={item} active={displayMode === item} onClick={() => setDisplayMode(item)}>{item}</ChartButton>)}
       </div>
-      <div className="flex items-center gap-1">
+      <div className="hidden items-center gap-1 sm:flex">
         <IconButton label="Fit chart" onClick={fit}><Focus className="size-4" /></IconButton>
         <IconButton label="Zoom in" onClick={() => zoom(1.25)}><ZoomIn className="size-4" /></IconButton>
         <IconButton label="Zoom out" onClick={() => zoom(.8)}><ZoomOut className="size-4" /></IconButton>
@@ -420,8 +428,8 @@ export function KLineTokenChart({
         <IconButton label="Capture chart screenshot" onClick={capture}><Camera className="size-4" /></IconButton>
       </div>
     </div>
-    <div className="grid grid-cols-[42px_minmax(0,1fr)]">
-      <aside className="flex flex-col items-center gap-1 border-r border-line bg-[#0e1114] py-2">
+    <div className="grid min-w-0 grid-cols-1 sm:grid-cols-[42px_minmax(0,1fr)]">
+      <aside className="hidden flex-col items-center gap-1 border-r border-line bg-[#0e1114] py-2 sm:flex">
         <IconButton label="Crosshair cursor" active={tool === "cursor"} onClick={() => chooseTool("cursor")}><Crosshair className="size-4" /></IconButton>
         <IconButton label="Draw trend line" active={tool === "straightLine"} onClick={() => chooseTool("straightLine")}><TrendingUp className="size-4" /></IconButton>
         <IconButton label="Draw ray" active={tool === "rayLine"} onClick={() => chooseTool("rayLine")}><TrendingUp className="size-4 rotate-12" /></IconButton>
@@ -435,15 +443,15 @@ export function KLineTokenChart({
         <IconButton label="Show trade markers" active={showMarkers} onClick={() => setShowMarkers((value) => !value)}>{showMarkers ? <Eye className="size-4" /> : <EyeOff className="size-4" />}</IconButton>
         <IconButton label="Clear drawings" onClick={clearDrawings}><Trash2 className="size-4" /></IconButton>
       </aside>
-      <div className="relative min-w-0">
-        {latest && <div className="pointer-events-none absolute left-4 top-3 z-10 flex max-w-[calc(100%-32px)] flex-wrap items-center gap-x-2 font-mono text-[10px]">
+      <div className="relative w-full min-w-0 overflow-hidden">
+        {latest && <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[calc(100%-16px)] flex-wrap items-center gap-x-1.5 font-mono text-[9px] sm:left-4 sm:top-3 sm:max-w-[calc(100%-32px)] sm:gap-x-2 sm:text-[10px]">
           <span className="text-slate-400">O {formatPrice(latest.open, displayMode)}</span>
           <span className="text-emerald-300">H {formatPrice(latest.high, displayMode)}</span>
           <span className="text-rose-300">L {formatPrice(latest.low, displayMode)}</span>
           <span className="text-white">C {formatPrice(latest.close, displayMode)}</span>
           <span className={activeChange >= 0 ? "text-emerald-300" : "text-rose-300"}>{activeChange >= 0 ? "+" : ""}{activeChange.toFixed(2)}%</span>
         </div>}
-        <div ref={containerRef} className={isFullscreen ? "h-[calc(100vh-112px)] min-h-[480px] w-full" : "h-[480px] w-full"} aria-label={`${tokenName} onchain candlestick chart`} />
+        <div ref={containerRef} className={isFullscreen ? "h-[calc(100vh-112px)] min-h-[420px] w-full" : "h-[420px] w-full sm:h-[480px]"} aria-label={`${tokenName} onchain candlestick chart`} />
       </div>
     </div>
     <div className="flex min-h-10 items-center justify-end border-t border-line bg-[#0e1114] px-3 py-1"><div className="flex items-center gap-1"><ChartButton onClick={moveToLatest}>Latest</ChartButton><IconButton label="Reset chart" onClick={fit}><Focus className="size-3.5" /></IconButton></div></div>
@@ -459,9 +467,9 @@ export function KLineTokenChart({
   </div>;
 }
 
-function ChartButton({ active = false, children, onClick }: { active?: boolean; children: React.ReactNode; onClick: () => void }) { return <button type="button" aria-pressed={active} onClick={onClick} className={`inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium transition ${active ? "bg-cyan/15 text-[#a5f3d7]" : "text-slate-400 hover:bg-white/[.05] hover:text-white"}`}>{children}</button>; }
+function ChartButton({ active = false, children, onClick }: { active?: boolean; children: React.ReactNode; onClick: () => void }) { return <button type="button" aria-pressed={active} onClick={onClick} className={`inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-xs font-medium transition ${active ? "bg-cyan/15 text-[#a5f3d7]" : "text-slate-400 hover:bg-white/[.05] hover:text-white"}`}>{children}</button>; }
 function IconButton({ label, active = false, children, onClick }: { label: string; active?: boolean; children: React.ReactNode; onClick: () => void }) { return <button type="button" aria-label={label} aria-pressed={active} onClick={onClick} className={`grid size-8 place-items-center rounded-md transition ${active ? "bg-cyan/15 text-[#a5f3d7]" : "text-slate-400 hover:bg-white/[.05] hover:text-white"}`}>{children}</button>; }
-function ChartMenu({ children, right = false }: { children: React.ReactNode; right?: boolean }) { return <div className={`absolute top-10 z-40 max-h-[420px] w-60 overflow-y-auto rounded-lg border border-line bg-[#13191d] p-1.5 shadow-2xl ${right ? "right-0" : "left-0"}`}>{children}</div>; }
+function ChartMenu({ children, right = false }: { children: React.ReactNode; right?: boolean }) { return <div className={`absolute top-10 z-40 max-h-[min(420px,70vh)] w-60 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-lg border border-line bg-[#13191d] p-1.5 shadow-2xl ${right ? "right-0" : "left-0"}`}>{children}</div>; }
 function MenuSection({ children }: { children: React.ReactNode }) { return <p className="px-2 pb-1 pt-2 font-mono text-[9px] uppercase tracking-[.18em] text-slate-600">{children}</p>; }
 function MenuItem({ label, active, icon, onClick }: { label: string; active: boolean; icon: React.ReactNode; onClick: () => void }) { return <button type="button" onClick={onClick} className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-xs ${active ? "bg-cyan/10 text-emerald-200" : "text-slate-300 hover:bg-white/[.05]"}`}>{icon}{label}</button>; }
 function Toggle({ label, value, active, onClick }: { label: string; value: string; active: boolean; onClick: () => void }) { return <button type="button" onClick={onClick} className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-white/[.05]"><span><span className="block text-xs text-slate-200">{label}</span><span className="block text-[10px] text-slate-500">{value}</span></span><span className={`h-4 w-7 rounded-full p-0.5 ${active ? "bg-cyan" : "bg-slate-700"}`}><span className={`block size-3 rounded-full bg-white transition ${active ? "translate-x-3" : ""}`} /></span></button>; }
