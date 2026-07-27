@@ -457,15 +457,15 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const outputDecimals = side === "Buy" ? 18 : 6;
   const outputSymbol = side === "Buy" ? tickerLabel(token.ticker) : "USDC";
 
-  return <div id="trade-panel" className="panel scroll-mt-28 rounded-xl p-4 shadow-none">
-    <div className="-mx-4 -mt-4 mb-3 flex min-h-12 items-center border-b border-line bg-black/10 px-4 py-3">
-      <p className="text-[15px] font-semibold tracking-[-.02em] text-white">Trade {tickerLabel(token.ticker)}</p>
+  return <div id="trade-panel" className="panel scroll-mt-28 rounded-[28px] p-5 shadow-none">
+    <div className="mb-4 flex items-center">
+      <p className="text-lg font-semibold tracking-[-.03em] text-white">Trade {tickerLabel(token.ticker)}</p>
     </div>
-    <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/25 p-1">{(["Buy", "Sell"] as const).map((item) => <button key={item} disabled={isPending} onClick={() => setSide(item)} className={`h-9 rounded-lg text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${side === item ? item === "Buy" ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300" : "text-slate-500"}`}>{item}</button>)}</div>
+    <div className="grid grid-cols-2 gap-1 rounded-full bg-black/20 p-1">{(["Buy", "Sell"] as const).map((item) => <button key={item} disabled={isPending} onClick={() => setSide(item)} className={`h-10 rounded-full text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${side === item ? item === "Buy" ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300" : "text-slate-500"}`}>{item}</button>)}</div>
     <div className="mt-5 flex items-center justify-between gap-3"><label className="label mb-0 text-[15px]">You pay</label><div className="flex items-center gap-3"><button type="button" disabled={!balanceError || balanceLoading} onClick={() => void refreshBalances()} className={`max-w-[170px] truncate text-sm disabled:cursor-default ${balanceError ? "text-cyan" : "text-slate-400"}`} title={balanceLabel}>{balanceLabel}</button><span className="flex items-center gap-1 text-sm text-slate-400"><Settings2 className="size-4" />{slippageValid ? `${slippage}%` : "Invalid"} · {priority}</span></div></div>
-    <div className="mt-2 flex items-center rounded-xl border border-line bg-[#080c13] px-3 focus-within:border-cyan/50"><input inputMode="decimal" value={amount} disabled={isPending} onChange={(event) => setAmount(event.target.value)} className="h-14 min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none disabled:opacity-50" /><Badge tone="neutral">{inputSymbol}</Badge></div>
-    <div className="mt-2 grid grid-cols-5 gap-1">{percentageOptions.map((percent) => <button key={percent} type="button" disabled={isPending || activeBalance === undefined || activeBalance === 0n} onClick={() => selectBalancePercent(percent)} className="h-9 rounded-lg border border-line bg-black/15 font-mono text-sm text-slate-300 transition hover:border-cyan/35 hover:text-cyan disabled:cursor-not-allowed disabled:opacity-35">{percent}%</button>)}</div>
-    <div className="mt-3 rounded-xl border border-cyan/15 bg-cyan/[.04] p-3">
+    <div className="mt-2 flex items-center rounded-2xl bg-black/20 px-4 ring-1 ring-inset ring-line/70 focus-within:ring-cyan/50"><input inputMode="decimal" value={amount} disabled={isPending} onChange={(event) => setAmount(event.target.value)} className="h-14 min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none disabled:opacity-50" /><Badge tone="neutral">{inputSymbol}</Badge></div>
+    <div className="mt-2 grid grid-cols-5 gap-1">{percentageOptions.map((percent) => <button key={percent} type="button" disabled={isPending || activeBalance === undefined || activeBalance === 0n} onClick={() => selectBalancePercent(percent)} className="h-9 rounded-full font-mono text-sm text-slate-400 transition hover:bg-white/[.05] hover:text-cyan disabled:cursor-not-allowed disabled:opacity-35">{percent}%</button>)}</div>
+    <div className="mt-4 border-y border-line/70 py-3">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[15px] font-medium text-slate-300">You receive</span>
         <span className="text-right font-mono text-base font-semibold text-white">
@@ -478,7 +478,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       </div>
       {quoteError && <p role="status" className="mt-2 text-sm text-amber-300">{quoteError}</p>}
     </div>
-    <div className="mt-3 grid gap-3 rounded-xl border border-line bg-black/15 p-3">
+    <div className="mt-3 grid gap-3 py-2">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[15px] text-slate-300">Slippage</span>
         <div className="flex items-center gap-1">
@@ -487,9 +487,9 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
             type="button"
             disabled={isPending}
             onClick={() => setSlippageInput(String(value))}
-            className={`h-9 rounded-md px-3 font-mono text-sm transition ${slippage === value ? "bg-cyan/12 text-cyan" : "text-slate-400 hover:bg-white/[.04] hover:text-slate-200"}`}
+            className={`h-9 rounded-full px-3 font-mono text-sm transition ${slippage === value ? "bg-cyan/12 text-cyan" : "text-slate-400 hover:bg-white/[.04] hover:text-slate-200"}`}
           >{value}%</button>)}
-          <label className={`flex h-9 w-[86px] items-center rounded-md border px-2 font-mono text-sm ${
+          <label className={`flex h-9 w-[86px] items-center rounded-full border px-2 font-mono text-sm ${
             slippageValid ? "border-line text-slate-300 focus-within:border-cyan/40" : "border-rose-400/40 text-rose-300"
           }`}>
             <input
@@ -514,16 +514,14 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
           type="button"
           disabled={isPending}
           onClick={() => setPriority(value)}
-          className={`h-9 rounded-md px-3 text-sm transition ${priority === value ? "bg-cyan/12 text-cyan" : "text-slate-400 hover:bg-white/[.04] hover:text-slate-200"}`}
+          className={`h-9 rounded-full px-3 text-sm transition ${priority === value ? "bg-cyan/12 text-cyan" : "text-slate-400 hover:bg-white/[.04] hover:text-slate-200"}`}
         >{value}</button>)}</div>
       </div>
     </div>
     <Button className="mt-4 w-full" disabled={isPending || buyDisabled || !slippageValid} onClick={() => void submitTrade()}>{actionLabel}</Button>
     {notice && <p role={noticeIsError ? "alert" : "status"} aria-live="polite" className={`mt-3 rounded-lg border p-3 text-sm leading-5 ${noticeIsError ? "border-rose-400/20 bg-rose-400/[.07] text-rose-200" : transactionHash ? "border-emerald-400/15 bg-emerald-400/[.07] text-emerald-300" : "border-cyan/15 bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
-    <p className="mt-4 text-sm leading-6 text-slate-400">{token.status === "Graduated"
-      ? permanentLiquidityMode
-        ? "Graduated into a permanent real-reserve AMM. Both buys and sells continue."
-        : "Buying is closed on this legacy curve after graduation. Selling remains available while the curve has USDC reserves."
-      : `Trades execute against the deployed ${tickerLabel(token.ticker)} curve. Your wallet may request an exact-token approval first.`}</p>
+    {token.status === "Graduated" && <p className="mt-4 text-sm leading-6 text-slate-400">{permanentLiquidityMode
+      ? "Graduated market. Buying and selling remain available."
+      : "Buying is closed after graduation. Selling remains available while reserves exist."}</p>}
   </div>;
 }

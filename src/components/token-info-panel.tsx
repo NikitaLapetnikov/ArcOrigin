@@ -30,15 +30,15 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
     }
   }
 
-  return <section className="panel overflow-hidden rounded-xl shadow-none">
-    <div className="flex items-center justify-between border-b border-line bg-black/10 px-4 py-3">
+  return <section className="panel overflow-hidden rounded-[28px] shadow-none">
+    <div className="flex items-center justify-between border-b border-line/70 px-5 py-4">
       <div>
         <p className="text-sm font-semibold text-white">Token info</p>
         <p className="mt-0.5 font-mono text-[9px] text-slate-600">Verified on Arc Testnet</p>
       </div>
     </div>
 
-    <div className="border-b border-line p-4">
+    <div className="border-b border-line/70 px-5 py-4">
       <p className="font-mono text-[9px] uppercase tracking-[.14em] text-slate-600">Contracts & wallets</p>
       <div className="mt-3 grid gap-1">
         {addresses.map((item) => item.address && <div key={item.label} className="group flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-white/[.025]">
@@ -70,7 +70,7 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
       </div>
     </div>
 
-    <div className="p-4">
+    <div className="px-5 py-4">
       <div className="flex items-center justify-between">
         <div>
           <p className="font-mono text-[9px] uppercase tracking-[.14em] text-slate-600">Launch provenance</p>

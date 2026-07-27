@@ -6,7 +6,7 @@ import { ArrowLeft, Check, Copy, ExternalLink } from "lucide-react";
 import { BuySellPanel } from "@/components/buy-sell-panel";
 import { OnchainTokenDashboard } from "@/components/onchain-token-dashboard";
 import { TokenInfoPanel } from "@/components/token-info-panel";
-import { Badge, Button, Panel, TokenIcon, WarningBox } from "@/components/ui";
+import { Button, Panel, TokenIcon, WarningBox } from "@/components/ui";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
@@ -54,23 +54,22 @@ export function IndexedTokenDetail({ address }: { address: string }) {
   ];
 
   return <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-4">
-    <div className="mb-3 rounded-2xl border border-line bg-panel p-4 shadow-[0_18px_50px_rgba(0,0,0,.14)] sm:p-5">
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(460px,600px)_minmax(520px,1fr)_auto] xl:items-center">
+    <div className="mb-4 rounded-[28px] border border-line/70 bg-panel px-4 py-5 shadow-[0_22px_60px_rgba(0,0,0,.12)] sm:px-6 sm:py-6">
+      <div className="grid min-w-0 gap-7 xl:grid-cols-[minmax(500px,1.15fr)_minmax(460px,.85fr)_auto] xl:items-center">
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <Link href="/tokens" aria-label="Back to markets" className="grid size-11 shrink-0 place-items-center rounded-xl border border-line bg-black/10 text-slate-400 transition hover:border-cyan/30 hover:text-white"><ArrowLeft className="size-5"/></Link>
-          <TokenIcon label={token.icon} image={token.image} className="size-[88px] shrink-0 rounded-2xl text-xl shadow-[0_14px_36px_rgba(0,0,0,.34)] sm:size-24" />
+          <Link href="/tokens" aria-label="Back to markets" className="grid size-10 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-white/[.05] hover:text-white"><ArrowLeft className="size-5"/></Link>
+          <TokenIcon label={token.icon} image={token.image} className="size-[92px] shrink-0 rounded-[24px] border-0 text-xl shadow-[0_16px_38px_rgba(0,0,0,.28)] sm:size-[104px]" />
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
               <h1 className="min-w-0 truncate pb-0.5 text-[27px] font-semibold leading-[1.15] tracking-[-.04em] text-white sm:text-[30px]">{token.name}</h1>
-              <span className="shrink-0 font-mono text-sm font-medium text-slate-400">{tickerLabel(token.ticker)}</span>
-              <Badge tone="cyan">{token.status}</Badge>
+              <span className="shrink-0 text-sm font-medium text-slate-400">{tickerLabel(token.ticker)}</span>
             </div>
             <button
               type="button"
               onClick={() => void copyContract(token.address)}
               title={token.address}
               aria-label={copied ? "Contract copied" : "Copy token contract"}
-              className="mt-3 flex w-full min-w-0 max-w-[440px] items-center gap-2.5 rounded-xl border border-line bg-black/20 px-3 py-2.5 text-left transition hover:border-cyan/30 hover:bg-white/[.025]"
+              className="mt-3 flex w-full min-w-0 max-w-[440px] items-center gap-2.5 border-b border-line/70 py-2 text-left transition hover:border-cyan/40"
             >
               <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-[.1em] ${copied ? "text-emerald-300" : "text-slate-500"}`}>{copied ? "Copied" : "Contract"}</span>
               <code className="min-w-0 flex-1 truncate text-xs text-slate-200">{token.address}</code>
@@ -82,15 +81,15 @@ export function IndexedTokenDetail({ address }: { address: string }) {
             </div>
           </div>
         </div>
-        <dl className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-black/15 sm:grid-cols-5">
-          {heroStats.map(([label, value]) => <div key={label} className="min-w-0 border-b border-r border-line/70 px-4 py-4 last:border-r-0 sm:border-b-0">
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-5 xl:grid-cols-3 2xl:grid-cols-5">
+          {heroStats.map(([label, value]) => <div key={label} className="min-w-0">
             <dt className="truncate text-[11px] font-medium uppercase tracking-[.075em] text-slate-500">{label}</dt>
-            <dd className="mt-2 truncate text-[15px] font-semibold text-slate-100" title={value}>{value}</dd>
+            <dd className="mt-1.5 truncate text-[16px] font-semibold text-slate-100" title={value}>{value}</dd>
           </div>)}
         </dl>
         <div className="flex items-center gap-2 xl:justify-end">
           <WatchlistButton address={token.address} />
-          <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-11 items-center gap-2 rounded-xl border border-line px-4 text-sm text-slate-200 transition hover:border-cyan/30 hover:text-white">Arcscan <ExternalLink className="size-4" /></a>
+          <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-full bg-white/[.045] px-4 text-sm text-slate-200 transition hover:bg-white/[.08] hover:text-white">Arcscan <ExternalLink className="size-4" /></a>
         </div>
       </div>
     </div>

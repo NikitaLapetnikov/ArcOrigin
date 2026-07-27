@@ -249,9 +249,9 @@ export function OnchainTokenDashboard({
     { label: "Curve" },
   ];
 
-  return <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
-    <Panel className="min-w-0 overflow-hidden rounded-xl shadow-none">
-    <div className="grid grid-cols-2 border-b border-line bg-black/10 sm:grid-cols-3 xl:grid-cols-5">
+  return <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
+    <Panel className="min-w-0 overflow-hidden rounded-[28px] shadow-none">
+    <div className="flex flex-wrap items-center gap-x-10 gap-y-4 border-b border-line/70 px-5 py-4 sm:px-6">
       <TerminalMetric label="Price" value={tokenPrice(snapshot.price)} />
       <TerminalMetric label="Market cap" value={money(snapshot.marketCap, true)} />
       <TerminalMetric label="Supply" value={token.totalSupply ? number(token.totalSupply) : "—"} />
@@ -263,7 +263,7 @@ export function OnchainTokenDashboard({
       />
     </div>
 
-    <div className="border-b border-line p-3 sm:p-4">
+    <div className="border-b border-line/70 p-3 sm:p-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Badge tone={loading || stale ? "neutral" : "good"}>{loading ? "Refreshing" : stale ? "Cached" : "Live"}</Badge>
@@ -287,7 +287,7 @@ export function OnchainTokenDashboard({
       {error && <div className="mt-3"><WarningBox>{error}</WarningBox></div>}
     </div>
 
-    <div className="flex items-center justify-between gap-3 border-b border-line bg-black/10 pr-4">
+    <div className="flex items-center justify-between gap-3 border-b border-line/70 pr-4">
       <div className="flex min-w-0 items-center gap-1 overflow-x-auto px-2">
         {tabs.map((tab) => <button
           key={tab.label}
@@ -394,7 +394,7 @@ export function OnchainTokenDashboard({
 
     </div>
     </Panel>
-    <aside className="grid h-fit min-w-0 gap-3 xl:sticky xl:top-[76px]">
+    <aside className="grid h-fit min-w-0 gap-4 xl:sticky xl:top-[76px]">
       <MarketFlowPanel
         buyVolume={buyVolume}
         sellVolume={sellVolume}
@@ -460,7 +460,7 @@ function TerminalEmpty({ title, body }: { title: string; body: string }) {
 }
 
 function TerminalMetric({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: "good" | "bad" }) {
-  return <div className="min-w-0 border-b border-r border-line px-3 py-3 last:border-r-0 sm:px-4 xl:border-b-0"><p className="text-[9px] font-medium uppercase tracking-[.08em] text-slate-600">{label}</p><p className={`mt-1 truncate text-sm font-semibold ${tone === "good" ? "text-emerald-300" : tone === "bad" ? "text-rose-300" : "text-white"}`}>{value}</p>{detail && <p className="mt-0.5 truncate text-[9px] text-slate-600">{detail}</p>}</div>;
+  return <div className="min-w-[112px]"><p className="text-[10px] font-medium uppercase tracking-[.08em] text-slate-600">{label}</p><p className={`mt-1 truncate text-[15px] font-semibold ${tone === "good" ? "text-emerald-300" : tone === "bad" ? "text-rose-300" : "text-white"}`}>{value}</p>{detail && <p className="mt-0.5 truncate text-[9px] text-slate-600">{detail}</p>}</div>;
 }
 
 function MarketFlowPanel({
@@ -478,14 +478,14 @@ function MarketFlowPanel({
   buyShare: number;
   netFlow: number;
 }) {
-  return <section className="overflow-hidden rounded-xl border border-line bg-panel">
-    <div className="grid grid-cols-4 divide-x divide-line">
+  return <section className="px-1 py-1">
+    <div className="grid grid-cols-4 gap-3">
       <FlowMetric label="24h volume" value={money(buyVolume + sellVolume, true)} />
       <FlowMetric label="Buys" value={money(buyVolume, true)} tone="good" detail={String(buyCount)} />
       <FlowMetric label="Sells" value={money(sellVolume, true)} tone="bad" detail={String(sellCount)} />
       <FlowMetric label="Net flow" value={`${netFlow >= 0 ? "+" : "−"}${money(Math.abs(netFlow), true)}`} tone={netFlow >= 0 ? "good" : "bad"} />
     </div>
-    <div className="flex h-1 bg-white/[.04]">
+    <div className="mt-3 flex h-1 overflow-hidden rounded-full bg-white/[.04]">
       <div className="bg-emerald-400" style={{ width: `${buyShare}%` }} />
       <div className="bg-rose-400" style={{ width: `${100 - buyShare}%` }} />
     </div>
@@ -493,10 +493,10 @@ function MarketFlowPanel({
 }
 
 function FlowMetric({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: "good" | "bad" }) {
-  return <div className="min-w-0 px-2.5 py-3 text-center">
-    <p className="truncate text-[8px] font-medium uppercase tracking-[.07em] text-slate-600">{label}</p>
-    <p className={`mt-1 truncate text-[11px] font-semibold ${tone === "good" ? "text-emerald-300" : tone === "bad" ? "text-rose-300" : "text-slate-200"}`}>{value}</p>
-    {detail && <p className="mt-0.5 text-[8px] text-slate-600">{detail} trades</p>}
+  return <div className="min-w-0 py-1 text-center">
+    <p className="truncate text-[9px] font-medium uppercase tracking-[.07em] text-slate-600">{label}</p>
+    <p className={`mt-1 truncate text-[13px] font-semibold ${tone === "good" ? "text-emerald-300" : tone === "bad" ? "text-rose-300" : "text-slate-200"}`}>{value}</p>
+    {detail && <p className="mt-0.5 text-[9px] text-slate-600">{detail} trades</p>}
   </div>;
 }
 
