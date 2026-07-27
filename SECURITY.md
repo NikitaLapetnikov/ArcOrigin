@@ -1,6 +1,6 @@
 # ArcOrigin security review
 
-Last reviewed: 2026-07-26
+Last reviewed: 2026-07-27
 
 Scope: Solidity contracts, deployment scripts, wallet transaction flows, metadata/IPFS APIs, RPC/indexing, caches, and production web headers.
 
@@ -16,17 +16,22 @@ No direct unauthorized-withdrawal path or reserve-drain path was found in the re
 
 The web application and indexer were hardened during this review:
 
-- quotes accept only a bounded `uint256` amount and a curve emitted by the configured active Factory;
+- quotes accept only a bounded `uint256` amount and an exact token/curve pair emitted by the configured active Factory;
+- newly launched markets are verified directly against the active Factory when the cached index has not caught up yet;
 - confirmed trade UI updates decode the actual receipt event instead of reusing a pre-trade quote;
-- forced market refreshes read the latest block, and headline reserves/price come from contract state at that block;
-- holder indexing falls back to RPC when Arcscan unexpectedly returns an empty result;
-- fee analytics derive launch fees from the Factory and protocol fees from known curve `FeeSplit` events, so arbitrary `FeeVault.collectFee` calls cannot spoof displayed categories;
+- forced market and launch refreshes bypass delayed explorer data, while headline reserves/price come from contract state at the latest confirmed block;
+- holder and launch verification fall back to RPC when Arcscan unexpectedly returns an empty result;
+- stale parallel index, market, and holder responses cannot overwrite a newer confirmed or optimistic state;
+- wallet reads and transactions use multiple Arc RPC endpoints instead of depending on one rate-limited provider;
 - metadata upload requests are same-origin, size-bounded, one-time-signature authorized, rate-limited, and memory-bounded;
+- profile update challenges remain wallet-signed, and public profile links never expose edit or disconnect actions to another wallet;
 - token names are validated against the Factory's 64-byte limit and control characters are rejected;
 - metadata uploaded by one wallet is never reused after switching to another wallet;
 - duplicate launch submissions are blocked in the client;
 - RPC, Arcscan, IPFS, and image origins are explicitly constrained by the production Content Security Policy;
 - public refresh paths are cached, deduplicated, and throttled to reduce RPC exhaustion.
+
+The unused legacy fee-indexing endpoint was removed. It scanned only an older Factory generation, was no longer reachable from the product, and exposed an unnecessary public RPC-heavy route.
 
 The Solidity suite currently covers fixed supply, allocation and metadata bounds, access control, fee changes, fee splitting, slippage, dust rounding, randomized reserve invariants, graduation input caps, price continuity, permanent-liquidity solvency, FeeVault withdrawal rules, and timelocked governance execution.
 

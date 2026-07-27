@@ -62,6 +62,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
   const [error, setError] = useState("");
   const [stale, setStale] = useState(false);
   const pendingTradeHashes = useRef(new Set<string>());
+  const refreshRequestRef = useRef(0);
   const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
 
   const applyRefreshedSnapshot = useCallback((next: OnchainTokenSnapshot) => {
@@ -75,6 +76,8 @@ export function useOnchainTokenSnapshot(token: TokenData) {
   }, []);
 
   const refresh = useCallback(async (forceRefresh = false) => {
+    const requestId = ++refreshRequestRef.current;
+    const isCurrentRequest = () => refreshRequestRef.current === requestId;
     setLoading(true);
     setError("");
     try {
@@ -85,19 +88,23 @@ export function useOnchainTokenSnapshot(token: TokenData) {
         });
         const payload = await response.json() as { snapshot?: OnchainTokenSnapshot; stale?: boolean; error?: string };
         if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Market data is unavailable.");
+        if (!isCurrentRequest()) return;
         applyRefreshedSnapshot(payload.snapshot);
         setStale(Boolean(payload.stale));
         if (payload.stale) setError("Showing the latest confirmed market snapshot while Arc Testnet RPC recovers.");
       } catch {
-        applyRefreshedSnapshot(await loadIndexedMarketSnapshot(token));
+        const fallback = await loadIndexedMarketSnapshot(token);
+        if (!isCurrentRequest()) return;
+        applyRefreshedSnapshot(fallback);
         setStale(false);
       }
     } catch (loadError) {
+      if (!isCurrentRequest()) return;
       setStale(true);
       const message = loadError instanceof Error ? loadError.message : "Live market data could not be loaded.";
       setError(`Showing the latest Factory snapshot. ${message}`);
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
   }, [applyRefreshedSnapshot, token]);
 
@@ -166,7 +173,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
           buyers: current.buyers + (side === "Buy" ? 1 : 0),
           sellers: current.sellers + (side === "Sell" ? 1 : 0),
           raisedUsdc,
-          progress: current.targetUsdc > 0 ? raisedUsdc / current.targetUsdc * 100 : 0,
+          progress: current.targetUsdc > 0 ? Math.min(100, raisedUsdc / current.targetUsdc * 100) : 0,
           graduated: nextGraduated,
           tokensSold: nextGraduated && current.graduated
             ? current.tokensSold

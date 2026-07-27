@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
 import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
@@ -201,8 +201,11 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
   const [isCached, setIsCached] = useState(false);
   const [isPartial, setIsPartial] = useState(false);
   const [cachedAt, setCachedAt] = useState<number | null>(null);
+  const refreshRequestRef = useRef(0);
 
   const refresh = useCallback(async (forceRefresh = true) => {
+    const requestId = ++refreshRequestRef.current;
+    const isCurrentRequest = () => refreshRequestRef.current === requestId;
     setLoading(true);
     setError("");
     try {
@@ -210,6 +213,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         includeMarketData,
         forceRefresh,
         (indexedTokens, stale) => {
+          if (!isCurrentRequest()) return;
           setTokens((current) => indexedTokens.map((token) => preserveMarketValues(
             token,
             current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()),
@@ -218,6 +222,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
           setIsCached(stale);
         },
         (marketTokens, marketDataError, stale) => {
+          if (!isCurrentRequest()) return;
           setTokens((current) => marketTokens.map((token) => marketDataError
             ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
             : token));
@@ -226,6 +231,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
           setLoading(false);
         },
       );
+      if (!isCurrentRequest()) return;
       setTokens((current) => result.tokens.map((token) => result.marketDataError
         ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
         : token));
@@ -238,6 +244,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         setError("Showing the latest confirmed Factory snapshot while Arc Testnet RPC recovers.");
       }
     } catch (loadError) {
+      if (!isCurrentRequest()) return;
       const message = loadError instanceof AggregateError
         ? "Live refresh is temporarily unavailable. The last confirmed launch list remains visible."
         : loadError instanceof Error
@@ -246,7 +253,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       setIsPartial(false);
       setError(message || "Factory launch data could not be refreshed from Arc Testnet.");
     } finally {
-      setLoading(false);
+      if (isCurrentRequest()) setLoading(false);
     }
   }, [allowCache, includeMarketData]);
 

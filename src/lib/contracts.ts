@@ -28,6 +28,23 @@ export const factoryAbi = [
   { type: "function", name: "launchFee", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "buyFeeBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint16" }] },
   { type: "function", name: "sellFeeBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint16" }] },
+  {
+    type: "function",
+    name: "getTokenInfo",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{
+      name: "",
+      type: "tuple",
+      components: [
+        { name: "token", type: "address" },
+        { name: "curve", type: "address" },
+        { name: "creator", type: "address" },
+        { name: "launchedAt", type: "uint64" },
+        { name: "metadataURI", type: "string" },
+      ],
+    }],
+  },
 ] as const;
 
 export const erc20Abi = [

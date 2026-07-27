@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { factoryForLaunchBlock } from "@/lib/chains";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import type { TokenData } from "@/lib/types";
@@ -118,7 +118,7 @@ function applyConfirmedTransfer(
 
 async function requestSnapshot(token: TokenData, forceRefresh: boolean) {
   const address = token.address;
-  const key = address.toLowerCase();
+  const key = `${address.toLowerCase()}:${forceRefresh ? "fresh" : "cached"}`;
   const existing = pendingRequests.get(key);
   if (existing) return existing;
   const query = new URLSearchParams();
@@ -147,20 +147,24 @@ export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = fa
   const [savedAt, setSavedAt] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const refreshRequestRef = useRef(0);
 
   const refresh = useCallback(async (forceRefresh = false) => {
     if (!token || !address) return;
+    const requestId = ++refreshRequestRef.current;
     setLoading(true);
     setError("");
     try {
       const next = await requestSnapshot(token, forceRefresh);
+      if (refreshRequestRef.current !== requestId) return;
       const cached = writeCached(address, next);
       setSnapshot(next);
       setSavedAt(cached.savedAt);
     } catch (refreshError) {
+      if (refreshRequestRef.current !== requestId) return;
       setError(refreshError instanceof Error ? refreshError.message : "Holder analytics are temporarily unavailable.");
     } finally {
-      setLoading(false);
+      if (refreshRequestRef.current === requestId) setLoading(false);
     }
   }, [address, token]);
 

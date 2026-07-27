@@ -10,6 +10,7 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1_000;
 const RATE_WINDOW_MS = 60 * 60 * 1_000;
 const MAX_UPDATES_PER_WINDOW = 12;
 const MAX_AVATAR_BYTES = 350_000;
+const MAX_RATE_ENTRIES = 2_000;
 
 type Challenge = {
   address: Address;
@@ -184,6 +185,15 @@ function cleanupChallenges() {
 
 function consumeRate(key: string, limit: number) {
   const now = Date.now();
+  if (state.rates.size >= MAX_RATE_ENTRIES && !state.rates.has(key)) {
+    for (const [rateKey, rate] of state.rates) {
+      if (now - rate.startedAt >= RATE_WINDOW_MS) state.rates.delete(rateKey);
+    }
+    if (state.rates.size >= MAX_RATE_ENTRIES) {
+      const oldestKey = state.rates.keys().next().value as string | undefined;
+      if (oldestKey) state.rates.delete(oldestKey);
+    }
+  }
   const current = state.rates.get(key);
   if (!current || now - current.startedAt >= RATE_WINDOW_MS) {
     state.rates.set(key, { startedAt: now, count: 1 });

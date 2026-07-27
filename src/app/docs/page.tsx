@@ -330,12 +330,12 @@ x · y          = constant before each trade`}</CodeBlock>
         </DocSection>
 
         <DocSection id="security" eyebrow="Engineering review" title="Security review">
-          <p>An internal security and logic review was completed on 26 July 2026 across the V4 and V5 contracts, wallet flows, metadata upload, indexing, caching, and production headers. It is not an independent audit or mainnet approval.</p>
+          <p>An internal security and logic review was completed on 27 July 2026 across the V4 and V5 contracts, wallet flows, metadata upload, indexing, caching, and production headers. It is not an independent audit or mainnet approval.</p>
           <Callout title="Review outcome" tone="neutral">
             <ul className="grid gap-2.5">
               <li>No direct unauthorized-withdrawal or curve reserve-drain path was found in the reviewed flows.</li>
               <li>Trade updates now use confirmed receipt events and current contract reserves.</li>
-              <li>Quote, upload, refresh, holder, and fee-indexing trust boundaries were hardened.</li>
+              <li>Quote, upload, refresh, holder, profile, and RPC failover boundaries were hardened.</li>
               <li>Production dependencies have no known high-severity advisories; remaining advisories are confined to development tooling.</li>
             </ul>
           </Callout>

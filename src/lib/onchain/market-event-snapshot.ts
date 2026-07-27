@@ -1,6 +1,6 @@
 import { decodeEventLog, formatUnits, getAddress, parseAbiItem } from "viem";
-import { arcTestnet } from "@/lib/chains";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
+import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import type { ChartPoint, TokenData, Trade } from "@/lib/types";
 
@@ -9,6 +9,7 @@ const tokenSoldEvent = parseAbiItem("event TokenSold(address indexed seller, uin
 const tradeEvents = [tokenBoughtEvent, tokenSoldEvent] as const;
 const CHART_TRADE_LIMIT = 240;
 const TRADE_FEED_LIMIT = 500;
+const publicClient = createArcPublicClient();
 
 export type MarketSnapshot = {
   price: number;
@@ -52,17 +53,7 @@ function roundUsdc(value: number) {
 }
 
 async function getLatestBlockNumber() {
-  const response = await fetch(arcTestnet.rpcUrls.default.http[0], {
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] }),
-    headers: { "Content-Type": "application/json" },
-    method: "POST",
-    signal: AbortSignal.timeout(6_000),
-  });
-  const payload = await response.json() as { result?: string };
-  if (!response.ok || typeof payload.result !== "string" || !/^0x[0-9a-fA-F]+$/.test(payload.result)) {
-    throw new Error("Arc Testnet block number is unavailable.");
-  }
-  return BigInt(payload.result);
+  return publicClient.getBlockNumber();
 }
 
 export async function loadIndexedMarketSnapshot(token: TokenData, indexedBlock?: bigint): Promise<MarketSnapshot> {
@@ -188,7 +179,7 @@ export async function loadIndexedMarketSnapshot(token: TokenData, indexedBlock?:
     sellers: recentEvents.filter((event) => event.type === "Sell").length,
     raisedUsdc,
     targetUsdc,
-    progress: raisedUsdc / targetUsdc * 100,
+    progress: targetUsdc > 0 ? Math.min(100, raisedUsdc / targetUsdc * 100) : 0,
     graduated,
     tokensSold: Math.max(0, tokensDistributed),
     tokenReserve,

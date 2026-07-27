@@ -1,7 +1,8 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider, createConfig, http } from "wagmi";
+import { fallback, http } from "viem";
+import { WagmiProvider, createConfig } from "wagmi";
 import { injected } from "@wagmi/core";
 import { useState, type ReactNode } from "react";
 import { arcTestnet } from "@/lib/chains";
@@ -10,7 +11,12 @@ const config = createConfig({
   chains: [arcTestnet],
   connectors: [injected({ shimDisconnect: true })],
   multiInjectedProviderDiscovery: true,
-  transports: { [arcTestnet.id]: http() },
+  transports: {
+    [arcTestnet.id]: fallback(
+      arcTestnet.rpcUrls.default.http.map((url) => http(url, { retryCount: 0, timeout: 8_000 })),
+      { rank: false, retryCount: 0 },
+    ),
+  },
   ssr: true,
 });
 

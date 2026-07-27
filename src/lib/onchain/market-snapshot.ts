@@ -6,7 +6,7 @@ import { bondingCurveAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
-import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
+import { getTokenIndexSnapshotForToken } from "@/lib/onchain/token-index-snapshot";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 import type { ChartPoint, Trade } from "@/lib/types";
 
@@ -145,7 +145,7 @@ async function loadBlockTimestamps(blockNumbers: bigint[]) {
 }
 
 async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean): Promise<MarketSnapshot> {
-  const indexResult = await getTokenIndexSnapshot();
+  const indexResult = await getTokenIndexSnapshotForToken(tokenAddress, forceRefresh);
   const indexSnapshot = indexResult.snapshot;
   if (!indexSnapshot) throw new Error("Factory token index is unavailable.");
   const baseToken = indexSnapshot.tokens.find((token) => token.address.toLowerCase() === tokenAddress.toLowerCase());
@@ -354,7 +354,7 @@ async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean):
     sellers: recentEvents.filter((event) => event.type === "Sell").length,
     raisedUsdc,
     targetUsdc,
-    progress: targetUsdc > 0 ? raisedUsdc / targetUsdc * 100 : 0,
+    progress: targetUsdc > 0 ? Math.min(100, raisedUsdc / targetUsdc * 100) : 0,
     graduated,
     tokensSold: Math.max(0, tokensSold),
     tokenReserve,

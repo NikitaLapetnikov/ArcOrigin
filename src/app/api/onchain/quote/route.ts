@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAddress, isAddress, maxUint256 } from "viem";
-import { bondingCurveAbi } from "@/lib/contracts";
+import { ARC_TESTNET_CONTRACTS } from "@/lib/chains";
+import { bondingCurveAbi, factoryAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
 
@@ -15,10 +16,12 @@ function errorResponse(message: string, status = 400) {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+  const token = searchParams.get("token");
   const curve = searchParams.get("curve");
   const side = searchParams.get("side");
   const rawAmount = searchParams.get("amount");
 
+  if (!token || !isAddress(token)) return errorResponse("A valid token address is required.");
   if (!curve || !isAddress(curve)) return errorResponse("A valid curve address is required.");
   if (side !== "Buy" && side !== "Sell") return errorResponse("Side must be Buy or Sell.");
   if (!rawAmount || rawAmount.length > 78 || !/^\d+$/.test(rawAmount)) {
@@ -29,14 +32,27 @@ export async function GET(request: Request) {
   if (amount <= 0n || amount > maxUint256) return errorResponse("Amount is outside the uint256 range.");
 
   try {
+    const normalizedToken = getAddress(token);
     const normalizedCurve = getAddress(curve);
     const index = await getTokenIndexSnapshot();
-    const verifiedCurve = index.snapshot?.tokens.some(
-      (token) => token.curveAddress?.toLowerCase() === normalizedCurve.toLowerCase(),
+    let verifiedCurve = index.snapshot?.tokens.some(
+      (indexedToken) => indexedToken.address.toLowerCase() === normalizedToken.toLowerCase()
+        && indexedToken.curveAddress?.toLowerCase() === normalizedCurve.toLowerCase(),
     );
-    if (!verifiedCurve) return errorResponse("Curve is not a verified ArcOrigin V4 market.", 404);
 
     const client = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL, 4_000);
+    if (!verifiedCurve) {
+      const tokenInfo = await client.readContract({
+        address: ARC_TESTNET_CONTRACTS.factory,
+        abi: factoryAbi,
+        functionName: "getTokenInfo",
+        args: [normalizedToken],
+      });
+      verifiedCurve = tokenInfo.token.toLowerCase() === normalizedToken.toLowerCase()
+        && tokenInfo.curve.toLowerCase() === normalizedCurve.toLowerCase();
+    }
+    if (!verifiedCurve) return errorResponse("Token and curve are not a verified ArcOrigin market.", 404);
+
     const [output, fee] = await client.readContract({
       address: normalizedCurve,
       abi: bondingCurveAbi,

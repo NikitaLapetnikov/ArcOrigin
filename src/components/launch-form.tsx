@@ -51,6 +51,11 @@ const defaults: FormData = {
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const DEFAULT_LAUNCH_FEE = 10n * 10n ** 6n;
 const TOTAL_SUPPLY = 1_000_000_000n * 10n ** 18n;
+const DISPLAY_NUMBER_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+
+function formatDisplayNumber(value: number) {
+  return DISPLAY_NUMBER_FORMAT.format(value);
+}
 
 function transactionError(error: unknown) {
   const fallback = error instanceof Error ? error.message : "The wallet transaction failed.";
@@ -208,10 +213,10 @@ export function LaunchForm() {
   }, [tradingFees.buy]);
   const developerBuyAmount = Math.max(0, Number(form.developerBuy) || 0);
   const launchFeeAmount = Number(formatUnits(launchFee, 6));
-  const launchFeeLabel = `${launchFeeAmount.toLocaleString()} USDC`;
+  const launchFeeLabel = `${formatDisplayNumber(launchFeeAmount)} USDC`;
   const tradingFeeLabel = tradingFees.buy === tradingFees.sell
-    ? `${(tradingFees.buy / 100).toLocaleString()}% · 70/30 split`
-    : `${(tradingFees.buy / 100).toLocaleString()}% buy · ${(tradingFees.sell / 100).toLocaleString()}% sell`;
+    ? `${formatDisplayNumber(tradingFees.buy / 100)}% · 70/30 split`
+    : `${formatDisplayNumber(tradingFees.buy / 100)}% buy · ${formatDisplayNumber(tradingFees.sell / 100)}% sell`;
   const totalWalletPayment = launchFeeAmount + developerBuyAmount;
   const canLaunch = identityValid
     && !imageProcessing
@@ -521,13 +526,13 @@ export function LaunchForm() {
 
         <div>
           <Field label="Developer buy (optional)" value={form.developerBuy} onChange={(value) => update("developerBuy", value)} type="number" min="0" max={String(developerBuyMax)} step="0.01" />
-          <p className="mt-2 text-[11px] leading-5 text-slate-500">Separate USDC purchase after launch · maximum {developerBuyMax.toLocaleString()} USDC or 5% of supply.</p>
-          {Number(form.developerBuy) > developerBuyMax && <p className="mt-2 text-xs text-rose-300">Reduce the developer buy to {developerBuyMax.toLocaleString()} USDC or less.</p>}
+          <p className="mt-2 text-[11px] leading-5 text-slate-500">Separate USDC purchase after launch · maximum {formatDisplayNumber(developerBuyMax)} USDC or 5% of supply.</p>
+          {Number(form.developerBuy) > developerBuyMax && <p className="mt-2 text-xs text-rose-300">Reduce the developer buy to {formatDisplayNumber(developerBuyMax)} USDC or less.</p>}
         </div>
 
         <div className="grid overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2">
           <PaymentSummary label="Launch fee" value={launchFeeLabel} />
-          <PaymentSummary label="Total wallet payment" value={`${totalWalletPayment.toLocaleString()} USDC`} />
+          <PaymentSummary label="Total wallet payment" value={`${formatDisplayNumber(totalWalletPayment)} USDC`} />
         </div>
 
         {storageStatus === "unavailable" && <WarningBox>Token metadata storage is temporarily unavailable. Launching is disabled until it reconnects.</WarningBox>}
@@ -557,8 +562,8 @@ export function LaunchForm() {
             <Row label="Supply" value="1 billion" />
             <Row label="Launch fee" value={launchFeeLabel} />
             <Row label="Trading fee" value={tradingFeeLabel} />
-            <Row label="Graduation" value={`${DEFAULT_GRADUATION_THRESHOLD.toLocaleString()} USDC`} />
-            <Row label="Developer buy" value={`${developerBuyAmount.toLocaleString()} USDC`} />
+            <Row label="Graduation" value={`${formatDisplayNumber(DEFAULT_GRADUATION_THRESHOLD)} USDC`} />
+            <Row label="Developer buy" value={`${formatDisplayNumber(developerBuyAmount)} USDC`} />
             <Row label="Network" value="Arc Testnet" />
           </dl>
         </div>

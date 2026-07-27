@@ -76,8 +76,12 @@ async function optimizeProfileImage(file: File) {
   }
 }
 
-export function ProfileDashboard() {
-  const { address, isConnected, chainId } = useAccount();
+export function ProfileDashboard({ profileAddress }: { profileAddress?: Address } = {}) {
+  const { address: connectedAddress } = useAccount();
+  const address = profileAddress ?? connectedAddress;
+  const ownsProfile = Boolean(
+    address && connectedAddress && address.toLowerCase() === connectedAddress.toLowerCase(),
+  );
   const { disconnect } = useDisconnect();
   const { data: walletClient } = useWalletClient();
   const { tokens, loading, error, refresh, isPartial } = useFactoryTokenIndex();
@@ -101,7 +105,7 @@ export function ProfileDashboard() {
       chainId: arcTestnet.id,
     })),
     query: {
-      enabled: Boolean(address) && tokens.length > 0 && chainId === arcTestnet.id,
+      enabled: Boolean(address) && tokens.length > 0,
       staleTime: 10_000,
       refetchInterval: 15_000,
     },
@@ -124,6 +128,10 @@ export function ProfileDashboard() {
       active = false;
     };
   }, [address]);
+
+  useEffect(() => () => {
+    if (editPreview.startsWith("blob:")) URL.revokeObjectURL(editPreview);
+  }, [editPreview]);
 
   const walletTrades = useMemo(() => {
     if (!address) return [];
@@ -200,7 +208,7 @@ export function ProfileDashboard() {
 
   async function shareProfile() {
     if (!address) return;
-    const url = `${window.location.origin}/profile`;
+    const url = `${window.location.origin}/profile/${address}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: "ArcOrigin profile", text: address, url });
@@ -238,7 +246,7 @@ export function ProfileDashboard() {
   }
 
   async function saveProfile() {
-    if (!address || !walletClient) {
+    if (!address || !connectedAddress || !ownsProfile || !walletClient) {
       setEditError("Connect your wallet before saving the profile.");
       return;
     }
@@ -259,10 +267,10 @@ export function ProfileDashboard() {
       });
       const challenge = await challengeResponse.json() as { nonce?: string; message?: string; error?: string };
       if (!challengeResponse.ok || !challenge.nonce || !challenge.message) throw new Error(challenge.error ?? "Profile authorization failed.");
-      const signature = await walletClient.signMessage({ account: address, message: challenge.message });
+      const signature = await walletClient.signMessage({ account: connectedAddress, message: challenge.message });
       const body = new FormData();
       body.append("nonce", challenge.nonce);
-      body.append("address", address);
+      body.append("address", connectedAddress);
       body.append("signature", signature);
       body.append("username", username);
       body.append("imageHash", imageHash);
@@ -282,7 +290,7 @@ export function ProfileDashboard() {
     }
   }
 
-  if (!isConnected || !address) return <div className="container-shell py-14">
+  if (!address) return <div className="container-shell py-14">
     <div className="mx-auto max-w-xl rounded-2xl border border-line bg-panel p-8 text-center shadow-glow">
       <div className="mx-auto grid size-14 place-items-center rounded-2xl border border-line bg-white/[.03] text-slate-300"><UserRound className="size-6" /></div>
       <h1 className="mt-5 text-2xl font-semibold tracking-[-.035em] text-white">Connect your wallet</h1>
@@ -298,15 +306,15 @@ export function ProfileDashboard() {
           <ProfileAvatar avatar={profile?.avatar} size="large" />
           <div className="min-w-0">
             <h1 className="truncate text-xl font-semibold tracking-[-.035em] text-white sm:text-[22px]" title={profile?.username ? `@${profile.username}` : address}>{profile?.username ? `@${profile.username}` : address}</h1>
-            <p className="mt-1 truncate text-sm font-medium text-slate-400" title={profile?.username ? address : undefined}>{profile?.username ? address : "Your ArcOrigin profile"}</p>
+            <p className="mt-1 truncate text-sm font-medium text-slate-400" title={profile?.username ? address : undefined}>{profile?.username ? address : ownsProfile ? "Your ArcOrigin profile" : "Public ArcOrigin profile"}</p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center xl:flex-nowrap xl:justify-end">
-          <Button className="h-9 whitespace-nowrap px-3 text-xs" variant="secondary" onClick={openProfileEditor}><Pencil className="size-3.5" />Edit profile</Button>
+          {ownsProfile && <Button className="h-9 whitespace-nowrap px-3 text-xs" variant="secondary" onClick={openProfileEditor}><Pencil className="size-3.5" />Edit profile</Button>}
           <Button className="h-9 whitespace-nowrap px-3 text-xs" variant="secondary" onClick={() => void copyAddress()}><Copy className="size-3.5" />Copy address</Button>
           <Button className="h-9 whitespace-nowrap px-3 text-xs" variant="secondary" onClick={() => void shareProfile()}><Share2 className="size-3.5" />Share</Button>
           <a href={`${EXPLORER_URL}/address/${address}`} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] border border-line bg-white/[.035] px-3 text-xs font-semibold text-slate-100 transition hover:bg-white/[.06]">Arcscan <ExternalLink className="size-3.5" /></a>
-          <Button className="h-9 whitespace-nowrap px-3 text-xs max-sm:col-span-2" variant="danger" onClick={() => disconnect()}><LogOut className="size-3.5" />Disconnect</Button>
+          {ownsProfile && <Button className="h-9 whitespace-nowrap px-3 text-xs max-sm:col-span-2" variant="danger" onClick={() => disconnect()}><LogOut className="size-3.5" />Disconnect</Button>}
         </div>
       </div>
       <div className="p-5 sm:p-7">
@@ -346,7 +354,7 @@ export function ProfileDashboard() {
       {error && <div className="px-5 pb-5"><WarningBox>{error}</WarningBox></div>}
       {actionMessage && <p className="border-t border-line px-6 py-3 text-xs text-emerald-300">{actionMessage}</p>}
     </section>
-    {editOpen && <ProfileEditor
+    {editOpen && ownsProfile && <ProfileEditor
       username={editUsername}
       preview={editPreview}
       hasSavedAvatar={Boolean(profile?.avatar)}

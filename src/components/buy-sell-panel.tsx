@@ -227,8 +227,8 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     const input = parseUnits(amount, inputDecimals);
     if (input <= 0n) throw new Error("Enter an amount greater than zero.");
     const response = await fetch(
-      `/api/onchain/quote?curve=${encodeURIComponent(curveAddress)}&side=${side}&amount=${input.toString()}`,
-      { cache: "no-store", signal: AbortSignal.timeout(8_000) },
+      `/api/onchain/quote?token=${encodeURIComponent(token.address)}&curve=${encodeURIComponent(curveAddress)}&side=${side}&amount=${input.toString()}`,
+      { cache: "no-store", signal: AbortSignal.timeout(10_000) },
     );
     const result = await response.json() as { output?: string; fee?: string; error?: string };
     if (!response.ok || !result.output || result.fee === undefined) {
@@ -267,6 +267,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     slippage,
     slippageValid,
     token.status,
+    token.address,
   ]);
 
   useEffect(() => {

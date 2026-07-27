@@ -1,6 +1,6 @@
 import "server-only";
 
-import { formatUnits } from "viem";
+import { formatUnits, type Address } from "viem";
 import { ARC_TESTNET_ACTIVE_FACTORY } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
@@ -308,6 +308,24 @@ export async function getTokenIndexSnapshot(forceRefresh = false) {
     if (state.snapshot) return { snapshot: state.snapshot, stale: true };
     throw error;
   }
+}
+
+export async function getTokenIndexSnapshotForToken(tokenAddress: Address, forceRefresh = false) {
+  const containsToken = (result: Awaited<ReturnType<typeof getTokenIndexSnapshot>>) => result.snapshot?.tokens.some(
+    (token) => token.address.toLowerCase() === tokenAddress.toLowerCase(),
+  );
+
+  let result = await getTokenIndexSnapshot(forceRefresh);
+  if (containsToken(result)) return result;
+
+  if (!forceRefresh) {
+    result = await getTokenIndexSnapshot(true);
+    if (containsToken(result)) return result;
+  }
+
+  const remainingCooldown = FORCE_REFRESH_INTERVAL_MS - (Date.now() - state.lastAttemptAt);
+  if (remainingCooldown > 0) await wait(remainingCooldown + 50);
+  return getTokenIndexSnapshot(true);
 }
 
 export function isTokenIndexRpcError(error: unknown) {

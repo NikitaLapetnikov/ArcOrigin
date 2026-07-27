@@ -76,7 +76,7 @@ export function IndexedTokenDetail({ address }: { address: string }) {
               {copied ? <Check className="size-4 shrink-0 text-emerald-300"/> : <Copy className="size-4 shrink-0 text-slate-400"/>}
             </button>
             <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
-              <span className="text-slate-500">Created by <Link href={`/creators/${token.creator}`} className="ml-1 font-medium text-slate-200 transition hover:text-cyan">{shortAddress(token.creator)}</Link></span>
+              <span className="text-slate-500">Created by <Link href={`/profile/${token.creator}`} className="ml-1 font-medium text-slate-200 transition hover:text-cyan">{shortAddress(token.creator)}</Link></span>
               <span className="text-slate-500">Launched <span className="ml-1 text-slate-300">{utcDateTime(token.launchedAt)}</span></span>
             </div>
           </div>
