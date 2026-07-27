@@ -15,11 +15,11 @@ const legalLinks = [
 
 export function Footer() {
   return <footer className="container-shell pb-5 pt-10 md:pb-8 md:pt-16">
-    <div className="overflow-hidden rounded-[22px] border border-line bg-[#0a0f1a]/95 shadow-[0_24px_80px_rgba(0,0,0,.28)]">
+    <div className="overflow-hidden rounded-[22px] border border-line bg-panel shadow-glow">
       <div className="grid gap-10 px-6 py-8 md:grid-cols-[1.25fr_.7fr_.7fr_1.35fr] md:px-9 md:py-10">
         <div>
           <Link href="/" className="inline-flex items-center gap-3 text-white transition hover:opacity-85">
-            <Image src="/brand/arcorigin-logo-v2.png" alt="" width={42} height={42} className="size-10 rounded-xl border border-cyan/20 bg-[#030713] object-cover" />
+            <Image src="/brand/arcorigin-logo-v2.png" alt="" width={42} height={42} className="size-10 rounded-xl border border-cyan/20 bg-[var(--surface-2)] object-cover" />
             <span className="text-lg font-semibold tracking-[-.035em]">ArcOrigin</span>
           </Link>
           <p className="mt-4 max-w-[310px] text-[13px] leading-6 text-slate-400">
