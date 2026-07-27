@@ -3,10 +3,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Menu, Radio, Wallet, X } from "lucide-react";
+import { ChevronDown, Copy, LogOut, Menu, Radio, UserRound, Wallet, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useAccount, useConnect, useSwitchChain, type Connector } from "wagmi";
+import { useAccount, useConnect, useDisconnect, useSwitchChain, type Connector } from "wagmi";
 import { arcTestnet } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 import { Badge, Button } from "./ui";
@@ -21,8 +21,11 @@ const nav = [
 function WalletButton() {
   const [mounted, setMounted] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const { address, isConnected, chainId } = useAccount();
   const { connectors, connectAsync, isPending, error } = useConnect();
+  const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
   const availableConnectors = connectors.filter((connector, index, items) =>
     items.findIndex((item) => item.uid === connector.uid || item.name === connector.name) === index,
@@ -30,15 +33,21 @@ function WalletButton() {
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
-    if (!selectorOpen) return;
+    if (!selectorOpen && !accountOpen) return;
     const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectorOpen(false);
+      if (event.key === "Escape") {
+        setSelectorOpen(false);
+        setAccountOpen(false);
+      }
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
-  }, [selectorOpen]);
+  }, [accountOpen, selectorOpen]);
   useEffect(() => {
     if (isConnected) setSelectorOpen(false);
+  }, [isConnected]);
+  useEffect(() => {
+    if (!isConnected) setAccountOpen(false);
   }, [isConnected]);
 
   if (!mounted) {
@@ -48,10 +57,46 @@ function WalletButton() {
   if (isConnected && chainId !== arcTestnet.id) {
     return <Button variant="secondary" onClick={() => switchChain({ chainId: arcTestnet.id })}>Switch to Arc</Button>;
   }
-  if (isConnected) return <Link
-    href="/profile"
-    className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border border-line bg-white/[.035] px-4 text-[13px] font-semibold text-slate-100 transition hover:border-slate-500/40 hover:bg-white/[.06]"
-  ><span className="size-2 rounded-full bg-emerald-400" />{shortAddress(address ?? "")}</Link>;
+  if (isConnected) return <div className="relative">
+    <button
+      type="button"
+      aria-haspopup="menu"
+      aria-expanded={accountOpen}
+      onClick={() => setAccountOpen((value) => !value)}
+      className="inline-flex h-10 items-center justify-center gap-2 rounded-[10px] border border-line bg-white/[.035] px-3.5 text-[13px] font-semibold text-slate-100 transition hover:border-slate-500/40 hover:bg-white/[.06]"
+    >
+      <span className="size-2 rounded-full bg-emerald-400" />
+      {shortAddress(address ?? "")}
+      <ChevronDown className={`size-3.5 text-slate-500 transition ${accountOpen ? "rotate-180" : ""}`} />
+    </button>
+    {accountOpen && <>
+      <button type="button" aria-label="Close wallet menu" className="fixed inset-0 z-40 cursor-default" onClick={() => setAccountOpen(false)} />
+      <div role="menu" className="absolute right-0 top-12 z-50 w-[280px] overflow-hidden rounded-2xl border border-line bg-[#0b101a] p-2 shadow-[0_24px_70px_rgba(0,0,0,.5)]">
+        <Link href="/profile" role="menuitem" onClick={() => setAccountOpen(false)} className="flex items-center gap-3 rounded-xl border border-cyan/15 bg-white/[.035] p-3 transition hover:border-cyan/35 hover:bg-cyan/[.05]">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/[.04] text-slate-300"><UserRound className="size-4.5" /></span>
+          <span className="min-w-0"><span className="block text-[13px] font-semibold text-white">{shortAddress(address ?? "", 6)}</span><span className="mt-0.5 block text-[10px] text-slate-500">Open profile</span></span>
+        </Link>
+        <div className="my-2 h-px bg-line" />
+        <button
+          type="button"
+          role="menuitem"
+          onClick={async () => {
+            if (!address) return;
+            await navigator.clipboard.writeText(address);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1_500);
+          }}
+          className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[13px] font-medium text-slate-300 transition hover:bg-white/[.04] hover:text-white"
+        ><Copy className="size-4 text-slate-500" />{copied ? "Address copied" : "Copy address"}</button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => disconnect()}
+          className="flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[13px] font-medium text-rose-300 transition hover:bg-rose-400/[.06]"
+        ><LogOut className="size-4" />Disconnect</button>
+      </div>
+    </>}
+  </div>;
 
   async function connectWallet(connector: Connector) {
     try {

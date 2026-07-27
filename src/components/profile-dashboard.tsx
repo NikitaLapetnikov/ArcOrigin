@@ -132,7 +132,7 @@ export function ProfileDashboard() {
             <p className="mt-3 text-sm text-slate-500">Across {positions.length} open position{positions.length === 1 ? "" : "s"} · {money(confirmedVolume)} confirmed trade volume</p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge tone={isPartial ? "warn" : "good"}>{isPartial ? "Partial market data" : "Confirmed onchain"}</Badge>
+            {isPartial && <Badge tone="warn">Partial market data</Badge>}
             <Button variant="ghost" disabled={loading} onClick={() => {
               void refresh(true);
               void balanceReads.refetch();
