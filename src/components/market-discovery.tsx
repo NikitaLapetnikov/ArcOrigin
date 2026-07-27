@@ -7,12 +7,11 @@ import { readWatchlist } from "@/components/watchlist-button";
 import { calculateMomentumScore } from "@/lib/scoring";
 import type { TokenData, Trade } from "@/lib/types";
 import { money, number, tickerLabel, utcDateTime } from "@/lib/utils";
-import { Badge, TokenIcon } from "@/components/ui";
+import { TokenIcon } from "@/components/ui";
 
-type DiscoveryTab = "buys" | "new" | "old" | "trending" | "graduated" | "marketCap" | "volume" | "watchlist";
+type DiscoveryTab = "new" | "old" | "trending" | "graduated" | "marketCap" | "volume" | "watchlist";
 
 const tabs: { id: DiscoveryTab; label: string }[] = [
-  { id: "buys", label: "Latest buys" },
   { id: "new", label: "New" },
   { id: "old", label: "Old" },
   { id: "trending", label: "Trending" },
@@ -53,14 +52,6 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
       window.removeEventListener("arcorigin:watchlist-updated", sync);
     };
   }, []);
-  const latestBuys = useMemo(() => tokens.flatMap((token) => token.recentTrades
-    .filter((trade) => trade.type === "Buy")
-    .map((trade, index): BuyItem => ({
-      token,
-      trade,
-      order: tradeOrder(token, trade, index),
-    })))
-    .sort((left, right) => right.order - left.order), [tokens]);
   const newLaunches = useMemo(() => [...tokens].sort((left, right) => launchOrder(right) - launchOrder(left)), [tokens]);
   const oldLaunches = useMemo(() => [...tokens].sort((left, right) => launchOrder(left) - launchOrder(right)), [tokens]);
   const trending = useMemo(() => tokens.map((token) => ({ token, score: calculateMomentumScore(token) }))
@@ -89,10 +80,9 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
               : activeTab === "watchlist"
                 ? watchedTokens
               : [];
-  const totalItems = activeTab === "buys" ? latestBuys.length : activeTokens.length;
+  const totalItems = activeTokens.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const pageStart = (page - 1) * PAGE_SIZE;
-  const visibleBuys = latestBuys.slice(pageStart, pageStart + PAGE_SIZE);
   const visibleTokens = activeTokens.slice(pageStart, pageStart + PAGE_SIZE);
 
   useEffect(() => {
@@ -116,33 +106,62 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
     </div>
 
     <div id={`market-panel-${activeTab}`} role="tabpanel" className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5">
-      {activeTab === "buys" && visibleBuys.map(({ token, trade }, index) => <Link
-        href={`/tokens/${token.address}`}
-        key={`${token.address}-${trade.txHash}-${index}`}
-        className="group min-w-0 rounded-2xl border border-line bg-black/15 p-3.5 transition hover:-translate-y-0.5 hover:border-cyan/25 hover:bg-white/[.025]"
-      >
-        <TokenIcon label={token.icon} image={token.image} className="aspect-square size-auto w-full rounded-xl text-3xl" />
-        <div className="mt-4 flex items-start justify-between gap-3">
-          <div className="min-w-0"><p className="truncate text-base font-semibold tracking-[-.02em] text-white">{token.name}</p><p className="mt-1.5 font-mono text-xs text-slate-400">{tickerLabel(token.ticker)}</p></div>
-          <Badge tone="good">Buy</Badge>
-        </div>
-        <div className="mt-4 flex items-end justify-between gap-3 border-t border-line/70 pt-3.5"><div className="min-w-0"><p className="truncate text-[15px] font-semibold text-emerald-300">+{number(trade.tokens)} {tickerLabel(token.ticker)}</p><p className="mt-1 text-[13px] text-slate-500">for {money(trade.usdc)}</p></div><p className="shrink-0 text-[11px] text-slate-500">{utcDateTime(trade.timestamp)}</p></div>
-      </Link>)}
-
-      {activeTab !== "buys" && visibleTokens.map((token, index) => <TokenMarketCard
+      {visibleTokens.map((token, index) => <TokenMarketCard
         key={token.address}
         token={token}
         rank={activeTab === "trending" || activeTab === "marketCap" || activeTab === "volume" ? pageStart + index + 1 : undefined}
       />)}
 
-      {activeTab === "buys" && visibleBuys.length === 0 && <EmptyActivity message="No confirmed buys yet. The feed will update after the first onchain trade."/>}
-      {activeTab !== "buys" && activeTokens.length === 0 && <EmptyActivity message={activeTab === "graduated"
+      {activeTokens.length === 0 && <EmptyActivity message={activeTab === "graduated"
         ? "No tokens have graduated yet."
         : activeTab === "watchlist"
           ? "No saved tokens yet. Use the star on a token page to add it here."
         : "No tokens match this view or search."}/>}
     </div>
     {totalItems > 0 && <Pagination page={page} totalPages={totalPages} onPage={setPage} />}
+  </section>;
+}
+
+export function LatestBuys({ tokens, limit = 10 }: { tokens: TokenData[]; limit?: number }) {
+  const latestBuys = useMemo(() => tokens.flatMap((token) => token.recentTrades
+    .filter((trade) => trade.type === "Buy")
+    .map((trade, index): BuyItem => ({
+      token,
+      trade,
+      order: tradeOrder(token, trade, index),
+    })))
+    .sort((left, right) => right.order - left.order)
+    .slice(0, limit), [limit, tokens]);
+
+  if (latestBuys.length === 0) return null;
+  return <section className="panel mb-4 overflow-hidden" aria-labelledby="latest-buys-title">
+    <div className="flex items-center justify-between border-b border-line px-4 py-3.5">
+      <div>
+        <h2 id="latest-buys-title" className="text-base font-semibold tracking-[-.025em] text-white">Latest buys</h2>
+        <p className="mt-0.5 text-xs font-medium text-slate-500">Most recent confirmed purchases</p>
+      </div>
+      <span className="text-xs font-medium text-slate-500">{latestBuys.length} latest</span>
+    </div>
+    <div className="grid grid-cols-1 gap-2.5 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      {latestBuys.map(({ token, trade }, index) => <Link
+        href={`/tokens/${token.address}`}
+        key={`${token.address}-${trade.txHash}-${index}`}
+        className="group flex min-w-0 items-center gap-3 rounded-xl border border-line bg-black/15 p-3 transition hover:border-cyan/25 hover:bg-white/[.03]"
+      >
+        <TokenIcon label={token.icon} image={token.image} className="size-12 rounded-[10px] text-sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-semibold text-white">{token.name}</p>
+            <ArrowUpRight className="size-3.5 shrink-0 text-slate-600 transition group-hover:text-cyan" />
+          </div>
+          <p className="mt-1 truncate text-[13px] font-semibold text-emerald-300">+{number(trade.tokens)} {tickerLabel(token.ticker)}</p>
+          <div className="mt-1 flex items-center justify-between gap-2 text-[10px] font-medium text-slate-500">
+            <span>{money(trade.usdc)}</span>
+            <span className="truncate">{utcDateTime(trade.timestamp).replace(" UTC", "")}</span>
+          </div>
+        </div>
+      </Link>)}
+    </div>
   </section>;
 }
 
