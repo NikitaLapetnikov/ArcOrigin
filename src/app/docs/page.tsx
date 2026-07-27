@@ -66,24 +66,23 @@ export default function DocsPage() {
     <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] grid-line opacity-20 [mask-image:linear-gradient(to_bottom,black,transparent)]" />
 
     <section className="container-shell relative pt-10 md:pt-14">
-      <div className="overflow-hidden rounded-3xl border border-line bg-panel">
-        <div className="relative px-6 py-12 sm:px-10 md:py-16 lg:px-14">
-          <div className="pointer-events-none absolute right-0 top-0 size-72 rounded-full bg-cyan/[.07] blur-[110px]" />
-          <p className="eyebrow">ArcOrigin docs</p>
-          <h1 className="relative mt-5 max-w-4xl text-[42px] font-semibold leading-[.98] tracking-[-.06em] text-white sm:text-[56px] md:text-[68px]">
-            Launch and trade<br className="hidden sm:block" /> with visible rules.
+      <div className="grid items-end gap-9 border-b border-line pb-10 lg:grid-cols-[minmax(0,1fr)_540px] lg:gap-16">
+        <div className="max-w-2xl">
+          <h1 className="text-[38px] font-semibold leading-none tracking-[-.05em] text-white sm:text-[48px] md:text-[54px]">
+            ArcOrigin documentation
           </h1>
-          <p className="relative mt-6 max-w-2xl text-base leading-7 text-slate-400">
-            Protocol mechanics, integration details, and honest testnet limitations in one place.
+          <p className="mt-5 max-w-xl text-[15px] leading-7 text-slate-400">
+            Protocol mechanics, launch parameters, trading flows, and integration reference.
           </p>
-          <div className="relative mt-8 flex flex-wrap gap-2">
-            <DocPill label="Arc Testnet" />
-            <DocPill label="USDC markets" />
-            <DocPill label="V5 active" tone="cyan" />
-            <DocPill label="Unaudited testnet" tone="warn" />
+          <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs font-medium text-slate-500">
+            <span className="inline-flex items-center gap-2 text-slate-300"><span className="size-1.5 rounded-full bg-cyan" />Arc Testnet</span>
+            <span aria-hidden="true" className="text-slate-700">/</span>
+            <span>Protocol V5</span>
+            <span aria-hidden="true" className="text-slate-700">/</span>
+            <span className="inline-flex items-center gap-2 text-amber-200/80"><span className="size-1.5 rounded-full bg-amber-300" />Unaudited</span>
           </div>
         </div>
-        <div className="grid border-t border-line sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2">
           <HeroFact label="Current launch fee" value="10 USDC" />
           <HeroFact label="Trading fee" value="1%" />
           <HeroFact label="Fee split" value="70 / 30" />
@@ -92,7 +91,7 @@ export default function DocsPage() {
       </div>
     </section>
 
-    <div className="container-shell relative mt-5 grid items-start gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
+    <div className="container-shell relative mt-8 grid items-start gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
       <aside className="overflow-hidden rounded-2xl border border-line bg-panel lg:sticky lg:top-[92px]">
         <div className="border-b border-line px-5 py-4">
           <p className="font-mono text-[10px] uppercase tracking-[.14em] text-slate-500">Documentation</p>
@@ -390,19 +389,10 @@ function DocSection({ id, eyebrow, title, children, last = false }: {
 }
 
 function HeroFact({ label, value }: { label: string; value: string }) {
-  return <div className="border-b border-line px-6 py-5 last:border-b-0 sm:border-r sm:[&:nth-child(n+3)]:border-b-0 lg:border-b-0">
-    <p className="font-mono text-[9px] uppercase tracking-[.12em] text-slate-600">{label}</p>
-    <p className="mt-2 text-lg font-semibold text-white">{value}</p>
+  return <div className="bg-[#090e17] px-5 py-4">
+    <p className="text-[11px] font-medium text-slate-500">{label}</p>
+    <p className="mt-2 text-[17px] font-semibold tracking-[-.02em] text-white">{value}</p>
   </div>;
-}
-
-function DocPill({ label, tone = "neutral" }: { label: string; tone?: "neutral" | "cyan" | "warn" }) {
-  const style = tone === "cyan"
-    ? "border-cyan/20 bg-cyan/[.07] text-cyan"
-    : tone === "warn"
-      ? "border-amber-300/20 bg-amber-300/[.06] text-amber-200"
-      : "border-line bg-black/20 text-slate-300";
-  return <span className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${style}`}>{label}</span>;
 }
 
 function Callout({ title, children, tone = "cyan" }: { title: string; children: React.ReactNode; tone?: "cyan" | "neutral" | "warn" }) {
