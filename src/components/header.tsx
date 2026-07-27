@@ -127,10 +127,10 @@ export function Header() {
         <Image
           src="/brand/arcorigin-logo.png"
           alt="ArcOrigin"
-          width={44}
-          height={44}
+          width={48}
+          height={48}
           priority
-          className="size-11 rounded-xl border border-cyan/20 shadow-[0_0_28px_rgba(57,189,248,.18)]"
+          className="size-12 rounded-[14px] border border-cyan/25 bg-[#030713] object-contain p-[3px] shadow-[0_0_28px_rgba(57,189,248,.2)]"
         />
         <span className="text-lg font-semibold tracking-[-.035em] text-white">ArcOrigin</span>
       </Link>
