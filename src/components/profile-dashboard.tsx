@@ -13,8 +13,10 @@ import { money, number, shortAddress, tickerLabel, utcDateTime } from "@/lib/uti
 import { Badge, Button, LinkButton, TokenIcon, WarningBox } from "@/components/ui";
 
 type ProfileTab = "Positions" | "History" | "Activity" | "Launches";
+type PortfolioRange = "1D" | "7D" | "30D";
 type WalletTrade = { token: TokenData; trade: Trade };
 type WalletProfile = { address: Address; username: string; avatar: string; updatedAt: string };
+type PortfolioPoint = { timestamp: number; value: number };
 type Position = {
   token: TokenData;
   balance: number;
@@ -25,6 +27,7 @@ type Position = {
 };
 
 const tabs: ProfileTab[] = ["Positions", "History", "Activity", "Launches"];
+const portfolioRanges: Record<PortfolioRange, number> = { "1D": 86_400, "7D": 604_800, "30D": 2_592_000 };
 const PROFILE_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const PROFILE_IMAGE_MAX_BYTES = 350_000;
 
@@ -72,6 +75,7 @@ export function ProfileDashboard() {
   const { data: walletClient } = useWalletClient();
   const { tokens, loading, error, refresh, isPartial } = useFactoryTokenIndex();
   const [activeTab, setActiveTab] = useState<ProfileTab>("Positions");
+  const [portfolioRange, setPortfolioRange] = useState<PortfolioRange>("1D");
   const [actionMessage, setActionMessage] = useState("");
   const [profile, setProfile] = useState<WalletProfile | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -143,6 +147,43 @@ export function ProfileDashboard() {
   }, [address, tokens]);
   const portfolioValue = positions.reduce((sum, position) => sum + position.value, 0);
   const confirmedVolume = walletTrades.reduce((sum, { trade }) => sum + trade.usdc, 0);
+  const portfolioHistory = useMemo(() => {
+    const end = Math.floor(Date.now() / 60_000) * 60;
+    const start = end - portfolioRanges[portfolioRange];
+    const sampleCount = 49;
+    const tokenHistories = tokens.flatMap((token, index) => {
+      const rawBalance = balanceReads.data?.[index]?.result;
+      if (typeof rawBalance !== "bigint") return [];
+      const actualBalance = Number(formatUnits(rawBalance, 18));
+      const trades = walletTrades
+        .filter((item) => item.token.address.toLowerCase() === token.address.toLowerCase() && item.trade.timestamp)
+        .map(({ trade }) => trade)
+        .sort((left, right) => (left.timestamp ?? 0) - (right.timestamp ?? 0));
+      const allWalletTrades = walletTrades.filter((item) => item.token.address.toLowerCase() === token.address.toLowerCase());
+      if (trades.length !== allWalletTrades.length) return [];
+      const derivedBalance = trades.reduce((sum, trade) => sum + (trade.type === "Buy" ? trade.tokens : -trade.tokens), 0);
+      const reconciled = Math.abs(actualBalance - Math.max(0, derivedBalance)) <= Math.max(0.000001, actualBalance * 1e-9);
+      const prices = token.chartData
+        .filter((point) => point.timestamp && Number.isFinite(point.price) && point.price > 0)
+        .sort((left, right) => (left.timestamp ?? 0) - (right.timestamp ?? 0));
+      if (!reconciled || prices.length === 0) return [];
+      return [{ token, trades, prices }];
+    });
+    if (tokenHistories.length === 0) return [] as PortfolioPoint[];
+    return Array.from({ length: sampleCount }, (_, index): PortfolioPoint => {
+      const timestamp = Math.round(start + (index / (sampleCount - 1)) * (end - start));
+      const value = tokenHistories.reduce((portfolioTotal, history) => {
+        const tokenBalance = history.trades.reduce((sum, trade) => (
+          (trade.timestamp ?? 0) <= timestamp ? sum + (trade.type === "Buy" ? trade.tokens : -trade.tokens) : sum
+        ), 0);
+        if (tokenBalance <= 0) return portfolioTotal;
+        const historicalPrice = [...history.prices].reverse().find((point) => (point.timestamp ?? 0) <= timestamp)?.price;
+        const price = index === sampleCount - 1 ? history.token.price : historicalPrice;
+        return price ? portfolioTotal + tokenBalance * price : portfolioTotal;
+      }, 0);
+      return { timestamp, value };
+    });
+  }, [balanceReads.data, portfolioRange, tokens, walletTrades]);
 
   async function copyAddress() {
     if (!address) return;
@@ -276,14 +317,12 @@ export function ProfileDashboard() {
             }}><RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button>
           </div>
         </div>
-        <div className="relative mt-7 h-[210px] overflow-hidden rounded-2xl border border-line bg-black/15">
-          <div className="absolute inset-0 opacity-60 grid-line" />
-          <div className="absolute inset-x-5 bottom-10 border-t border-cyan/55">
-            <span className="absolute -right-1 -top-1.5 size-3 rounded-full border-2 border-[#0a101a] bg-cyan shadow-[0_0_18px_rgba(57,189,248,.7)]" />
-          </div>
-          <div className="absolute bottom-4 left-5 right-5 flex items-center justify-between text-xs font-medium text-slate-400"><span>Current value</span><span>{money(portfolioValue)}</span></div>
-          <p className="absolute left-5 top-5 max-w-md text-[13px] font-medium leading-5 text-slate-400">Portfolio history will appear when complete historical pricing is available.</p>
-        </div>
+        <PortfolioChart
+          points={portfolioHistory}
+          range={portfolioRange}
+          currentValue={portfolioValue}
+          onRange={setPortfolioRange}
+        />
       </div>
     </section>
 
@@ -317,6 +356,105 @@ export function ProfileDashboard() {
       onSave={() => void saveProfile()}
     />}
   </div>;
+}
+
+function PortfolioChart({
+  points,
+  range,
+  currentValue,
+  onRange,
+}: {
+  points: PortfolioPoint[];
+  range: PortfolioRange;
+  currentValue: number;
+  onRange: (range: PortfolioRange) => void;
+}) {
+  const width = 1_000;
+  const height = 250;
+  const plot = { left: 18, right: 82, top: 22, bottom: 36 };
+  const values = points.map((point) => point.value);
+  const rawMin = values.length > 0 ? Math.min(...values) : 0;
+  const rawMax = values.length > 0 ? Math.max(...values) : Math.max(1, currentValue);
+  const padding = rawMax === rawMin ? Math.max(rawMax * 0.08, 0.25) : (rawMax - rawMin) * 0.12;
+  const minimum = Math.max(0, rawMin - padding);
+  const maximum = rawMax + padding;
+  const valueRange = Math.max(maximum - minimum, 0.000001);
+  const xFor = (index: number) => plot.left + (index / Math.max(1, points.length - 1)) * (width - plot.left - plot.right);
+  const yFor = (value: number) => plot.top + (1 - (value - minimum) / valueRange) * (height - plot.top - plot.bottom);
+  const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${xFor(index).toFixed(2)} ${yFor(point.value).toFixed(2)}`).join(" ");
+  const areaPath = points.length > 1
+    ? `${linePath} L ${xFor(points.length - 1).toFixed(2)} ${height - plot.bottom} L ${xFor(0).toFixed(2)} ${height - plot.bottom} Z`
+    : "";
+  const first = points[0];
+  const last = points.at(-1);
+  const change = first && last ? last.value - first.value : 0;
+  const changePercent = first && first.value > 0 ? change / first.value * 100 : null;
+  const yTicks = [maximum, (maximum + minimum) / 2, minimum];
+  const xTicks = points.length > 1 ? [points[0], points[Math.floor((points.length - 1) / 2)], points[points.length - 1]] : [];
+
+  return <div className="mt-7 overflow-hidden rounded-2xl border border-line bg-black/15">
+    <div className="flex flex-col gap-4 border-b border-line/80 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <div>
+        <div className="flex items-center gap-2.5">
+          <p className="text-sm font-semibold text-white">Portfolio balance</p>
+          {points.length > 1 && <span className={change >= 0 ? "text-xs font-semibold text-emerald-300" : "text-xs font-semibold text-rose-300"}>
+            {change >= 0 ? "+" : ""}{money(change)}
+            {changePercent !== null ? ` (${changePercent >= 0 ? "+" : ""}${changePercent.toFixed(2)}%)` : ""}
+          </span>}
+        </div>
+        <p className="mt-1 text-xs font-medium text-slate-500">Confirmed value · {range}</p>
+      </div>
+      <div className="inline-flex w-fit items-center rounded-xl border border-line bg-white/[.025] p-1" role="group" aria-label="Portfolio chart range">
+        {(Object.keys(portfolioRanges) as PortfolioRange[]).map((option) => <button
+          key={option}
+          type="button"
+          aria-pressed={range === option}
+          onClick={() => onRange(option)}
+          className={range === option
+            ? "h-8 min-w-12 rounded-lg bg-white/[.09] px-3 text-xs font-semibold text-white shadow-sm"
+            : "h-8 min-w-12 rounded-lg px-3 text-xs font-semibold text-slate-400 transition hover:text-white"}
+        >{option}</button>)}
+      </div>
+    </div>
+    <div className="relative h-[260px] w-full sm:h-[300px]">
+      {points.length > 1 ? <svg className="absolute inset-0 size-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${range} portfolio value line chart`}>
+        <defs>
+          <linearGradient id="portfolio-area-gradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#39bdf8" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#39bdf8" stopOpacity="0" />
+          </linearGradient>
+          <filter id="portfolio-line-glow" x="-10%" y="-30%" width="120%" height="160%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+        {yTicks.map((tick, index) => {
+          const y = yFor(tick);
+          return <g key={`${tick}-${index}`}>
+            <line x1={plot.left} x2={width - plot.right} y1={y} y2={y} stroke="#1d2838" strokeWidth="1" strokeDasharray="4 6" vectorEffect="non-scaling-stroke" />
+            <text x={width - 10} y={y + 4} fill="#778399" fontSize="11" textAnchor="end">{money(tick, true)}</text>
+          </g>;
+        })}
+        {xTicks.map((tick, index) => <text key={tick.timestamp} x={xFor(index * Math.floor((points.length - 1) / 2))} y={height - 10} fill="#778399" fontSize="11" textAnchor={index === 0 ? "start" : index === 2 ? "end" : "middle"}>
+          {formatPortfolioTime(tick.timestamp, range)}
+        </text>)}
+        <path d={areaPath} fill="url(#portfolio-area-gradient)" />
+        <path d={linePath} fill="none" stroke="#39bdf8" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" filter="url(#portfolio-line-glow)" />
+        {last && <circle cx={xFor(points.length - 1)} cy={yFor(last.value)} r="4.5" fill="#39bdf8" stroke="#08111c" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+      </svg> : <div className="absolute inset-0 grid place-items-center px-6 text-center">
+        <div>
+          <p className="text-sm font-semibold text-slate-300">No confirmed history for this period</p>
+          <p className="mt-2 text-xs font-medium text-slate-500">The chart uses confirmed wallet trades and indexed onchain prices only.</p>
+        </div>
+      </div>}
+    </div>
+  </div>;
+}
+
+function formatPortfolioTime(timestamp: number, range: PortfolioRange) {
+  return new Intl.DateTimeFormat("en-GB", range === "1D"
+    ? { hour: "2-digit", minute: "2-digit", hour12: false }
+    : { day: "2-digit", month: "short" }).format(new Date(timestamp * 1_000));
 }
 
 function PositionsTable({ positions, loading }: { positions: Position[]; loading: boolean }) {
