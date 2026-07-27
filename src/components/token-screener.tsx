@@ -37,14 +37,12 @@ export function TokenScreener({ watchlistOnly = false }: { watchlistOnly?: boole
       .some((value) => value.toLowerCase().includes(normalized)));
   }, [availableTokens, query]);
   const onchainVolume = availableTokens.reduce((sum, token) => sum + token.volume24h, 0);
-  const raised = availableTokens.reduce((sum, token) => sum + token.raisedUSDC, 0);
   const trades = availableTokens.reduce((sum, token) => sum + token.trades, 0);
 
   return <div className="container-shell pb-20">
-    <div className="mb-5 grid gap-3 sm:grid-cols-3">
+    <div className="mb-5 grid gap-3 sm:grid-cols-2">
       <StatCard label={watchlistOnly ? "Saved tokens" : "Factory launches"} value={loading && indexedTokens.length === 0 ? "—" : String(availableTokens.length)} detail={watchlistOnly ? "Stored in this browser" : isCached && cachedAt ? `Cached ${new Date(cachedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Confirmed onchain"}/>
       <StatCard label="Onchain volume" value={availableTokens.length > 0 && !isPartial ? money(onchainVolume) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Refreshing in background" : `${trades} confirmed trades`}/>
-      <StatCard label="Curve reserves" value={availableTokens.length > 0 && !isPartial ? money(raised) : "—"} detail={isPartial ? "Live market data unavailable" : loading ? "Refreshing in background" : "Confirmed onchain reserves"}/>
     </div>
     {error && <div className="mb-5 flex items-center gap-3"><div className="flex-1"><WarningBox>{error}</WarningBox></div><Button variant="ghost" onClick={() => void refresh()}>Retry live data</Button></div>}
     <label className="relative mb-4 block">

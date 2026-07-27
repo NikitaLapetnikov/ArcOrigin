@@ -11,7 +11,7 @@ import { Badge, Button, Progress, TokenIcon } from "./ui";
 
 const filters = ["All", "Watchlist", "New", "Trending", "Graduating", "High volume"] as const;
 type Filter = typeof filters[number];
-type SortKey = "created" | "price" | "priceChange24h" | "marketCap" | "raisedUSDC" | "volume24h" | "trades" | "holders" | "curveProgress";
+type SortKey = "created" | "price" | "priceChange24h" | "marketCap" | "volume24h" | "trades" | "holders" | "curveProgress";
 type SortDirection = "asc" | "desc";
 type OnchainState = "loading" | "live" | "cached" | "unavailable";
 
@@ -19,7 +19,6 @@ const sortOptions: { key: SortKey; label: string }[] = [
   { key: "created", label: "Created" },
   { key: "volume24h", label: "Volume" },
   { key: "marketCap", label: "Market cap" },
-  { key: "raisedUSDC", label: "Liquidity" },
   { key: "price", label: "Price" },
   { key: "priceChange24h", label: "24h change" },
   { key: "trades", label: "Trades" },
@@ -131,10 +130,9 @@ export function TokenTable({
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{token.ticker}</span></div></div></div>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-xs sm:grid-cols-5">
+          <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-xs sm:grid-cols-4">
             <MobileMetric label="Created" value={createdLabel(token)}/>
             <MobileMetric label="Market cap" value={awaitingLive ? "—" : money(token.marketCap, true)}/>
-            <MobileMetric label="Liquidity" value={awaitingLive ? "—" : money(token.raisedUSDC, true)}/>
             <MobileMetric label="Volume" value={awaitingLive ? "—" : money(token.volume24h, true)}/>
             <MobileMetric label="Holders" value={token.holders === 0 ? "—" : number(token.holders)}/>
           </div>
@@ -152,7 +150,6 @@ export function TokenTable({
           {!compact && <SortableHeader label="Created" sortKey="created" activeSort={sort} direction={direction} onSort={changeSort}/>}
           <SortableHeader label="Price / 24h" sortKey="price" secondarySortKey="priceChange24h" activeSort={sort} direction={direction} onSort={changeSort}/>
           <SortableHeader label="Market cap" sortKey="marketCap" activeSort={sort} direction={direction} onSort={changeSort}/>
-          <SortableHeader label="Liquidity" sortKey="raisedUSDC" activeSort={sort} direction={direction} onSort={changeSort}/>
           <SortableHeader label="Volume" sortKey="volume24h" activeSort={sort} direction={direction} onSort={changeSort}/>
           {!compact && <SortableHeader label="Trades" sortKey="trades" activeSort={sort} direction={direction} onSort={changeSort}/>}
           {!compact && <SortableHeader label="Holders" sortKey="holders" activeSort={sort} direction={direction} onSort={changeSort}/>}
@@ -167,7 +164,6 @@ export function TokenTable({
             {!compact && <td className="whitespace-nowrap text-slate-400">{createdLabel(token)}</td>}
             <td>{awaitingLive ? <span className="text-slate-600">—</span> : <><p className="text-slate-200">{money(token.price)}</p><button type="button" onClick={() => changeSort("priceChange24h")} className={token.priceChange24h >= 0 ? "mt-1 text-emerald-400" : "mt-1 text-rose-400"}>Since launch {token.priceChange24h > 0 ? "+" : ""}{token.priceChange24h.toFixed(2)}%</button></>}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.marketCap, true)}</td>
-            <td className="text-slate-300">{awaitingLive ? "—" : money(token.raisedUSDC, true)}</td>
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.volume24h, true)}</td>
             {!compact && <td className="text-slate-400">{awaitingLive ? "—" : number(token.trades)}</td>}
             {!compact && <td className="text-slate-400">{token.holders === 0 ? "—" : number(token.holders)}</td>}

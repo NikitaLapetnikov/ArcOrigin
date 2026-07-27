@@ -175,10 +175,10 @@ export default function DocsPage() {
 spot price     = effective USDC / token reserve
 x · y          = constant before each trade`}</CodeBlock>
           <div className="grid gap-3 sm:grid-cols-2">
-            <MiniCard title="Virtual reserve" value="2,500 USDC" body="Shapes the starting price. It is not real or withdrawable liquidity." />
-            <MiniCard title="Real liquidity" value="Onchain USDC" body="Backs sells and is displayed separately from virtual quote depth." />
+            <MiniCard title="Virtual reserve" value="2,500 USDC" body="Shapes the starting price. It is not real or withdrawable USDC." />
+            <MiniCard title="Real reserve" value="Onchain USDC" body="Backs sells and can be verified directly from the curve." />
           </div>
-          <p>Buy outputs round conservatively in favor of the reserve. Sell outputs cannot exceed real USDC liquidity. The contract returns a zero quote when a trade cannot be executed safely.</p>
+          <p>Buy outputs round conservatively in favor of the reserve. Sell outputs cannot exceed the real USDC reserve. The contract returns a zero quote when a trade cannot be executed safely.</p>
         </DocSection>
 
         <DocSection id="graduation" eyebrow="Lifecycle" title="Graduation">
@@ -255,7 +255,7 @@ x · y          = constant before each trade`}</CodeBlock>
             ["Token ↔ curve", "Read getTokenInfo(token) on the Factory."],
             ["Buy quote", "Call quoteBuy(usdcAmount) on the token curve."],
             ["Sell quote", "Call quoteSell(tokenAmount) on the token curve."],
-            ["Liquidity", "Read realLiquidity(); do not include virtual USDC."],
+            ["USDC reserve", "Read realLiquidity(); do not include virtual USDC."],
             ["Graduation", "Read isGraduated() and getCurveProgress()."],
             ["Holders", "Replay ERC-20 Transfer events and reconcile balances."],
           ]} mono />
@@ -322,7 +322,7 @@ x · y          = constant before each trade`}</CodeBlock>
           <Callout title="Before signing" tone="warn">
             <ul className="grid gap-2.5">
               <li>Verify the token and curve contract addresses.</li>
-              <li>Review the quote, minimum received, liquidity, and holder concentration.</li>
+              <li>Review the quote, minimum received, current reserves, and holder concentration.</li>
               <li>Remember that wallets, RPC providers, indexers, and smart contracts can fail.</li>
               <li>ArcOrigin is not financial advice and does not guarantee token quality.</li>
             </ul>

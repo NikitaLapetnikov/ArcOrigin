@@ -209,9 +209,6 @@ export function OnchainTokenDashboard({
   } = useHolderSnapshot(token, activeTab === "Holders" || activeTab === "My position");
 
   const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
-  const effectiveQuoteDepth = snapshot.graduated && permanentLiquidityMode
-    ? snapshot.raisedUsdc
-    : (token.virtualUsdcReserve ?? 0) + snapshot.raisedUsdc;
   const remainingToGraduation = Math.max(0, token.targetUSDC - snapshot.raisedUsdc);
   const progressLabel = snapshot.progress > 0 && snapshot.progress < 0.01 ? "<0.01%" : `${snapshot.progress.toFixed(2)}%`;
   const cutoff24h = Math.floor(Date.now() / 1_000) - 24 * 60 * 60;
@@ -254,10 +251,9 @@ export function OnchainTokenDashboard({
 
   return <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_380px]">
     <Panel className="min-w-0 overflow-hidden rounded-xl shadow-none">
-    <div className="grid grid-cols-2 border-b border-line bg-black/10 sm:grid-cols-3 xl:grid-cols-6">
+    <div className="grid grid-cols-2 border-b border-line bg-black/10 sm:grid-cols-3 xl:grid-cols-5">
       <TerminalMetric label="Price" value={tokenPrice(snapshot.price)} />
       <TerminalMetric label="Market cap" value={money(snapshot.marketCap, true)} />
-      <TerminalMetric label="Liquidity" value={money(snapshot.raisedUsdc, true)} detail="Real USDC" />
       <TerminalMetric label="Supply" value={token.totalSupply ? number(token.totalSupply) : "—"} />
       <TerminalMetric label="Holders" value={holderSnapshot ? number(holderSnapshot.holders) : token.holders > 0 ? number(token.holders) : "—"} />
       <TerminalMetric
@@ -388,12 +384,12 @@ export function OnchainTokenDashboard({
       </div>}
 
       {activeTab === "Curve" && <div className="p-5">
-        <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">{snapshot.graduated && permanentLiquidityMode ? "Permanent liquidity" : "Bonding curve"}</p><h2 className="mt-2 text-lg font-semibold text-white">{snapshot.graduated ? permanentLiquidityMode ? "Graduated · real-reserve AMM active" : "Graduated" : `${progressLabel} toward graduation`}</h2></div><div className="text-right"><p className="text-sm text-white">{money(snapshot.raisedUsdc)} / {money(token.targetUSDC)}</p><p className="mt-1 text-xs text-slate-500">Real USDC liquidity</p></div></div>
+        <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">Bonding curve</p><h2 className="mt-2 text-lg font-semibold text-white">{snapshot.graduated ? permanentLiquidityMode ? "Graduated · real-reserve AMM active" : "Graduated" : `${progressLabel} toward graduation`}</h2></div><div className="text-right"><p className="text-sm text-white">{money(snapshot.raisedUsdc)} / {money(token.targetUSDC)}</p><p className="mt-1 text-xs text-slate-500">USDC raised</p></div></div>
         <div className="my-5"><Progress value={snapshot.progress}/></div>
-        <div className="grid grid-cols-2 gap-4 text-xs md:grid-cols-5"><Metric label="Tokens sold" value={number(snapshot.tokensSold)}/><Metric label="Curve inventory" value={number(snapshot.tokenReserve)}/><Metric label="Effective depth" value={money(effectiveQuoteDepth)}/><Metric label="Remaining" value={money(remainingToGraduation)}/><Metric label="After graduation" value={permanentLiquidityMode ? "Permanent AMM" : "Legacy curve"}/></div>
+        <div className="grid grid-cols-2 gap-4 text-xs md:grid-cols-4"><Metric label="Tokens sold" value={number(snapshot.tokensSold)}/><Metric label="Curve inventory" value={number(snapshot.tokenReserve)}/><Metric label="Remaining" value={money(remainingToGraduation)}/><Metric label="After graduation" value={permanentLiquidityMode ? "Permanent AMM" : "Legacy curve"}/></div>
         <p className="mt-5 border-t border-line pt-4 text-[11px] leading-5 text-slate-500">{permanentLiquidityMode
-          ? "At 100%, virtual liquidity is removed without changing the spot price. Price-matched tokens and all real USDC remain in the curve as permanent two-sided AMM liquidity; buys and sells continue."
-          : "Legacy curve: real USDC backs sells, while virtual USDC shapes pricing. Buying closes at the configured threshold because this deployment predates permanent-liquidity graduation."}</p>
+          ? "At 100%, the virtual reserve is removed without changing the spot price. Price-matched tokens and all real USDC remain in the permanent AMM; buys and sells continue."
+          : "Legacy curve: real USDC backs sells, while the virtual reserve shapes pricing. Buying closes at the configured threshold."}</p>
       </div>}
 
     </div>

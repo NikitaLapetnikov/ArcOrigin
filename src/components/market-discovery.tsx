@@ -162,10 +162,9 @@ function TokenMarketCard({ token, rank }: { token: TokenData; rank?: number }) {
       </div>
       <ArrowUpRight className="size-4 shrink-0 text-slate-600 transition group-hover:text-cyan"/>
     </div>
-    <div className="mt-4 grid grid-cols-3 gap-2 border-t border-line/70 pt-3">
+    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line/70 pt-3">
       <CardMetric label="Market cap" value={money(token.marketCap, true)} />
       <CardMetric label="Volume" value={money(token.volume24h, true)} />
-      <CardMetric label="Liquidity" value={money(token.raisedUSDC, true)} />
     </div>
     <p className="mt-3 truncate text-[10px] text-slate-600">{launchTime(token)}</p>
   </Link>;

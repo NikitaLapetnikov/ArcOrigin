@@ -221,7 +221,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   }
 
   const readQuote = useCallback(async (): Promise<LiveQuote> => {
-    if (buyDisabled) throw new Error("New buys are closed after graduation. Existing holders can still sell against the remaining curve liquidity.");
+    if (buyDisabled) throw new Error("New buys are closed after graduation. Existing holders can still sell against the remaining USDC reserve.");
     if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
     const input = parseUnits(amount, inputDecimals);
     if (input <= 0n) throw new Error("Enter an amount greater than zero.");
@@ -246,7 +246,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
         }));
         throw new Error(`This input exceeds the remaining curve capacity. Maximum buy: ${displayUnits(maximum, 6)} USDC.`);
       }
-      throw new Error(side === "Sell" ? "The curve has insufficient USDC liquidity for this sale." : "The curve returned zero tokens.");
+      throw new Error(side === "Sell" ? "The curve has insufficient USDC reserves for this sale." : "The curve returned zero tokens.");
     }
     const slippageBps = BigInt(Math.round(slippage * 100));
     return {
@@ -522,8 +522,8 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     {notice && <p role={noticeIsError ? "alert" : "status"} aria-live="polite" className={`mt-3 rounded-lg border p-3 text-sm leading-5 ${noticeIsError ? "border-rose-400/20 bg-rose-400/[.07] text-rose-200" : transactionHash ? "border-emerald-400/15 bg-emerald-400/[.07] text-emerald-300" : "border-cyan/15 bg-cyan/[.06] text-cyan"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
     <p className="mt-4 text-sm leading-6 text-slate-400">{token.status === "Graduated"
       ? permanentLiquidityMode
-        ? "Graduated into permanent real-reserve liquidity. Both buys and sells continue with no liquidity withdrawal function."
-        : "Buying is closed on this legacy curve after graduation. Selling remains available while the curve has USDC liquidity."
+        ? "Graduated into a permanent real-reserve AMM. Both buys and sells continue."
+        : "Buying is closed on this legacy curve after graduation. Selling remains available while the curve has USDC reserves."
       : `Trades execute against the deployed ${token.ticker} curve. Your wallet may request an exact-token approval first.`}</p>
   </div>;
 }
