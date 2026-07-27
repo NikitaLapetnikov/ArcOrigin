@@ -10,6 +10,7 @@ import { useAccount, useConnect, useDisconnect, useSwitchChain, type Connector }
 import { arcTestnet } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 import { Badge, Button } from "./ui";
+import { ThemeToggle } from "./theme-toggle";
 
 const nav = [
   ["Markets", "/tokens"],
@@ -183,6 +184,7 @@ export function Header() {
         {nav.map(([label, href]) => <NavLink key={href} label={label} href={href} path={path} />)}
       </nav>
       <div className="hidden items-center gap-2 md:flex">
+        <ThemeToggle />
         <Badge tone="neutral" className="hidden gap-1.5 xl:inline-flex"><Radio className="size-3 text-emerald-400" />Arc Testnet</Badge>
         <WalletButton />
       </div>
@@ -197,7 +199,7 @@ export function Header() {
     {open && <div id="mobile-navigation" className="mx-auto grid w-full max-w-[1800px] gap-1 border-t border-line px-3 py-3 sm:px-4 lg:hidden">
       {nav.map(([label, href]) => <NavLink key={href} label={label} href={href} path={path} onClick={() => setOpen(false)} />)}
       <div className="my-2 h-px bg-line md:hidden" />
-      <div className="mt-2 md:hidden"><WalletButton /></div>
+      <div className="mt-2 flex items-center gap-2 md:hidden"><ThemeToggle /><WalletButton /></div>
     </div>}
   </header>;
 }

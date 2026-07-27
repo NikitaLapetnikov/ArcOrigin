@@ -34,6 +34,7 @@ import type {
 } from "lightweight-charts";
 import type { ChartPoint, Trade } from "@/lib/types";
 import { money, tickerLabel } from "@/lib/utils";
+import { useSiteTheme } from "@/hooks/use-site-theme";
 
 const timeframes = ["1s", "30s", "1m", "5m", "15m", "1h", "4h", "1d"] as const;
 export type ChartTimeframe = (typeof timeframes)[number];
@@ -146,6 +147,7 @@ export function TokenChart({
   ticker = "TOKEN",
   totalSupply = 1_000_000_000,
 }: TokenChartProps) {
+  const [siteTheme] = useSiteTheme();
   const [timeframe, setTimeframe] = useState<ChartTimeframe>("1m");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("Price");
   const [scaleMode, setScaleMode] = useState<ScaleMode>("auto");
@@ -242,32 +244,33 @@ export function TokenChart({
         LineSeries,
       } = await import("lightweight-charts");
       if (disposed || !containerRef.current) return;
+      const light = siteTheme === "light";
 
       const chart = createChart(container, {
         autoSize: true,
         height: compact ? 144 : 480,
         layout: {
           background: { type: ColorType.Solid, color: "transparent" },
-          textColor: "#8a9396",
+          textColor: light ? "#65758b" : "#8a9396",
           fontFamily: "ui-monospace, SFMono-Regular, monospace",
           fontSize: 10,
           attributionLogo: true,
         },
         grid: {
-          vertLines: { color: "rgba(37, 43, 45, 0.52)" },
-          horzLines: { color: "rgba(37, 43, 45, 0.62)" },
+          vertLines: { color: light ? "rgba(120, 140, 165, 0.18)" : "rgba(37, 43, 45, 0.52)" },
+          horzLines: { color: light ? "rgba(120, 140, 165, 0.22)" : "rgba(37, 43, 45, 0.62)" },
         },
         crosshair: {
           mode: CrosshairMode.Normal,
-          vertLine: { color: "rgba(226, 232, 240, 0.48)", style: 2, labelBackgroundColor: "#31383d" },
-          horzLine: { color: "rgba(226, 232, 240, 0.38)", style: 2, labelBackgroundColor: "#31383d" },
+          vertLine: { color: light ? "rgba(55, 76, 105, 0.42)" : "rgba(226, 232, 240, 0.48)", style: 2, labelBackgroundColor: light ? "#52657d" : "#31383d" },
+          horzLine: { color: light ? "rgba(55, 76, 105, 0.34)" : "rgba(226, 232, 240, 0.38)", style: 2, labelBackgroundColor: light ? "#52657d" : "#31383d" },
         },
         rightPriceScale: {
-          borderColor: "#252b2d",
+          borderColor: light ? "#d4deea" : "#252b2d",
           scaleMargins: { top: 0.08, bottom: 0.24 },
         },
         timeScale: {
-          borderColor: "#252b2d",
+          borderColor: light ? "#d4deea" : "#252b2d",
           timeVisible: true,
           secondsVisible: false,
           rightOffset: 7,
@@ -379,7 +382,7 @@ export function TokenChart({
       markerPluginRef.current = null;
       priceLinesRef.current = [];
     };
-  }, [compact]);
+  }, [compact, siteTheme]);
 
   useEffect(() => {
     const chart = chartRef.current;

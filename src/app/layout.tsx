@@ -39,13 +39,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  colorScheme: "dark",
+  colorScheme: "light dark",
   themeColor: "#060811",
 };
 
+const themeBootstrap = `(()=>{try{const saved=localStorage.getItem("arcorigin-theme");const theme=saved==="light"||saved==="dark"?saved:matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme;const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=theme==="light"?"#f4f7fb":"#060811"}catch{document.documentElement.dataset.theme="dark"}})();`;
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en"><body className="antialiased">
+    <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeBootstrap }} /></head><body className="antialiased">
       <a href="#main-content" className="skip-link">Skip to content</a>
       <Providers><Header /><main id="main-content">{children}</main><Footer /></Providers>
     </body></html>

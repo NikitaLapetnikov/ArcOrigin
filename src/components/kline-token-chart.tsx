@@ -30,6 +30,7 @@ import type { CandleType, Chart as KLineChart, KLineData, Overlay, OverlayCreate
 import type { ChartPoint, Trade } from "@/lib/types";
 import { money, tickerLabel } from "@/lib/utils";
 import { buildCandles, type ChartTimeframe } from "@/components/token-chart";
+import { useSiteTheme } from "@/hooks/use-site-theme";
 
 const timeframes = ["1s", "30s", "1m", "5m", "15m", "1h", "4h", "1d"] as const;
 const DEFAULT_BAR_SPACE = 18;
@@ -83,6 +84,7 @@ export function KLineTokenChart({
   tokenAddress = ticker,
   totalSupply = 1_000_000_000,
 }: TokenChartProps) {
+  const [siteTheme] = useSiteTheme();
   const displayTicker = tickerLabel(ticker);
   const [timeframe, setTimeframe] = useState<ChartTimeframe>("1m");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("Price");
@@ -172,13 +174,14 @@ export function KLineTokenChart({
           ];
         },
       });
+      const light = siteTheme === "light";
       const chart = init(containerRef.current, {
         timezone: "Etc/UTC",
         styles: {
           grid: {
             show: true,
-            horizontal: { show: true, size: 1, style: "dashed", dashedValue: [4, 4], color: "rgba(56, 67, 73, .42)" },
-            vertical: { show: true, size: 1, style: "dashed", dashedValue: [4, 4], color: "rgba(56, 67, 73, .36)" },
+            horizontal: { show: true, size: 1, style: "dashed", dashedValue: [4, 4], color: light ? "rgba(120,140,165,.22)" : "rgba(56, 67, 73, .42)" },
+            vertical: { show: true, size: 1, style: "dashed", dashedValue: [4, 4], color: light ? "rgba(120,140,165,.18)" : "rgba(56, 67, 73, .36)" },
           },
           candle: {
             type: "candle_solid",
@@ -190,11 +193,11 @@ export function KLineTokenChart({
             },
             tooltip: { showRule: "none", showType: "standard" },
           },
-          xAxis: { axisLine: { show: true, color: "#273138", size: 1 }, tickLine: { show: false, color: "#273138", size: 1, length: 0 }, tickText: { show: true, color: "#87939b", size: 10, family: "ui-monospace, SFMono-Regular, monospace", weight: "normal", marginStart: 4, marginEnd: 4 } },
-          yAxis: { axisLine: { show: true, color: "#273138", size: 1 }, tickLine: { show: false, color: "#273138", size: 1, length: 0 }, tickText: { show: true, color: "#87939b", size: 10, family: "ui-monospace, SFMono-Regular, monospace", weight: "normal", marginStart: 4, marginEnd: 6 } },
+          xAxis: { axisLine: { show: true, color: light ? "#d4deea" : "#273138", size: 1 }, tickLine: { show: false, color: light ? "#d4deea" : "#273138", size: 1, length: 0 }, tickText: { show: true, color: light ? "#65758b" : "#87939b", size: 10, family: "ui-monospace, SFMono-Regular, monospace", weight: "normal", marginStart: 4, marginEnd: 4 } },
+          yAxis: { axisLine: { show: true, color: light ? "#d4deea" : "#273138", size: 1 }, tickLine: { show: false, color: light ? "#d4deea" : "#273138", size: 1, length: 0 }, tickText: { show: true, color: light ? "#65758b" : "#87939b", size: 10, family: "ui-monospace, SFMono-Regular, monospace", weight: "normal", marginStart: 4, marginEnd: 6 } },
           crosshair: {
-            horizontal: { show: true, line: { show: true, style: "dashed", dashedValue: [4, 4], color: "rgba(226,232,240,.45)", size: 1 }, text: { show: true, style: "fill", color: "#e8edf0", size: 10, family: "ui-monospace, monospace", weight: "normal", borderStyle: "solid", borderDashedValue: [], borderSize: 0, borderColor: "transparent", borderRadius: 2, backgroundColor: "#273138", paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2 }, features: [] },
-            vertical: { show: true, line: { show: true, style: "dashed", dashedValue: [4, 4], color: "rgba(226,232,240,.38)", size: 1 }, text: { show: true, style: "fill", color: "#e8edf0", size: 10, family: "ui-monospace, monospace", weight: "normal", borderStyle: "solid", borderDashedValue: [], borderSize: 0, borderColor: "transparent", borderRadius: 2, backgroundColor: "#273138", paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2 } },
+            horizontal: { show: true, line: { show: true, style: "dashed", dashedValue: [4, 4], color: light ? "rgba(55,76,105,.42)" : "rgba(226,232,240,.45)", size: 1 }, text: { show: true, style: "fill", color: "#f8fafc", size: 10, family: "ui-monospace, monospace", weight: "normal", borderStyle: "solid", borderDashedValue: [], borderSize: 0, borderColor: "transparent", borderRadius: 2, backgroundColor: light ? "#52657d" : "#273138", paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2 }, features: [] },
+            vertical: { show: true, line: { show: true, style: "dashed", dashedValue: [4, 4], color: light ? "rgba(55,76,105,.34)" : "rgba(226,232,240,.38)", size: 1 }, text: { show: true, style: "fill", color: "#f8fafc", size: 10, family: "ui-monospace, monospace", weight: "normal", borderStyle: "solid", borderDashedValue: [], borderSize: 0, borderColor: "transparent", borderRadius: 2, backgroundColor: light ? "#52657d" : "#273138", paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2 } },
           },
         },
       });
@@ -221,7 +224,7 @@ export function KLineTokenChart({
       chartRef.current = null;
       indicatorIdsRef.current = { MA: null, EMA: null, BOLL: null, SAR: null, VOL: null, MACD: null, RSI: null, KDJ: null };
     };
-  }, [compact, displayTicker]);
+  }, [compact, displayTicker, siteTheme]);
 
   useEffect(() => {
     const chart = chartRef.current;

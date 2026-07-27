@@ -420,8 +420,8 @@ function PortfolioChart({
       {points.length > 1 ? <svg className="absolute inset-0 size-full" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`${range} portfolio value line chart`}>
         <defs>
           <linearGradient id="portfolio-area-gradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#39bdf8" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="#39bdf8" stopOpacity="0" />
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
           </linearGradient>
           <filter id="portfolio-line-glow" x="-10%" y="-30%" width="120%" height="160%">
             <feGaussianBlur stdDeviation="3" result="blur" />
@@ -431,16 +431,16 @@ function PortfolioChart({
         {yTicks.map((tick, index) => {
           const y = yFor(tick);
           return <g key={`${tick}-${index}`}>
-            <line x1={plot.left} x2={width - plot.right} y1={y} y2={y} stroke="#1d2838" strokeWidth="1" strokeDasharray="4 6" vectorEffect="non-scaling-stroke" />
-            <text x={width - 10} y={y + 4} fill="#778399" fontSize="11" textAnchor="end">{money(tick, true)}</text>
+            <line x1={plot.left} x2={width - plot.right} y1={y} y2={y} stroke="rgb(var(--line-rgb))" strokeWidth="1" strokeDasharray="4 6" vectorEffect="non-scaling-stroke" />
+            <text x={width - 10} y={y + 4} fill="var(--text-tertiary)" fontSize="11" textAnchor="end">{money(tick, true)}</text>
           </g>;
         })}
-        {xTicks.map((tick, index) => <text key={tick.timestamp} x={xFor(index * Math.floor((points.length - 1) / 2))} y={height - 10} fill="#778399" fontSize="11" textAnchor={index === 0 ? "start" : index === 2 ? "end" : "middle"}>
+        {xTicks.map((tick, index) => <text key={tick.timestamp} x={xFor(index * Math.floor((points.length - 1) / 2))} y={height - 10} fill="var(--text-tertiary)" fontSize="11" textAnchor={index === 0 ? "start" : index === 2 ? "end" : "middle"}>
           {formatPortfolioTime(tick.timestamp, range)}
         </text>)}
         <path d={areaPath} fill="url(#portfolio-area-gradient)" />
-        <path d={linePath} fill="none" stroke="#39bdf8" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" filter="url(#portfolio-line-glow)" />
-        {last && <circle cx={xFor(points.length - 1)} cy={yFor(last.value)} r="4.5" fill="#39bdf8" stroke="#08111c" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+        <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" filter="url(#portfolio-line-glow)" />
+        {last && <circle cx={xFor(points.length - 1)} cy={yFor(last.value)} r="4.5" fill="var(--accent)" stroke="var(--surface-1)" strokeWidth="2" vectorEffect="non-scaling-stroke" />}
       </svg> : <div className="absolute inset-0 grid place-items-center px-6 text-center">
         <div>
           <p className="text-sm font-semibold text-slate-300">No confirmed history for this period</p>
