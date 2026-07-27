@@ -142,20 +142,20 @@ export function LatestBuys({ tokens, limit = 10 }: { tokens: TokenData[]; limit?
       </div>
       <span className="text-xs font-medium text-slate-500">{latestBuys.length} latest</span>
     </div>
-    <div className="grid grid-cols-1 gap-2.5 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {latestBuys.map(({ token, trade }, index) => <Link
         href={`/tokens/${token.address}`}
         key={`${token.address}-${trade.txHash}-${index}`}
-        className="group flex min-w-0 items-center gap-3 rounded-xl border border-line bg-black/15 p-3 transition hover:border-cyan/25 hover:bg-white/[.03]"
+        className="group min-w-0 rounded-2xl border border-line bg-black/15 p-3 transition hover:-translate-y-0.5 hover:border-cyan/25 hover:bg-white/[.03]"
       >
-        <TokenIcon label={token.icon} image={token.image} className="size-12 rounded-[10px] text-sm" />
-        <div className="min-w-0 flex-1">
+        <TokenIcon label={token.icon} image={token.image} className="aspect-square size-auto w-full rounded-xl text-3xl" />
+        <div className="mt-3 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-white">{token.name}</p>
-            <ArrowUpRight className="size-3.5 shrink-0 text-slate-600 transition group-hover:text-cyan" />
+            <p className="truncate text-[15px] font-semibold text-white">{token.name}</p>
+            <ArrowUpRight className="size-4 shrink-0 text-slate-600 transition group-hover:text-cyan" />
           </div>
-          <p className="mt-1 truncate text-[13px] font-semibold text-emerald-300">+{number(trade.tokens)} {tickerLabel(token.ticker)}</p>
-          <div className="mt-1 flex items-center justify-between gap-2 text-[10px] font-medium text-slate-500">
+          <p className="mt-1.5 truncate text-sm font-semibold text-emerald-300">+{number(trade.tokens)} {tickerLabel(token.ticker)}</p>
+          <div className="mt-2 flex items-center justify-between gap-2 border-t border-line/70 pt-2 text-[11px] font-medium text-slate-500">
             <span>{money(trade.usdc)}</span>
             <span className="truncate">{utcDateTime(trade.timestamp).replace(" UTC", "")}</span>
           </div>
