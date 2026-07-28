@@ -9,12 +9,12 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Copy, ExternalLink, ImagePlus, LogOut, Pencil, RefreshCw, Share2, Trash2, UserRound, X } from "lucide-react";
-import { formatUnits, type Address } from "viem";
+import { CircleDollarSign, Copy, ExternalLink, ImagePlus, LogOut, Pencil, RefreshCw, Share2, Trash2, UserRound, X } from "lucide-react";
+import { formatUnits, isAddress, type Address } from "viem";
 import { useAccount, useDisconnect, useReadContracts, useWalletClient } from "wagmi";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { arcTestnet, EXPLORER_URL } from "@/lib/chains";
-import { erc20Abi } from "@/lib/contracts";
+import { bondingCurveAbi, erc20Abi } from "@/lib/contracts";
 import type { TokenData, Trade } from "@/lib/types";
 import { money, number, shortAddress, tickerLabel, utcDateTime } from "@/lib/utils";
 import { Badge, Button, LinkButton, TokenIcon, WarningBox } from "@/components/ui";
@@ -24,6 +24,10 @@ type PortfolioRange = "1D" | "7D" | "30D";
 type WalletTrade = { token: TokenData; trade: Trade };
 type WalletProfile = { address: Address; username: string; avatar: string; updatedAt: string };
 type PortfolioPoint = { timestamp: number; value: number };
+type CreatorEarning = {
+  token: TokenData;
+  amount: number | null;
+};
 type Position = {
   token: TokenData;
   balance: number;
@@ -96,6 +100,15 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [editError, setEditError] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const launches = useMemo(() => {
+    if (!address) return [];
+    return tokens.filter((token) => token.creator.toLowerCase() === address.toLowerCase())
+      .sort((left, right) => (right.launchedAt ?? 0) - (left.launchedAt ?? 0));
+  }, [address, tokens]);
+  const creatorFeeTargets = useMemo(
+    () => launches.filter((token) => token.curveAddress && isAddress(token.curveAddress)),
+    [launches],
+  );
   const balanceReads = useReadContracts({
     contracts: tokens.map((token) => ({
       address: token.address as Address,
@@ -106,6 +119,20 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
     })),
     query: {
       enabled: Boolean(address) && tokens.length > 0,
+      staleTime: 10_000,
+      refetchInterval: 15_000,
+    },
+    allowFailure: true,
+  });
+  const creatorFeeReads = useReadContracts({
+    contracts: creatorFeeTargets.map((token) => ({
+      address: token.curveAddress as Address,
+      abi: bondingCurveAbi,
+      functionName: "totalCreatorFees",
+      chainId: arcTestnet.id,
+    })),
+    query: {
+      enabled: creatorFeeTargets.length > 0,
       staleTime: 10_000,
       refetchInterval: 15_000,
     },
@@ -155,11 +182,13 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
     return { token, balance, value, bought, sold, pnl: reconciled && bought > 0 ? sold + value - bought : null };
   }).filter((position): position is Position => Boolean(position)), [balanceReads.data, tokens, walletTrades]);
 
-  const launches = useMemo(() => {
-    if (!address) return [];
-    return tokens.filter((token) => token.creator.toLowerCase() === address.toLowerCase())
-      .sort((left, right) => (right.launchedAt ?? 0) - (left.launchedAt ?? 0));
-  }, [address, tokens]);
+  const creatorEarnings = useMemo(() => creatorFeeTargets.map((token, index): CreatorEarning => {
+    const rawAmount = creatorFeeReads.data?.[index]?.result;
+    return {
+      token,
+      amount: typeof rawAmount === "bigint" ? Number(formatUnits(rawAmount, 6)) : null,
+    };
+  }), [creatorFeeReads.data, creatorFeeTargets]);
   const portfolioValue = positions.reduce((sum, position) => sum + position.value, 0);
   const confirmedVolume = walletTrades.reduce((sum, { trade }) => sum + trade.usdc, 0);
   const portfolioHistory = useMemo(() => {
@@ -329,6 +358,7 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
             <Button variant="secondary" disabled={loading} onClick={() => {
               void refresh(true);
               void balanceReads.refetch();
+              void creatorFeeReads.refetch();
             }}><RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button>
           </div>
         </div>
@@ -340,6 +370,13 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
         />
       </div>
     </section>
+
+    {launches.length > 0 && <CreatorEarningsPanel
+      earnings={creatorEarnings}
+      launchCount={launches.length}
+      loading={creatorFeeReads.isPending}
+      unavailable={Boolean(creatorFeeReads.error) || creatorEarnings.some((earning) => earning.amount === null)}
+    />}
 
     <section className="mt-5 overflow-hidden rounded-[22px] border border-line bg-panel shadow-glow">
       <div className="flex gap-1 overflow-x-auto border-b border-line px-4 pt-3 sm:px-6" role="tablist" aria-label="Profile data">
@@ -371,6 +408,66 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
       onSave={() => void saveProfile()}
     />}
   </div>;
+}
+
+function CreatorEarningsPanel({
+  earnings,
+  launchCount,
+  loading,
+  unavailable,
+}: {
+  earnings: CreatorEarning[];
+  launchCount: number;
+  loading: boolean;
+  unavailable: boolean;
+}) {
+  const knownTotal = earnings.reduce((sum, earning) => sum + (earning.amount ?? 0), 0);
+  const hasKnownTotal = earnings.some((earning) => earning.amount !== null);
+  const totalLabel = loading && !hasKnownTotal
+    ? "—"
+    : `${unavailable ? "≥" : ""}${money(knownTotal)}`;
+
+  return <section className="mt-5 overflow-hidden rounded-[22px] border border-line bg-panel shadow-glow">
+    <div className="grid gap-5 border-b border-line p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      <div className="flex min-w-0 items-start gap-4">
+        <div className="grid size-11 shrink-0 place-items-center rounded-2xl border border-cyan/20 bg-cyan/[.08] text-cyan">
+          <CircleDollarSign className="size-5" />
+        </div>
+        <div>
+          <p className="text-[15px] font-semibold text-white">Creator earnings</p>
+          <p className="mt-2 text-[34px] font-semibold leading-none tracking-[-.045em] text-white sm:text-[40px]">{totalLabel}</p>
+          <p className="mt-3 text-sm font-medium leading-6 text-slate-400">
+            Lifetime creator fees already paid directly to this wallet in USDC.
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <p className="font-medium text-slate-400"><span className="font-semibold text-white">{launchCount}</span> launch{launchCount === 1 ? "" : "es"}</p>
+        <p className="font-medium text-slate-400"><span className="font-semibold text-white">70%</span> of each trading fee</p>
+        <Badge tone="cyan">Paid automatically</Badge>
+      </div>
+    </div>
+    <div className="divide-y divide-line/70">
+      {earnings.map((earning) => <div key={earning.token.address} className="flex items-center gap-4 px-5 py-4 sm:px-6">
+        <TokenIcon label={earning.token.icon} image={earning.token.image} className="size-10 rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <Link href={`/tokens/${earning.token.address}`} className="truncate font-semibold text-white transition hover:text-cyan">{earning.token.name}</Link>
+          <p className="mt-1 font-mono text-[11px] font-medium text-slate-500">{tickerLabel(earning.token.ticker)}</p>
+        </div>
+        <div className="text-right">
+          <p className="font-semibold tabular-nums text-white">{earning.amount === null ? "—" : money(earning.amount)}</p>
+          <p className="mt-1 text-[11px] font-medium text-slate-500">Received in USDC</p>
+        </div>
+      </div>)}
+      {earnings.length === 0 && <div className="px-5 py-5 text-sm font-medium text-slate-400 sm:px-6">
+        Creator fee totals will appear when the deployed curves are available.
+      </div>}
+    </div>
+    <div className="border-t border-line bg-black/[.08] px-5 py-3 text-xs font-medium leading-5 text-slate-400 sm:px-6">
+      No claim transaction is required. Every completed buy or sell transfers the creator share automatically.
+      {unavailable && !loading ? " Some curve totals could not be read from Arc Testnet, so the visible total is partial." : ""}
+    </div>
+  </section>;
 }
 
 function PortfolioChart({
