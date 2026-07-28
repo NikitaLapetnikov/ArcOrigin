@@ -1,8 +1,8 @@
 # ArcOrigin V6 security architecture
 
-Status: Arc Testnet candidate deployed, bytecode-verified, and exercised onchain; governance handoff is in progress. It is not active or independently audited.
+Status: active on Arc Testnet after bytecode verification and onchain exercises. Governance handoff is scheduled but incomplete, and the deployment is not independently audited.
 
-V6 is a new, isolated contract stack. It does not modify any deployed V4 or V5 bytecode. The Arc Testnet candidate remains inactive until its exact deployment has passed independent review, bytecode verification, governance handoff, frontend compatibility testing, and a full Arc Testnet exercise.
+V6 is a new, isolated contract stack. It does not modify any deployed V4 or V5 bytecode. Arc Testnet was activated early with explicit acceptance of the temporary single-key administrator risk while the already-scheduled Timelock delay completes. This exception is not a mainnet precedent: mainnet activation still requires an independently reviewed governance handoff, frontend compatibility testing, a full exercise, and an independent audit.
 
 ## Security objectives
 

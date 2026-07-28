@@ -2,35 +2,48 @@
   "network": "arc-testnet",
   "chainId": 5042002,
   "contracts": {
-    "feeVault": "0x7bfcdA8108Db53B3cCAe02B29C6e5B3905950fB4",
-    "creatorRegistry": "0x07287313ee649efcF22EAEE4361cd6c512219B61",
-    "factory": "0x7a0FB240bcB691555A51DE238aAA3a58c1DB337c",
+    "feeVault": "0x41FDE27BBBE46DfDF310235Ac7D3F72F1F041bd5",
+    "creatorRegistry": "0x2CEB61D011cD15988DA50a03B57B3bA72F01D0f0",
+    "curveDeployer": "0x182d618fF0dF103AA61e58069fE3c435864ee19a",
+    "factory": "0xD342C9d0651Be1138E7cab53C7F38ea02eD61c6d",
     "usdc": "0x3600000000000000000000000000000000000000"
   },
   "deployer": "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
-  "feeRecipient": "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
-  "deployedAt": "2026-07-26T12:00:41.312Z",
+  "feeRecipient": "0xa6eA2380F98700AD5CA8B9F74dC8861269513779",
+  "emergencyGuardian": "0xa6eA2380F98700AD5CA8B9F74dC8861269513779",
+  "deployedAt": "2026-07-28T12:42:07.000Z",
   "explorerBaseUrl": "https://testnet.arcscan.app",
-  "status": "V5_ACTIVE",
+  "status": "V6_ACTIVE_GOVERNANCE_HANDOFF_PENDING",
   "legacyFactories": [
+    "0x7a0FB240bcB691555A51DE238aAA3a58c1DB337c",
     "0x09e8b251392dc289e94B2242A12949aAbC722045",
     "0x54382b7329FAB9BA0532f607b73027ee0AFB04Ba",
     "0xc5FB127934782D5A147d5EE67Be741EC233036D2",
     "0xA4DbA45B199287d3163199A86B4618968d8f8424"
   ],
   "migration": {
-    "type": "FACTORY_V5",
-    "preservesFeeVault": true,
-    "preservesCreatorRegistry": true,
-    "previousFactory": "0x09e8b251392dc289e94B2242A12949aAbC722045",
-    "factoryDeploymentTx": "0x2a43d5bbbcecbb5fc1d060ee6f2494fdc2e08d86ff1b700d73d952f6d55c3816",
-    "factoryDeploymentBlock": 53751918,
-    "registryActivationTx": "0xf36369e562585b497dd403162fb9532877c17b6b79c15afbacf47b32136999ff",
-    "registryActivationBlock": 53752849,
-    "activatedAt": "2026-07-26T12:08:38.486Z"
+    "type": "FACTORY_V6_FULL_STACK",
+    "factoryDeploymentTx": "0xe2ff076e0da64c1e63649621d5c7fd93acb1815bd76dfeabfbee258e931dc43f",
+    "factoryDeploymentBlock": 54089677,
+    "vaultDeploymentTx": "0x32bc5527ffd752165c3b39c5fb0a5238f5358a4af805ee4b5d040f3c65bb7cc9",
+    "vaultDeploymentBlock": 54089668,
+    "registryDeploymentTx": "0x7ac00cefdba6a76e939ab130b2b40ff2d1173ba2c84a0965163d2d44978c390f",
+    "registryDeploymentBlock": 54089671,
+    "curveDeployerDeploymentTx": "0xe96de83cd491bce7b6e53691e26a895aba5053d42ceafbd0dad50134f0c7e0b6",
+    "curveDeployerDeploymentBlock": 54089674,
+    "configurationTransactions": [
+      "0xa6319ab859aa976ad9721d4805a70f3151d7c02497a79c3ce92ae72fdc301543",
+      "0x45f2307eaa03e40d28a6b4fc7a57e83982bf24e30227e557a0873224855f7b7b",
+      "0x71536bd72acc0fe70b6eb2179b533d37d66921575f2a8c15583b4b99689287c8",
+      "0xdac8bb480062a51b443dc06ba54ce254d475b3f830402c247009b34dd9ca8600"
+    ],
+    "governanceHandoffComplete": false,
+    "governanceHandoffOperation": "0x0e6ebbe876824d9e1ae590b5a2bc7860b3ae378a21bc4260df923f13173bdeae",
+    "governanceHandoffReadyAt": "2026-07-30T13:05:48.000Z",
+    "activatedAt": "2026-07-28T13:37:14.000Z"
   },
   "curveModel": {
-    "version": 5,
+    "version": 6,
     "virtualUsdcReserve": 2500,
     "graduationThreshold": 10000,
     "creatorFeeShareBps": 7000,
@@ -39,7 +52,9 @@
     "maxProtectionHoldingBps": 500,
     "maxProtectionPurchaseBps": 550,
     "postGraduationVenue": "ARCFORGE_PERMANENT_AMM",
-    "dexMigrationReady": true,
-    "dexMigrationEnabled": false
+    "creatorFeeMode": "PULL_CLAIM",
+    "dexMigrationReady": false,
+    "dexMigrationEnabled": false,
+    "migrationPaused": true
   }
 }

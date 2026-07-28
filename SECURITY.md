@@ -37,7 +37,7 @@ The Solidity suite currently covers fixed supply, allocation and metadata bounds
 
 ## Administrative access review
 
-The current Arc Testnet deployment is not yet governed by a multisig. Factory, CreatorRegistry, FeeVault ownership, and the FeeVault recipient all resolve to the deployment EOA `0x2807…9A42`. This is acceptable only for the current testing phase and is a high-severity mainnet blocker.
+The active Arc Testnet V6 deployment is in a temporary governance transition. Factory, CreatorRegistry, and FeeVault ownership still resolve to the deployment EOA `0x2807…9A42`, while the FeeVault recipient and emergency guardian resolve to the reviewed 2-of-3 Safe. The Timelock is pending owner of all three governed contracts and the exact acceptance batch is scheduled, but its 48-hour delay has not expired. This temporary single-key administration is a high-severity mainnet blocker.
 
 Administrative reach is bounded:
 
@@ -48,11 +48,11 @@ Administrative reach is bounded:
 
 The repository now includes a reviewed governance preparation path: an exact 2-of-3 Safe is the sole proposer/canceller of a self-administered OpenZeppelin timelock with a minimum 48-hour delay; protocol ownership moves to the timelock; a 2-of-3 Treasury Safe becomes the FeeVault recipient. Deployment, dry-run handoff, exact-address execution, role verification, and operation-calldata scripts fail closed on an invalid Safe policy or role layout.
 
-No ownership has been transferred yet. The final signer addresses must be selected and tested first. See [`docs/MAINNET_GOVERNANCE_RUNBOOK.md`](./docs/MAINNET_GOVERNANCE_RUNBOOK.md).
+The Safe signers and threshold have been verified, the Timelock roles have been verified, and the V6 ownership-acceptance batch has been scheduled. No V6 ownership has transferred yet; final execution and post-handoff verification remain required. See [`docs/MAINNET_GOVERNANCE_RUNBOOK.md`](./docs/MAINNET_GOVERNANCE_RUNBOOK.md).
 
-## V6 remediation candidate
+## V6 remediation deployment
 
-The repository now contains an undeployed V6 stack that remediates the main contract findings from this review:
+The active Arc Testnet V6 stack remediates the main contract findings from this review:
 
 - graduation always activates the internal permanent AMM and never calls an external adapter;
 - DEX migration is a separate, optional transaction and cannot block the final buy;
@@ -66,7 +66,7 @@ The repository now contains an undeployed V6 stack that remediates the main cont
 - a narrowly scoped guardian may stop only new launches and migrations;
 - transaction deadlines and exact-transfer checks are enforced.
 
-V6 has 13 dedicated adversarial/property-oriented tests in addition to the existing suite. It remains a candidate: it is not deployed, independently audited, or approved for mainnet. The full design and release gate are documented in [`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md).
+V6 has 13 dedicated adversarial/property-oriented tests in addition to the existing suite. It is deployed and active only on Arc Testnet; it is not independently audited or approved for mainnet. The full design and release gate are documented in [`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md).
 
 ## V5 changes
 
@@ -91,11 +91,11 @@ This boundary does not make an unknown adapter safe. A production Uniswap or Aer
 
 | Severity for mainnet | Finding | Impact / required action |
 | --- | --- | --- |
-| High | Factory, Registry, and FeeVault administration and the FeeVault recipient currently depend on one EOA on testnet. | Execute and independently verify the prepared 2-of-3 Safe + 48-hour timelock handoff before mainnet. |
-| Medium, resolved in undeployed V6 | Trading fees push the creator share directly during every V5 trade. | V6 accrues creator fees and lets the creator claim to a chosen recipient. Deployed V5 bytecode is unchanged. |
-| Medium, resolved in undeployed V6 | `FeeVault.collectFee` is permissionless in the deployed Vault. | V6 authorizes collectors and verifies exact received balances. Deployed V5 bytecode is unchanged. |
+| High | Active V6 Factory, Registry, and FeeVault administration temporarily depend on one EOA during the scheduled handoff. | Execute and independently verify the prepared 2-of-3 Safe + 48-hour Timelock handoff before mainnet. |
+| Resolved in active V6 | Trading fees push the creator share directly during every V5 trade. | V6 accrues creator fees and lets the creator claim to a chosen recipient. Deployed V5 bytecode is unchanged. |
+| Resolved in active V6 | `FeeVault.collectFee` is permissionless in the deployed V5 Vault. | V6 authorizes collectors and verifies exact received balances. Deployed V5 bytecode is unchanged. |
 | Resolved in V5 | The V4 Factory permits non-canonical supply and creator allocation values within broad bounds. | V5 enforces 1B supply and zero free creator allocation onchain. |
-| Medium, narrowed in undeployed V6 | V5 has no emergency pause or recovery path. | V6 guardian authority is limited to pausing future launches and optional migrations; it cannot pause sells or move reserves. |
+| Resolved in active V6 | V5 has no emergency pause or recovery path. | V6 guardian authority is limited to pausing future launches and optional migrations; it cannot pause sells or move reserves. |
 | Low | Fee splitting uses integer base units. | Rounding dust goes to the creator share; totals can differ from an exact 70/30 decimal split by base units. |
 | Informational | Graduation locks surplus tokens at `0x000…dEaD` and retains USDC in the curve. | This is permanent by design. There is no DEX migration or LP-token withdrawal in V4. |
 

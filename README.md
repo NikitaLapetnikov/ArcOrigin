@@ -5,7 +5,7 @@ ArcOrigin is a USDC-native token launch and discovery layer for Arc. This reposi
 ## Current status
 
 - Frontend: real Arc Testnet approval, launch, trade, chart, holder, and fee flows backed by confirmed onchain data.
-- Contracts: V5 remains active on Arc Testnet. A security-hardened V6 candidate is deployed, bytecode-verified, exercised onchain, and moving through the Safe/Timelock handoff; it is not active or independently audited.
+- Contracts: V6 is active on Arc Testnet after bytecode verification and onchain launch/trade/claim exercises. Its Safe/Timelock handoff is scheduled but incomplete, so the deployer remains temporary owner until the delayed batch executes. V6 is not independently audited.
 - Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
 - Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcOrigin deployment addresses are recorded in `deployment/arc-testnet.json`.
 
