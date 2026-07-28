@@ -12,12 +12,7 @@ import {
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1_000;
 const CHALLENGE_RATE_WINDOW_MS = 10 * 60 * 1_000;
-// A launch can require a few retries while a wallet, RPC, or IPFS provider is
-// reconnecting. Keep the limit meaningful for abuse protection without making
-// normal launch testing lock a creator out for an hour after a failed upload.
-const UPLOAD_RATE_WINDOW_MS = 15 * 60 * 1_000;
 const MAX_CHALLENGES_PER_WINDOW = 12;
-const MAX_UPLOADS_PER_WINDOW = 12;
 const MAX_RATE_ENTRIES = 2_000;
 const PINATA_V3_UPLOAD_URL = process.env.NODE_ENV === "production"
   ? "https://uploads.pinata.cloud/v3/files"
@@ -61,7 +56,7 @@ function consumeRate(key: string, limit: number, windowMs: number) {
   const now = Date.now();
   if (state.rates.size >= MAX_RATE_ENTRIES && !state.rates.has(key)) {
     for (const [rateKey, rate] of state.rates) {
-      if (now - rate.startedAt >= UPLOAD_RATE_WINDOW_MS) state.rates.delete(rateKey);
+      if (now - rate.startedAt >= CHALLENGE_RATE_WINDOW_MS) state.rates.delete(rateKey);
     }
     if (state.rates.size >= MAX_RATE_ENTRIES) {
       const oldestKey = state.rates.keys().next().value as string | undefined;
@@ -122,13 +117,11 @@ export async function authorizeMetadataUpload({
   address,
   commitment,
   signature,
-  clientKey,
 }: {
   nonce: string;
   address: string;
   commitment: string;
   signature: string;
-  clientKey: string;
 }) {
   cleanupChallenges();
   const challenge = state.challenges.get(nonce);
@@ -145,8 +138,6 @@ export async function authorizeMetadataUpload({
   if (!valid) throw new MetadataUploadError("Wallet signature could not be verified.", 401);
 
   state.challenges.delete(nonce);
-  consumeRate(`upload:wallet:${challenge.address.toLowerCase()}`, MAX_UPLOADS_PER_WINDOW, UPLOAD_RATE_WINDOW_MS);
-  consumeRate(`upload:client:${clientKey}`, MAX_UPLOADS_PER_WINDOW, UPLOAD_RATE_WINDOW_MS);
   return challenge.address;
 }
 

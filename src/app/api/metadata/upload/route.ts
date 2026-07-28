@@ -8,7 +8,7 @@ import {
   sha256Hex,
   validateImage,
 } from "@/lib/server/metadata-upload";
-import { isSameOriginRequest, readLimitedBytes, requestClientKey } from "@/lib/server/request-security";
+import { isSameOriginRequest, readLimitedBytes } from "@/lib/server/request-security";
 import { TokenMetadataValidationError, validateTokenMetadataInput, type TokenMetadataInput } from "@/lib/token-metadata";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +56,6 @@ export async function POST(request: NextRequest) {
       address: field(form, "address"),
       commitment,
       signature: field(form, "signature"),
-      clientKey: requestClientKey(request),
     });
     const normalizedImage = imageBytes ? await normalizeUploadedImage(imageBytes) : null;
     const result = await publishTokenMetadata({ input, creator, image: normalizedImage });
