@@ -12,9 +12,12 @@ import {
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1_000;
 const CHALLENGE_RATE_WINDOW_MS = 10 * 60 * 1_000;
-const UPLOAD_RATE_WINDOW_MS = 60 * 60 * 1_000;
+// A launch can require a few retries while a wallet, RPC, or IPFS provider is
+// reconnecting. Keep the limit meaningful for abuse protection without making
+// normal launch testing lock a creator out for an hour after a failed upload.
+const UPLOAD_RATE_WINDOW_MS = 15 * 60 * 1_000;
 const MAX_CHALLENGES_PER_WINDOW = 12;
-const MAX_UPLOADS_PER_WINDOW = 6;
+const MAX_UPLOADS_PER_WINDOW = 12;
 const MAX_RATE_ENTRIES = 2_000;
 const PINATA_V3_UPLOAD_URL = process.env.NODE_ENV === "production"
   ? "https://uploads.pinata.cloud/v3/files"
@@ -70,7 +73,13 @@ function consumeRate(key: string, limit: number, windowMs: number) {
     state.rates.set(key, { startedAt: now, count: 1 });
     return;
   }
-  if (entry.count >= limit) throw new MetadataUploadError("Upload rate limit reached. Try again later.", 429);
+  if (entry.count >= limit) {
+    const retryInSeconds = Math.max(1, Math.ceil((windowMs - (now - entry.startedAt)) / 1_000));
+    throw new MetadataUploadError(
+      `Upload rate limit reached. Try again in about ${Math.ceil(retryInSeconds / 60)} minute${retryInSeconds > 60 ? "s" : ""}.`,
+      429,
+    );
+  }
   entry.count += 1;
 }
 
