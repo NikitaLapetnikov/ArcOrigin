@@ -158,6 +158,25 @@ This first step does **not** transfer ownership. It sets the Timelock as `pendin
 3. the exact `executeBatch` transaction calls `acceptOwnership()` on all three contracts;
 4. every `owner()` and `pendingOwner()` value is independently verified.
 
+Before the delay expires, this command is a read-only status check:
+
+```bash
+pnpm governance:execute-handoff:arc-testnet:v6
+```
+
+After the exact operation reports `READY`, execute only the reviewed operation ID:
+
+```bash
+EXECUTE_V6_HANDOFF_FINAL=true \
+CONFIRM_V6_HANDOFF_OPERATION=0xExactReviewedOperationId \
+pnpm governance:execute-handoff:arc-testnet:v6
+```
+
+The final command recomputes the operation ID from the saved targets, values, payloads,
+predecessor, and salt. It refuses an unscheduled or premature operation and verifies that
+all three contracts are owned by the Timelock with no pending owner before writing its
+gitignored execution record.
+
 The V6 candidate must not be activated while the deployer remains owner.
 
 ## Phase 5 — verify and exercise the delay

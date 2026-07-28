@@ -1,8 +1,8 @@
 # ArcOrigin V6 security architecture
 
-Status: implemented and locally tested; not deployed or independently audited.
+Status: Arc Testnet candidate deployed, bytecode-verified, and exercised onchain; governance handoff is in progress. It is not active or independently audited.
 
-V6 is a new contract stack. It does not modify any deployed V4 or V5 bytecode. Do not activate a V6 candidate until the exact deployment has passed independent review, bytecode verification, governance handoff, frontend compatibility testing, and a full Arc Testnet exercise.
+V6 is a new, isolated contract stack. It does not modify any deployed V4 or V5 bytecode. The Arc Testnet candidate remains inactive until its exact deployment has passed independent review, bytecode verification, governance handoff, frontend compatibility testing, and a full Arc Testnet exercise.
 
 ## Security objectives
 

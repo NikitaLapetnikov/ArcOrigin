@@ -5,7 +5,7 @@ ArcOrigin is a USDC-native token launch and discovery layer for Arc. This reposi
 ## Current status
 
 - Frontend: real Arc Testnet approval, launch, trade, chart, holder, and fee flows backed by confirmed onchain data.
-- Contracts: V5 is deployed to Arc Testnet. A security-hardened V6 candidate is implemented and tested locally but is not deployed or independently audited.
+- Contracts: V5 remains active on Arc Testnet. A security-hardened V6 candidate is deployed, bytecode-verified, exercised onchain, and moving through the Safe/Timelock handoff; it is not active or independently audited.
 - Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
 - Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcOrigin deployment addresses are recorded in `deployment/arc-testnet.json`.
 
@@ -43,7 +43,7 @@ The deployed Arc Testnet contracts retain their original `ArcForge*` Solidity na
 - `ArcForgeCreatorRegistry`: creator metadata and factory-recorded launch counts.
 - `MockUSDC`: unrestricted minting for local tests only.
 
-The undeployed V6 candidate adds authorized FeeVault collectors, pull-based creator fee claims, transaction deadlines, exact-transfer accounting, bounded pagination, two-step governance ownership, a pause-only emergency guardian, and graduation that cannot be blocked by optional DEX migration. See [`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md).
+The isolated V6 candidate adds authorized FeeVault collectors, pull-based creator fee claims, transaction deadlines, exact-transfer accounting, bounded pagination, two-step governance ownership, a pause-only emergency guardian, and graduation that cannot be blocked by optional DEX migration. See [`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md).
 
 The ArcOrigin launch flow uses zero free creator allocation, a 10 USDC launch fee, and 1% buy/sell fees. Creators can acquire tokens only through an optional paid developer buy capped at 5% of supply. V5 splits each trading fee onchain: 70% is transferred directly to the creator and 30% goes to the protocol FeeVault. Current launches use a 2,500 virtual-USDC reserve and graduate after raising 10,000 real USDC. V5 adds a three-block launch-protection window and an immutable per-curve DEX migration adapter. Migration is disabled on Arc Testnet until an official Uniswap or Aerodrome deployment and audited adapter are available; without an adapter, graduation keeps permanent two-sided liquidity in the curve.
 
@@ -91,7 +91,7 @@ pnpm governance:handoff:arc-testnet
 pnpm governance:verify:arc-testnet
 ```
 
-The handoff command is dry-run unless both `EXECUTE_ADMIN_HANDOFF=true` and an exact `CONFIRM_ADMIN_HANDOFF` timelock address are provided. No multisig or timelock is currently active in the Arc Testnet manifest. Follow [`docs/MAINNET_GOVERNANCE_RUNBOOK.md`](./docs/MAINNET_GOVERNANCE_RUNBOOK.md); never use placeholder signer addresses or store signer keys in the repository.
+The legacy handoff command is dry-run unless both `EXECUTE_ADMIN_HANDOFF=true` and an exact `CONFIRM_ADMIN_HANDOFF` timelock address are provided. The isolated V6 candidate uses the separate two-step Safe/Timelock flow documented in [`docs/MAINNET_GOVERNANCE_RUNBOOK.md`](./docs/MAINNET_GOVERNANCE_RUNBOOK.md). Never use placeholder signer addresses or store signer keys in the repository.
 
 ## VPS deployment
 
@@ -121,7 +121,7 @@ Run package and OS upgrades deliberately rather than unattended on a production 
 2. Independent smart-contract audit and formal deployment review.
 3. Contract source verification on Arcscan.
 4. Durable event indexer and PostgreSQL persistence.
-5. Deploy and exercise the prepared multisig/timelock administration; complete the V6 decision for authorized fee collection, pull-based creator fees, and narrowly scoped emergency controls.
+5. Complete and independently review the V6 Safe/Timelock ownership handoff before activation.
 6. Durable reorg-aware indexing plus resilient transaction-state recovery.
 7. Monitoring, edge rate limiting, backups, and incident response.
 
