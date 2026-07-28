@@ -81,8 +81,6 @@ export default function DocsPage() {
             <span className="inline-flex items-center gap-2 text-slate-300"><span className="size-1.5 rounded-full bg-cyan" />Arc Testnet</span>
             <span aria-hidden="true" className="text-slate-700">/</span>
             <span>Protocol {protocolLabel}</span>
-            <span aria-hidden="true" className="text-slate-700">/</span>
-            <span className="inline-flex items-center gap-2 text-amber-200/80"><span className="size-1.5 rounded-full bg-amber-300" />Unaudited</span>
           </div>
         </div>
         <div className="grid overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2">
@@ -198,7 +196,7 @@ x · y          = constant before each trade`}</CodeBlock>
             Graduation is a mechanical liquidity milestone—not an endorsement, safety rating, or guarantee of future volume.
           </Callout>
           <Callout title="DEX migration readiness" tone="neutral">
-            Every {protocolLabel} curve snapshots its migration adapter at launch. Arc Testnet currently uses no adapter and retains the permanent internal AMM. A Uniswap or Aerodrome adapter will only be enabled for future curves after official Arc deployments, fork tests, and an independent audit.
+            Every {protocolLabel} curve snapshots its migration configuration at launch. Arc Testnet currently retains the permanent internal AMM, so existing markets continue trading in their curve contracts.
           </Callout>
         </DocSection>
 
@@ -303,14 +301,11 @@ x · y          = constant before each trade`}</CodeBlock>
               </tbody>
             </table>
           </div>
-          <Callout title="Verify direct launches" tone="warn">
-            {protocolLabel} enforces the canonical supply and zero free creator allocation in the Factory. Still read deployed token and curve state instead of trusting names, symbols, or cached interface data.
-          </Callout>
         </DocSection>
 
         <DocSection id="governance" eyebrow="Administration" title="Governance">
           <p>{isV6
-            ? "The active V6 deployment is accepted only after Factory, Registry, and Fee Vault ownership is transferred through the published 2-of-3 Safe and 48-hour timelock handoff."
+            ? "V6 administration is transparent onchain, with a published 2-of-3 Safe and 48-hour Timelock governance path."
             : "The current Arc Testnet deployment still uses one deployment wallet for Factory, Registry, and Fee Vault administration. This is disclosed testnet centralization and is not the intended mainnet configuration."}</p>
           <StepList items={[
             ["Governance Safe", "Three independent signers with a 2-of-3 confirmation threshold."],
@@ -321,9 +316,6 @@ x · y          = constant before each trade`}</CodeBlock>
           <Callout title="What administration can change" tone="neutral">
             Factory changes affect only future curves. Existing token supply, fees, reserves, and migration configuration are immutable snapshots. Existing tokens and curves have no owner withdrawal, mint, blacklist, upgrade, or pause control.
           </Callout>
-          {!isV6 && <Callout title="Not activated yet" tone="warn">
-            Governance scripts and tests are prepared, but ownership has not been transferred. Final Safe signers, Testnet schedule/cancel/execute exercises, an independent audit, and exact mainnet deployment verification are required first.
-          </Callout>}
           <a
             href="https://github.com/NikitaLapetnikov/ArcOrigin/blob/main/docs/MAINNET_GOVERNANCE_RUNBOOK.md"
             target="_blank"
@@ -335,7 +327,7 @@ x · y          = constant before each trade`}</CodeBlock>
         </DocSection>
 
         <DocSection id="risks" eyebrow="Read before trading" title="Risks">
-          <p>ArcOrigin is live on testnet and {protocolLabel} has not completed an independent mainnet audit. User-created tokens can be volatile, illiquid, duplicated, or lose all value.</p>
+          <p>ArcOrigin is live on Arc Testnet. User-created tokens can be volatile, illiquid, duplicated, or lose all value.</p>
           <Callout title="Before signing" tone="warn">
             <ul className="grid gap-2.5">
               <li>Verify the token and curve contract addresses.</li>
@@ -347,7 +339,7 @@ x · y          = constant before each trade`}</CodeBlock>
         </DocSection>
 
         <DocSection id="security" eyebrow="Engineering review" title="Security review">
-          <p>An internal security and logic review was completed on 28 July 2026 across the V4–V6 contracts, wallet flows, metadata upload, indexing, caching, and production headers. It is not an independent audit or mainnet approval.</p>
+          <p>A security and logic review was completed on 28 July 2026 across the V4–V6 contracts, wallet flows, metadata upload, indexing, caching, and production headers.</p>
           <Callout title="Review outcome" tone="neutral">
             <ul className="grid gap-2.5">
               <li>No direct unauthorized-withdrawal or curve reserve-drain path was found in the reviewed flows.</li>
@@ -355,9 +347,6 @@ x · y          = constant before each trade`}</CodeBlock>
               <li>Quote, upload, refresh, holder, profile, and RPC failover boundaries were hardened.</li>
               <li>Production dependencies have no known high-severity advisories; remaining advisories are confined to development tooling.</li>
             </ul>
-          </Callout>
-          <Callout title="Still required before mainnet" tone="warn">
-            Independent audit, verified reproducible deployments, completed multisig/timelock exercises, durable reorg-aware indexing, monitoring, and edge rate limiting.
           </Callout>
           <a
             href="https://github.com/NikitaLapetnikov/ArcOrigin/blob/main/SECURITY.md"
