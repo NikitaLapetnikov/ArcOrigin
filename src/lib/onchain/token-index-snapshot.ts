@@ -1,7 +1,7 @@
 import "server-only";
 
 import { formatUnits, type Address } from "viem";
-import { ARC_TESTNET_ACTIVE_FACTORY } from "@/lib/chains";
+import { ARCORIGIN_PROTOCOL_VERSION, ARC_TESTNET_ACTIVE_FACTORY } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
 import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
@@ -25,7 +25,8 @@ const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const REQUEST_WAIT_TIMEOUT_MS = 10_000;
-const PERSISTENT_CACHE_KEY = "arcorigin:v5:token-index";
+const PERSISTENT_CACHE_KEY =
+  `arcorigin:v${ARCORIGIN_PROTOCOL_VERSION}:token-index:${ARC_TESTNET_ACTIVE_FACTORY.toLowerCase()}`;
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 type TokenIndexSnapshot = {

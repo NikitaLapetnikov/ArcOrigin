@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ARCORIGIN_PROTOCOL_VERSION, ARC_TESTNET_ACTIVE_FACTORY } from "@/lib/chains";
 import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
 import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
@@ -8,7 +9,8 @@ import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tokens";
 import type { TokenData } from "@/lib/types";
 
-const TOKEN_INDEX_CACHE_KEY = "arcorigin:5042002:factory-index-v7";
+const TOKEN_INDEX_CACHE_KEY =
+  `arcorigin:5042002:v${ARCORIGIN_PROTOCOL_VERSION}:factory-index:${ARC_TESTNET_ACTIVE_FACTORY.toLowerCase()}`;
 const LAST_CONFIRMED_LAUNCH_KEY = "arcorigin:5042002:last-launch-confirmed-at";
 const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
 const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
