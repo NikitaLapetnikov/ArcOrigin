@@ -5,7 +5,7 @@ ArcOrigin is a USDC-native token launch and discovery layer for Arc. This reposi
 ## Current status
 
 - Frontend: real Arc Testnet approval, launch, trade, chart, holder, and fee flows backed by confirmed onchain data.
-- Contracts: deployed to Arc Testnet; source is tested but not independently audited.
+- Contracts: V5 is deployed to Arc Testnet. A security-hardened V6 candidate is implemented and tested locally but is not deployed or independently audited.
 - Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
 - Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcOrigin deployment addresses are recorded in `deployment/arc-testnet.json`.
 
@@ -43,6 +43,8 @@ The deployed Arc Testnet contracts retain their original `ArcForge*` Solidity na
 - `ArcForgeCreatorRegistry`: creator metadata and factory-recorded launch counts.
 - `MockUSDC`: unrestricted minting for local tests only.
 
+The undeployed V6 candidate adds authorized FeeVault collectors, pull-based creator fee claims, transaction deadlines, exact-transfer accounting, bounded pagination, two-step governance ownership, a pause-only emergency guardian, and graduation that cannot be blocked by optional DEX migration. See [`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md).
+
 The ArcOrigin launch flow uses zero free creator allocation, a 10 USDC launch fee, and 1% buy/sell fees. Creators can acquire tokens only through an optional paid developer buy capped at 5% of supply. V5 splits each trading fee onchain: 70% is transferred directly to the creator and 30% goes to the protocol FeeVault. Current launches use a 2,500 virtual-USDC reserve and graduate after raising 10,000 real USDC. V5 adds a three-block launch-protection window and an immutable per-curve DEX migration adapter. Migration is disabled on Arc Testnet until an official Uniswap or Aerodrome deployment and audited adapter are available; without an adapter, graduation keeps permanent two-sided liquidity in the curve.
 
 Launch metadata uses an immutable `ipfs://` CID stored by the token contract. The upload endpoint validates and optimizes images, requires a one-time wallet signature bound to the exact metadata payload, rate-limits uploads by wallet and client, and never exposes the storage credential to the browser.
@@ -58,6 +60,18 @@ pnpm verify:arc-testnet
 ```
 
 The deployment script refuses placeholders and writes a gitignored local manifest. The public testnet manifest contains no secrets. Arcscan source verification and an independent audit are still required before any mainnet use.
+
+V6 is deployed as a separate full-stack candidate and never overwrites the active V5 manifest:
+
+```bash
+TREASURY_SAFE=0xReviewed2of3Safe \
+EMERGENCY_GUARDIAN=0xReviewedSafe \
+pnpm deploy:arc-testnet:v6
+
+pnpm verify:arc-testnet:v6
+```
+
+The command requires contract addresses for both Safe roles, deploys migration disabled and paused, binds the CurveDeployer permanently, authorizes only the Factory, and writes `deployment/arcTestnet-v6.local.json`. It does not activate the candidate.
 
 Factory-only upgrades use separate deployment and activation commands so the new Factory can be inspected and the multi-factory indexer deployed before `CreatorRegistry` is changed:
 

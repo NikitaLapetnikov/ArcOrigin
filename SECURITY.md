@@ -1,6 +1,6 @@
 # ArcOrigin security review
 
-Last reviewed: 2026-07-27
+Last reviewed: 2026-07-28
 
 Scope: Solidity contracts, deployment scripts, wallet transaction flows, metadata/IPFS APIs, RPC/indexing, caches, and production web headers.
 
@@ -50,6 +50,24 @@ The repository now includes a reviewed governance preparation path: an exact 2-o
 
 No ownership has been transferred yet. The final signer addresses must be selected and tested first. See [`docs/MAINNET_GOVERNANCE_RUNBOOK.md`](./docs/MAINNET_GOVERNANCE_RUNBOOK.md).
 
+## V6 remediation candidate
+
+The repository now contains an undeployed V6 stack that remediates the main contract findings from this review:
+
+- graduation always activates the internal permanent AMM and never calls an external adapter;
+- DEX migration is a separate, optional transaction and cannot block the final buy;
+- migration uses exact accounted balance deltas, so unsolicited donation dust cannot block it;
+- adapter, locker, verifier, and their runtime code hashes are snapshotted;
+- the Factory can revoke or pause the exact migration tuple without pausing trading;
+- a DEX-specific independent verifier must validate pool and locker state;
+- creator fees accrue for pull-based claims instead of being pushed during trades;
+- FeeVault collectors are authorized, transfers are balance-checked, and only governance may withdraw;
+- Factory and Registry use bounded reads, two-step ownership, and disabled ownership renunciation;
+- a narrowly scoped guardian may stop only new launches and migrations;
+- transaction deadlines and exact-transfer checks are enforced.
+
+V6 has 13 dedicated adversarial/property-oriented tests in addition to the existing suite. It remains a candidate: it is not deployed, independently audited, or approved for mainnet. The full design and release gate are documented in [`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md).
+
 ## V5 changes
 
 V5 narrows the Factory to a canonical one-billion supply and zero free creator allocation, reduces the launch fee to 10 USDC, and snapshots launch protection, curve economics, fees, and any DEX migration adapter into each new curve. The initial protection window limits a wallet to 5% holdings and 5.5% cumulative purchases for three blocks.
@@ -74,10 +92,10 @@ This boundary does not make an unknown adapter safe. A production Uniswap or Aer
 | Severity for mainnet | Finding | Impact / required action |
 | --- | --- | --- |
 | High | Factory, Registry, and FeeVault administration and the FeeVault recipient currently depend on one EOA on testnet. | Execute and independently verify the prepared 2-of-3 Safe + 48-hour timelock handoff before mainnet. |
-| Medium | Trading fees push the creator share directly during every trade. | A future quote token with transfer restrictions, or a blocked creator recipient, could make that token's trades revert. A future V6 design should accrue creator fees for pull-based withdrawal. |
-| Medium | `FeeVault.collectFee` is permissionless by design. | Funds cannot be stolen through it, but callers can create real deposits with arbitrary labels. The application now ignores those labels and derives analytics from trusted Factory/curve events. A future V6 Vault should authorize collectors if canonical onchain categories are required. |
+| Medium, resolved in undeployed V6 | Trading fees push the creator share directly during every V5 trade. | V6 accrues creator fees and lets the creator claim to a chosen recipient. Deployed V5 bytecode is unchanged. |
+| Medium, resolved in undeployed V6 | `FeeVault.collectFee` is permissionless in the deployed Vault. | V6 authorizes collectors and verifies exact received balances. Deployed V5 bytecode is unchanged. |
 | Resolved in V5 | The V4 Factory permits non-canonical supply and creator allocation values within broad bounds. | V5 enforces 1B supply and zero free creator allocation onchain. |
-| Medium | There is no emergency pause or recovery path. | This reduces administrator power but also removes incident containment. Decide and document the mainnet governance/fail-safe model before deployment. |
+| Medium, narrowed in undeployed V6 | V5 has no emergency pause or recovery path. | V6 guardian authority is limited to pausing future launches and optional migrations; it cannot pause sells or move reserves. |
 | Low | Fee splitting uses integer base units. | Rounding dust goes to the creator share; totals can differ from an exact 70/30 decimal split by base units. |
 | Informational | Graduation locks surplus tokens at `0x000…dEaD` and retains USDC in the curve. | This is permanent by design. There is no DEX migration or LP-token withdrawal in V4. |
 
@@ -94,7 +112,7 @@ This boundary does not make an unknown adapter safe. A production Uniswap or Aer
 1. Independent Solidity audit and remediation review by a qualified third party.
 2. Reproducible builds and verified source code for every deployed contract.
 3. Deploy, exercise, and independently verify the prepared 2-of-3 multisig/timelock administration; complete signer rotation and incident-response drills.
-4. Authorized FeeVault collectors, pull-based creator fees, and a documented emergency-control policy. V5 resolves canonical launch parameters but not these remaining items.
+4. Deploy and independently review V6 authorized fee collection, pull-based creator fees, migration boundary, and emergency controls.
 5. Property/fuzz testing with a dedicated framework and formal or symbolic analysis of curve/graduation invariants.
 6. Redundant authenticated RPC, a durable reorg-aware indexer, edge rate limiting, alerting, and backups.
 7. Legal and compliance review for the intended jurisdictions and mainnet asset flows.

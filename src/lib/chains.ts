@@ -30,6 +30,8 @@ export const ARC_TESTNET_V3_FACTORY = "0x54382b7329FAB9BA0532f607b73027ee0AFB04B
 export const ARC_TESTNET_V4_FACTORY = "0x09e8b251392dc289e94B2242A12949aAbC722045" as Address;
 export const ARC_TESTNET_V5_FACTORY = "0x7a0FB240bcB691555A51DE238aAA3a58c1DB337c" as Address;
 export const ARC_TESTNET_ACTIVE_FACTORY = ARC_TESTNET_V5_FACTORY;
+export const ARCORIGIN_PROTOCOL_VERSION =
+  process.env.NEXT_PUBLIC_PROTOCOL_VERSION === "6" ? 6 : 5;
 export const ARCORIGIN_V4_GRADUATION_TARGET_USDC = 10_000;
 export const ARCORIGIN_ACTIVE_GRADUATION_TARGET_USDC = 10_000;
 
@@ -90,3 +92,11 @@ export function factoryForLaunchBlock(launchBlock?: number) {
 }
 
 export const ARC_TESTNET_USDC = ARC_TESTNET_CONTRACTS.usdc;
+
+export function usesV6Transactions(factoryAddress?: string) {
+  return (
+    ARCORIGIN_PROTOCOL_VERSION === 6 &&
+    Boolean(factoryAddress) &&
+    factoryAddress?.toLowerCase() === ARC_TESTNET_CONTRACTS.factory.toLowerCase()
+  );
+}

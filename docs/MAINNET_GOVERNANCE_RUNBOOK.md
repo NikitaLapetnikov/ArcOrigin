@@ -53,6 +53,8 @@ The Treasury Safe may be the same 2-of-3 Safe initially, but a separate treasury
 
 The current V5 contracts have no emergency pause. A compromised or faulty external dependency cannot be contained by pausing existing curves. Before mainnet, decide whether a narrowly scoped, timelocked-by-default emergency guardian belongs in a separately audited V6.
 
+The undeployed V6 candidate implements that narrower model: a reviewed guardian Safe may stop only new launches and optional migrations. It cannot resume either function, change parameters, pause sells, migrate funds, or withdraw reserves. Only the Timelock owner can resume or reconfigure the protocol.
+
 ## Phase 1 — create and verify Safes
 
 1. Confirm Safe contracts are officially deployed and source-verified on the exact Arc network.
@@ -123,6 +125,40 @@ pnpm governance:handoff:arc-testnet
 The script is resumable. It updates the FeeVault recipient, transfers legacy Factory ownership, then active Factory, FeeVault, and CreatorRegistry ownership. It verifies every final owner before updating the deployment manifest.
 
 These deployed contracts use one-step `Ownable.transferOwnership`. A wrong address can permanently lock administration. The exact-address confirmation is intentional and must not be removed.
+
+### V6 two-step handoff
+
+V6 Factory, FeeVault, and CreatorRegistry use `Ownable2Step`. Do not use the V5 one-step handoff command for them.
+
+First dry-run the V6 checks:
+
+```bash
+GOVERNANCE_SAFE=0x... \
+TREASURY_SAFE=0x... \
+GOVERNANCE_TIMELOCK=0x... \
+pnpm governance:handoff:arc-testnet:v6
+```
+
+After independent review, prepare each pending owner and generate one Safe/Timelock batch:
+
+```bash
+GOVERNANCE_SAFE=0x... \
+TREASURY_SAFE=0x... \
+GOVERNANCE_TIMELOCK=0x... \
+EXECUTE_V6_HANDOFF_PREPARE=true \
+CONFIRM_V6_HANDOFF=0xExactTimelockAddress \
+V6_HANDOFF_SALT_LABEL="ArcOrigin V6 Testnet handoff 1" \
+pnpm governance:handoff:arc-testnet:v6
+```
+
+This first step does **not** transfer ownership. It sets the Timelock as `pendingOwner` and writes exact Safe scheduling and permissionless execution calldata to a gitignored local plan. Ownership changes only after:
+
+1. the Governance Safe schedules the generated batch;
+2. the full delay expires;
+3. the exact `executeBatch` transaction calls `acceptOwnership()` on all three contracts;
+4. every `owner()` and `pendingOwner()` value is independently verified.
+
+The V6 candidate must not be activated while the deployer remains owner.
 
 ## Phase 5 — verify and exercise the delay
 

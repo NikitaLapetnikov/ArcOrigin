@@ -4,7 +4,12 @@ import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type Dra
 import { AtSign, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, Send, X } from "lucide-react";
 import { decodeEventLog, formatUnits, parseUnits, publicActions, type Address, type Hash } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
-import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, arcTestnet } from "@/lib/chains";
+import {
+  ARCORIGIN_PROTOCOL_VERSION,
+  ARC_TESTNET_CONTRACTS,
+  EXPLORER_URL,
+  arcTestnet,
+} from "@/lib/chains";
 import {
   DEFAULT_GRADUATION_THRESHOLD,
   DEFAULT_VIRTUAL_USDC_RESERVE,
@@ -419,7 +424,16 @@ export function LaunchForm() {
             throw new Error("The current curve quote exceeds the 5% developer-buy cap. Reduce the USDC amount.");
           }
           setStatus("initial_buy");
-          const initialBuyHash = await writeContractAsync({
+          const initialBuyHash = await writeContractAsync(ARCORIGIN_PROTOCOL_VERSION === 6 ? {
+            address: launched.curve,
+            abi: bondingCurveAbi,
+            functionName: "buy",
+            args: [
+              developerBuy,
+              tokensOut * 95n / 100n,
+              BigInt(Math.floor(Date.now() / 1_000) + 20 * 60),
+            ],
+          } : {
             address: launched.curve,
             abi: bondingCurveAbi,
             functionName: "buy",

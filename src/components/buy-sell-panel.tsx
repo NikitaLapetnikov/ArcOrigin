@@ -18,7 +18,7 @@ import {
   useWalletClient,
   useWriteContract,
 } from "wagmi";
-import { ARC_TESTNET_CONTRACTS, arcTestnet } from "@/lib/chains";
+import { ARC_TESTNET_CONTRACTS, arcTestnet, usesV6Transactions } from "@/lib/chains";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import { bondingCurveAbi, erc20Abi } from "@/lib/contracts";
 import type { TokenData } from "@/lib/types";
@@ -338,15 +338,29 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
 
       setStatus("trading");
       const tradeFeeOverrides = await estimatePriorityFees(client as PublicClient, priority);
+      const deadline = BigInt(Math.floor(Date.now() / 1_000) + 20 * 60);
+      const v6Transaction = usesV6Transactions(token.factoryAddress);
       const tradeHash = side === "Buy"
-        ? await writeContractAsync({
+        ? await writeContractAsync(v6Transaction ? {
+            address: curveAddress,
+            abi: bondingCurveAbi,
+            functionName: "buy",
+            args: [quote.input, quote.minimumOutput, deadline],
+            ...tradeFeeOverrides,
+          } : {
             address: curveAddress,
             abi: bondingCurveAbi,
             functionName: "buy",
             args: [quote.input, quote.minimumOutput],
             ...tradeFeeOverrides,
           })
-        : await writeContractAsync({
+        : await writeContractAsync(v6Transaction ? {
+            address: curveAddress,
+            abi: bondingCurveAbi,
+            functionName: "sell",
+            args: [quote.input, quote.minimumOutput, deadline],
+            ...tradeFeeOverrides,
+          } : {
             address: curveAddress,
             abi: bondingCurveAbi,
             functionName: "sell",
