@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatUnits, parseAbiItem, type Address } from "viem";
 import { ARCORIGIN_PROTOCOL_VERSION, ARC_TESTNET_ACTIVE_FACTORY } from "@/lib/chains";
+import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
 import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
@@ -17,6 +19,10 @@ const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
 const PENDING_TRADE_TTL = 24 * 60 * 60 * 1_000;
 const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
 const TRADE_FEED_LIMIT = 500;
+const liveBuyEvent = parseAbiItem(
+  "event TokenBought(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 fee)",
+);
+const liveTradeClient = createArcPublicClient(undefined, 6_000);
 
 type CachedIndex = { savedAt: number; tokens: TokenData[] };
 type TokenIndexSnapshot = { tokens: TokenData[]; indexedBlock: string; generatedAt: string };
@@ -305,6 +311,13 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
   const [isPartial, setIsPartial] = useState(false);
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const refreshRequestRef = useRef(0);
+  const liveCurveKey = includeMarketData
+    ? tokens
+      .filter((token): token is TokenData & { curveAddress: string } => isAddress(token.curveAddress))
+      .map((token) => `${token.curveAddress.toLowerCase()}:${token.address}`)
+      .sort()
+      .join(",")
+    : "";
 
   const refresh = useCallback(async (forceRefresh = true) => {
     const requestId = ++refreshRequestRef.current;
@@ -425,6 +438,45 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       reconciliationTimers.forEach(clearTimeout);
     };
   }, [allowCache, includeMarketData, refresh]);
+
+  useEffect(() => {
+    if (!includeMarketData || !liveCurveKey) return;
+    const curveToToken = new Map(
+      liveCurveKey.split(",").map((entry) => {
+        const [curveAddress, tokenAddress] = entry.split(":");
+        return [curveAddress, tokenAddress] as const;
+      }),
+    );
+    const unwatch = liveTradeClient.watchEvent({
+      address: [...curveToToken.keys()] as Address[],
+      event: liveBuyEvent,
+      strict: true,
+      pollingInterval: 4_000,
+      onError: () => {
+        // The confirmed-trade event and targeted reconciliation remain available.
+      },
+      onLogs: (logs) => {
+        for (const log of logs) {
+          const tokenAddress = curveToToken.get(log.address.toLowerCase());
+          if (!tokenAddress || !log.transactionHash || log.blockNumber === null) continue;
+          window.dispatchEvent(new CustomEvent("arcforge:trade-confirmed", {
+            detail: {
+              tokenAddress,
+              transactionHash: log.transactionHash,
+              side: "Buy",
+              wallet: log.args.buyer,
+              blockNumber: log.blockNumber.toString(),
+              timestamp: Math.floor(Date.now() / 1_000),
+              usdc: Number(formatUnits(log.args.usdcIn, 6)),
+              fee: Number(formatUnits(log.args.fee, 6)),
+              tokens: Number(formatUnits(log.args.tokensOut, 18)),
+            } satisfies ConfirmedTrade,
+          }));
+        }
+      },
+    });
+    return unwatch;
+  }, [includeMarketData, liveCurveKey]);
 
   return { tokens, loading, error, refresh, isCached, isPartial, cachedAt };
 }
