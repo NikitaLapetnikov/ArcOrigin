@@ -6,7 +6,15 @@ import { usePathname } from "next/navigation";
 import { ChevronDown, Copy, LogOut, Menu, Radio, UserRound, Wallet, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useAccount, useConnect, useDisconnect, useSwitchChain, type Connector } from "wagmi";
+import {
+  ConnectorAlreadyConnectedError,
+  useAccount,
+  useConnect,
+  useDisconnect,
+  useReconnect,
+  useSwitchChain,
+  type Connector,
+} from "wagmi";
 import { arcTestnet } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 import { Badge, Button } from "./ui";
@@ -24,10 +32,21 @@ function WalletButton() {
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const { address, isConnected, chainId } = useAccount();
-  const { connectors, connectAsync, isPending, error } = useConnect();
+  const [connectionError, setConnectionError] = useState("");
+  const { address, isConnected, chainId, status: accountStatus } = useAccount();
+  const { connectors, connectAsync, isPending, error, reset: resetConnect } = useConnect();
+  const { reconnectAsync, isPending: isReconnectPending } = useReconnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
+  const connectionPending = isPending
+    || isReconnectPending
+    || accountStatus === "connecting"
+    || accountStatus === "reconnecting";
+  const visibleError = connectionError || (
+    error && !(error instanceof ConnectorAlreadyConnectedError)
+      ? error.message.split("\n")[0]
+      : ""
+  );
   const availableConnectors = connectors.filter((connector, index, items) =>
     items.findIndex((item) => item.uid === connector.uid || item.name === connector.name) === index,
   );
@@ -52,7 +71,11 @@ function WalletButton() {
   }, [isConnected]);
 
   if (!mounted) {
-    return <Button variant="secondary" disabled><Wallet className="size-4" />Connect wallet</Button>;
+    return <Button variant="secondary" disabled><Wallet className="size-4" />Restoring wallet…</Button>;
+  }
+
+  if (!isConnected && connectionPending) {
+    return <Button variant="secondary" disabled><Wallet className="size-4" />Restoring wallet…</Button>;
   }
 
   if (isConnected && chainId !== arcTestnet.id) {
@@ -100,19 +123,49 @@ function WalletButton() {
   </div>;
 
   async function connectWallet(connector: Connector) {
+    setConnectionError("");
+    resetConnect();
     try {
       await connectAsync({ connector });
       setSelectorOpen(false);
-    } catch {
-      // Wagmi exposes the connector error below the button and keeps the selector open for retry.
+    } catch (connectError) {
+      if (
+        connectError instanceof ConnectorAlreadyConnectedError
+        || (connectError instanceof Error && /already connected/i.test(connectError.message))
+      ) {
+        // The injected provider can finish connecting before Wagmi's persisted
+        // account state has hydrated. Reconcile that session instead of asking
+        // the wallet to connect a second time.
+        setSelectorOpen(false);
+        resetConnect();
+        try {
+          await reconnectAsync({ connectors: [connector] });
+        } catch {
+          setConnectionError("Could not restore the wallet session. Reload the page and try again.");
+        }
+        return;
+      }
+      setConnectionError(
+        connectError instanceof Error
+          ? connectError.message.split("\n")[0]
+          : "Could not connect this wallet.",
+      );
     }
   }
 
   return <div className="relative flex items-center gap-2">
-    <Button title={error?.message} onClick={() => setSelectorOpen(true)} disabled={isPending}>
-      <Wallet className="size-4" />{isPending ? "Connecting" : "Connect wallet"}
+    <Button
+      title={visibleError || undefined}
+      onClick={() => {
+        setConnectionError("");
+        resetConnect();
+        setSelectorOpen(true);
+      }}
+      disabled={connectionPending}
+    >
+      <Wallet className="size-4" />{connectionPending ? "Connecting" : "Connect wallet"}
     </Button>
-    {error && <span className="hidden max-w-44 text-[10px] leading-4 text-rose-300 xl:block">{error.message.split("\n")[0]}</span>}
+    {visibleError && <span className="hidden max-w-44 text-[10px] leading-4 text-rose-300 xl:block">{visibleError}</span>}
     {selectorOpen && createPortal(<div
       role="dialog"
       aria-modal="true"
@@ -134,7 +187,7 @@ function WalletButton() {
           {availableConnectors.map((connector) => <button
             key={connector.uid}
             type="button"
-            disabled={isPending}
+            disabled={connectionPending}
             onClick={() => void connectWallet(connector)}
             className="flex h-12 items-center justify-between rounded-xl border border-line bg-white/[.025] px-4 text-sm font-medium text-slate-200 transition hover:border-cyan/35 hover:bg-cyan/[.05] disabled:opacity-50"
           >
@@ -143,7 +196,7 @@ function WalletButton() {
           </button>)}
           {availableConnectors.length === 0 && <p className="rounded-xl border border-line p-4 text-xs leading-5 text-slate-400">Install or enable an EVM-compatible wallet extension, then reload this page.</p>}
         </div>
-        {error && <p role="alert" className="mt-3 rounded-xl border border-rose-400/20 bg-rose-400/[.06] px-3 py-2 text-xs leading-5 text-rose-200">{error.message.split("\n")[0]}</p>}
+        {visibleError && <p role="alert" className="mt-3 rounded-xl border border-rose-400/20 bg-rose-400/[.06] px-3 py-2 text-xs leading-5 text-rose-200">{visibleError}</p>}
       </div>
     </div>, document.body)}
   </div>;
