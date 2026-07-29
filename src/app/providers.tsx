@@ -6,10 +6,14 @@ import { WagmiProvider, createConfig } from "wagmi";
 import { injected } from "@wagmi/core";
 import { useState, type ReactNode } from "react";
 import { arcTestnet } from "@/lib/chains";
+import { safeAppConnector } from "@/lib/wallet/safe-app-connector";
 
 const config = createConfig({
   chains: [arcTestnet],
-  connectors: [injected({ shimDisconnect: true })],
+  connectors: [
+    safeAppConnector({ shimDisconnect: true }),
+    injected({ shimDisconnect: true }),
+  ],
   multiInjectedProviderDiscovery: true,
   transports: {
     [arcTestnet.id]: fallback(

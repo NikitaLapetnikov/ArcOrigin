@@ -2,7 +2,8 @@ import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
 import sharp from "sharp";
-import { getAddress, isAddress, verifyMessage, type Address, type Hex } from "viem";
+import { getAddress, isAddress, verifyMessage as verifyEoaMessage, type Address, type Hex } from "viem";
+import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import {
   TOKEN_IMAGE_MAX_BYTES,
   canonicalMetadataCommitment,
@@ -10,10 +11,11 @@ import {
   type TokenMetadataInput,
 } from "@/lib/token-metadata";
 
-const CHALLENGE_TTL_MS = 5 * 60 * 1_000;
+const CHALLENGE_TTL_MS = 15 * 60 * 1_000;
 const CHALLENGE_RATE_WINDOW_MS = 10 * 60 * 1_000;
 const MAX_CHALLENGES_PER_WINDOW = 12;
 const MAX_RATE_ENTRIES = 2_000;
+const MAX_SIGNATURE_BYTES = 4_096;
 const PINATA_V3_UPLOAD_URL = process.env.NODE_ENV === "production"
   ? "https://uploads.pinata.cloud/v3/files"
   : process.env.PINATA_UPLOAD_URL ?? "https://uploads.pinata.cloud/v3/files";
@@ -41,6 +43,7 @@ const state = globalThis.__arcOriginMetadataUploadState ?? {
   rates: new Map(),
 };
 globalThis.__arcOriginMetadataUploadState = state;
+const signaturePublicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL, 6_000);
 
 export class MetadataUploadError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -128,13 +131,36 @@ export async function authorizeMetadataUpload({
   if (!challenge || challenge.expiresAt <= Date.now()) throw new MetadataUploadError("Upload authorization expired. Sign again.", 401);
   if (!isAddress(address) || getAddress(address) !== challenge.address) throw new MetadataUploadError("Upload wallet does not match the signature.", 401);
   if (commitment.toLowerCase() !== challenge.commitment) throw new MetadataUploadError("Token metadata changed after signing.", 401);
-  if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) throw new MetadataUploadError("Invalid wallet signature.", 401);
+  if (
+    !/^0x[0-9a-fA-F]+$/.test(signature) ||
+    (signature.length - 2) % 2 !== 0 ||
+    (signature.length - 2) / 2 > MAX_SIGNATURE_BYTES
+  ) throw new MetadataUploadError("Invalid wallet signature.", 401);
 
-  const valid = await verifyMessage({
-    address: challenge.address,
-    message: challenge.message,
-    signature: signature as Hex,
-  });
+  let valid = false;
+  try {
+    valid = await verifyEoaMessage({
+      address: challenge.address,
+      message: challenge.message,
+      signature: signature as Hex,
+    });
+  } catch {
+    // Contract-wallet signatures are not ECDSA recoverable and are checked below.
+  }
+  if (!valid) {
+    try {
+      valid = await signaturePublicClient.verifyMessage({
+        address: challenge.address,
+        message: challenge.message,
+        signature: signature as Hex,
+      });
+    } catch {
+      throw new MetadataUploadError(
+        "Smart-wallet signature verification is temporarily unavailable. Try again.",
+        503,
+      );
+    }
+  }
   if (!valid) throw new MetadataUploadError("Wallet signature could not be verified.", 401);
 
   state.challenges.delete(nonce);

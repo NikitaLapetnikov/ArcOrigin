@@ -49,9 +49,12 @@ function WalletButton() {
       ? error.message.split("\n")[0]
       : ""
   );
-  const availableConnectors = connectors.filter((connector, index, items) =>
-    items.findIndex((item) => item.uid === connector.uid || item.name === connector.name) === index,
-  );
+  const insideIframe = mounted && window.parent !== window;
+  const availableConnectors = connectors
+    .filter((connector) => connector.id !== "safe" || insideIframe)
+    .filter((connector, index, items) =>
+      items.findIndex((item) => item.uid === connector.uid || item.name === connector.name) === index,
+    );
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {

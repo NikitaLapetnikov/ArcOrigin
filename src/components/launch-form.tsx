@@ -2,7 +2,17 @@
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { AtSign, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, Send, X } from "lucide-react";
-import { decodeEventLog, formatUnits, parseUnits, publicActions, type Address, type Hash } from "viem";
+import {
+  decodeEventLog,
+  encodeFunctionData,
+  formatUnits,
+  isHash,
+  parseUnits,
+  publicActions,
+  type Address,
+  type Hash,
+} from "viem";
+import type SafeAppsSDK from "@safe-global/safe-apps-sdk";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import {
   ARCORIGIN_PROTOCOL_VERSION,
@@ -23,6 +33,7 @@ import {
   type TokenMetadataInput,
 } from "@/lib/token-metadata";
 import { shortAddress, tickerLabel } from "@/lib/utils";
+import { getSafeAppContext } from "@/lib/wallet/safe-app-connector";
 import { Button, LinkButton, WarningBox } from "./ui";
 
 type FormData = {
@@ -35,7 +46,7 @@ type FormData = {
   developerBuy: string;
 };
 
-type TransactionStatus = "idle" | "checking" | "signing_metadata" | "uploading_metadata" | "approving" | "launching" | "initial_buy_approving" | "initial_buy";
+type TransactionStatus = "idle" | "checking" | "signing_metadata" | "uploading_metadata" | "approving" | "launching" | "safe_confirming" | "initial_buy_approving" | "initial_buy";
 type LaunchResult = { token: Address; curve: Address; hash: Hash; metadataURI: string; metadataURL: string; initialBuyHash?: Hash; initialBuyError?: string };
 type UploadedMetadata = {
   commitment: string;
@@ -88,6 +99,32 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
     }
   }
   throw new Error("Arc RPC request failed after retries.");
+}
+
+async function waitForSafeExecution(
+  sdk: SafeAppsSDK,
+  safeTransactionHash: string,
+): Promise<Hash> {
+  const expiresAt = Date.now() + 15 * 60 * 1_000;
+  while (Date.now() < expiresAt) {
+    try {
+      const transaction = await sdk.txs.getBySafeTxHash(safeTransactionHash);
+      if (transaction.txStatus === "SUCCESS" && transaction.txHash && isHash(transaction.txHash)) {
+        return transaction.txHash;
+      }
+      if (transaction.txStatus === "FAILED" || transaction.txStatus === "CANCELLED") {
+        throw new Error(`Safe transaction ${transaction.txStatus.toLowerCase()}.`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/failed|cancelled/i.test(message)) throw error;
+      // The Safe service can need a few seconds before a new proposal is indexed.
+    }
+    await wait(2_000);
+  }
+  throw new Error(
+    "Safe confirmation timed out. The proposal remains in the Safe queue; verify it there before retrying.",
+  );
 }
 
 async function sha256Hex(value: ArrayBuffer | string) {
@@ -144,7 +181,7 @@ export function LaunchForm() {
   const [result, setResult] = useState<LaunchResult | null>(null);
   const previewUrl = useRef("");
   const launchLockRef = useRef(false);
-  const { address, isConnected, chainId } = useAccount();
+  const { address, isConnected, chainId, connector } = useAccount();
   const publicClient = usePublicClient({ chainId: arcTestnet.id });
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
@@ -217,6 +254,8 @@ export function LaunchForm() {
     return netMultiplier > 0 ? Math.floor(netUsdc / netMultiplier * 100) / 100 : 0;
   }, [tradingFees.buy]);
   const developerBuyAmount = Math.max(0, Number(form.developerBuy) || 0);
+  const safeLaunch = connector?.id === "safe";
+  const developerBuyLimit = safeLaunch ? 0 : developerBuyMax;
   const launchFeeAmount = Number(formatUnits(launchFee, 6));
   const launchFeeLabel = `${formatDisplayNumber(launchFeeAmount)} USDC`;
   const tradingFeeLabel = tradingFees.buy === tradingFees.sell
@@ -226,7 +265,7 @@ export function LaunchForm() {
   const canLaunch = identityValid
     && !imageProcessing
     && Number(form.developerBuy) >= 0
-    && Number(form.developerBuy) <= developerBuyMax;
+    && Number(form.developerBuy) <= developerBuyLimit;
   const isPending = status !== "idle";
 
   function update(key: keyof FormData, value: string) {
@@ -344,6 +383,11 @@ export function LaunchForm() {
       }));
       setLaunchFee(currentLaunchFee);
       const developerBuy = parseUnits(form.developerBuy || "0", 6);
+      if (safeLaunch && developerBuy > 0n) {
+        throw new Error(
+          "Safe launches must use a 0 USDC developer buy. Buy after launch with a separate, freshly quoted Safe transaction.",
+        );
+      }
       const requiredBalance = currentLaunchFee + developerBuy;
       if (balance < requiredBalance) {
         throw new Error(`You have ${formatUnits(balance, 6)} USDC, but launch plus developer buy requires ${formatUnits(requiredBalance, 6)} USDC.`);
@@ -356,29 +400,61 @@ export function LaunchForm() {
         functionName: "allowance",
         args: [address, ARC_TESTNET_CONTRACTS.factory],
       }));
-      if (allowance < currentLaunchFee) {
-        setStatus("approving");
-        const approvalHash = await writeContractAsync({
-          address: ARC_TESTNET_CONTRACTS.usdc,
-          abi: erc20Abi,
-          functionName: "approve",
-          args: [ARC_TESTNET_CONTRACTS.factory, currentLaunchFee],
-        });
-        const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: approvalHash }));
-        if (approvalReceipt.status !== "success") throw new Error("USDC approval reverted onchain.");
-      }
-
-      setStatus("launching");
-      const launchHash = await writeContractAsync({
-        address: ARC_TESTNET_CONTRACTS.factory,
-        abi: factoryAbi,
-        functionName: "launchToken",
-        args: [{
+      const launchParameters = {
           name: form.name.trim(),
           symbol: form.ticker.toUpperCase(),
           metadataURI: metadata.metadataURI,
-        }],
-      });
+      };
+      let launchHash: Hash;
+      if (safeLaunch) {
+        const safeContext = await getSafeAppContext();
+        if (!safeContext || safeContext.safe.safeAddress.toLowerCase() !== address.toLowerCase()) {
+          throw new Error("Open ArcOrigin as a custom app inside the connected Safe and retry.");
+        }
+        const transactions = [];
+        if (allowance < currentLaunchFee) {
+          transactions.push({
+            to: ARC_TESTNET_CONTRACTS.usdc,
+            value: "0",
+            data: encodeFunctionData({
+              abi: erc20Abi,
+              functionName: "approve",
+              args: [ARC_TESTNET_CONTRACTS.factory, currentLaunchFee],
+            }),
+          });
+        }
+        transactions.push({
+          to: ARC_TESTNET_CONTRACTS.factory,
+          value: "0",
+          data: encodeFunctionData({
+            abi: factoryAbi,
+            functionName: "launchToken",
+            args: [launchParameters],
+          }),
+        });
+        setStatus("safe_confirming");
+        const proposal = await safeContext.sdk.txs.send({ txs: transactions });
+        launchHash = await waitForSafeExecution(safeContext.sdk, proposal.safeTxHash);
+      } else {
+        if (allowance < currentLaunchFee) {
+          setStatus("approving");
+          const approvalHash = await writeContractAsync({
+            address: ARC_TESTNET_CONTRACTS.usdc,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [ARC_TESTNET_CONTRACTS.factory, currentLaunchFee],
+          });
+          const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: approvalHash }));
+          if (approvalReceipt.status !== "success") throw new Error("USDC approval reverted onchain.");
+        }
+        setStatus("launching");
+        launchHash = await writeContractAsync({
+          address: ARC_TESTNET_CONTRACTS.factory,
+          abi: factoryAbi,
+          functionName: "launchToken",
+          args: [launchParameters],
+        });
+      }
       const receipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: launchHash }));
       if (receipt.status !== "success") throw new Error("Token launch reverted onchain.");
 
@@ -496,13 +572,17 @@ export function LaunchForm() {
   const actionLabel = status === "checking"
     ? "Checking balance…"
     : status === "signing_metadata"
-      ? "Sign metadata in wallet…"
+      ? connector?.id === "safe"
+        ? "Approve metadata with Safe owners…"
+        : "Sign metadata in wallet…"
       : status === "uploading_metadata"
         ? "Publishing to IPFS…"
         : status === "approving"
           ? `Approving ${launchFeeLabel}…`
           : status === "launching"
             ? "Launching on Arc…"
+            : status === "safe_confirming"
+              ? "Confirm launch with Safe owners…"
             : status === "initial_buy_approving"
               ? "Approving developer buy…"
               : status === "initial_buy"
@@ -539,9 +619,13 @@ export function LaunchForm() {
         </div>
 
         <div>
-          <Field label="Developer buy (optional)" value={form.developerBuy} onChange={(value) => update("developerBuy", value)} type="number" min="0" max={String(developerBuyMax)} step="0.01" />
-          <p className="mt-2 text-[11px] leading-5 text-slate-500">Separate USDC purchase after launch · maximum {formatDisplayNumber(developerBuyMax)} USDC or 5% of supply.</p>
-          {Number(form.developerBuy) > developerBuyMax && <p className="mt-2 text-xs text-rose-300">Reduce the developer buy to {formatDisplayNumber(developerBuyMax)} USDC or less.</p>}
+          <Field label="Developer buy (optional)" value={form.developerBuy} onChange={(value) => update("developerBuy", value)} type="number" min="0" max={String(developerBuyLimit)} step="0.01" />
+          <p className="mt-2 text-[11px] leading-5 text-slate-500">
+            {safeLaunch
+              ? "Safe launch uses 0 USDC here. A treasury purchase can be proposed separately after launch."
+              : `Separate USDC purchase after launch · maximum ${formatDisplayNumber(developerBuyMax)} USDC or 5% of supply.`}
+          </p>
+          {Number(form.developerBuy) > developerBuyLimit && <p className="mt-2 text-xs text-rose-300">Reduce the developer buy to {formatDisplayNumber(developerBuyLimit)} USDC.</p>}
         </div>
 
         <div className="grid overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2">
