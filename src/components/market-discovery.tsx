@@ -123,15 +123,17 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
 }
 
 export function LatestBuys({ tokens, limit = 10 }: { tokens: TokenData[]; limit?: number }) {
-  const latestBuys = useMemo(() => tokens.flatMap((token) => token.recentTrades
+  const [showMore, setShowMore] = useState(false);
+  const allLatestBuys = useMemo(() => tokens.flatMap((token) => token.recentTrades
     .filter((trade) => trade.type === "Buy")
     .map((trade, index): BuyItem => ({
       token,
       trade,
       order: tradeOrder(token, trade, index),
     })))
-    .sort((left, right) => right.order - left.order)
-    .slice(0, limit), [limit, tokens]);
+    .sort((left, right) => right.order - left.order), [tokens]);
+  const visibleLimit = showMore ? 25 : limit;
+  const latestBuys = allLatestBuys.slice(0, visibleLimit);
 
   if (latestBuys.length === 0) return null;
   return <section className="panel mb-4 overflow-hidden" aria-labelledby="latest-buys-title">
@@ -162,6 +164,15 @@ export function LatestBuys({ tokens, limit = 10 }: { tokens: TokenData[]; limit?
         </div>
       </Link>)}
     </div>
+    {!showMore && allLatestBuys.length > limit && <div className="border-t border-line px-3 py-3">
+      <button
+        type="button"
+        onClick={() => setShowMore(true)}
+        className="flex h-11 w-full items-center justify-center rounded-xl border border-line bg-white/[.025] text-sm font-semibold text-slate-300 transition hover:border-cyan/30 hover:bg-white/[.05] hover:text-white"
+      >
+        Show more
+      </button>
+    </div>}
   </section>;
 }
 
