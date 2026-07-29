@@ -370,7 +370,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       if (!isCurrentRequest()) return;
       setTokens((current) => {
         const next = mergePendingTrades(result.tokens.map((token) => (
-          result.failedMarketAddresses.has(token.address.toLowerCase())
+          !includeMarketData || result.failedMarketAddresses.has(token.address.toLowerCase())
             ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
             : token
         )));
