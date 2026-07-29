@@ -7,7 +7,8 @@ const CACHE_LIMIT = 200;
 const SUCCESS_CACHE_TTL_MS = 60 * 60 * 1_000;
 const FAILURE_CACHE_TTL_MS = 60 * 1_000;
 const PUBLIC_GATEWAY_URL = "https://ipfs.io/ipfs/";
-const GATEWAY_TIMEOUT_MS = 3_000;
+const PINATA_GATEWAY_URL = "https://gateway.pinata.cloud/ipfs/";
+const GATEWAY_TIMEOUT_MS = 10_000;
 
 export type ResolvedTokenMetadata = {
   description?: string;
@@ -52,8 +53,9 @@ function metadataGatewayURLs(uri: string) {
   if (!path) return [];
   const configured = configuredGatewayBase();
   return [...new Set([
-    `${PUBLIC_GATEWAY_URL}${path}`,
     configured ? `${configured}${path}` : "",
+    `${PINATA_GATEWAY_URL}${path}`,
+    `${PUBLIC_GATEWAY_URL}${path}`,
   ].filter(Boolean))];
 }
 

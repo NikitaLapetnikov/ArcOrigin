@@ -19,7 +19,7 @@ const curveConfigAbi = [
   { type: "function", name: "graduationThreshold", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const;
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
-const METADATA_TIMEOUT_MS = 2_000;
+const METADATA_TIMEOUT_MS = 10_000;
 const MAX_METADATA_BYTES = 2 * 1024 * 1024;
 const ACTIVE_FACTORY_INDEXES = ARC_TESTNET_FACTORY_INDEXES.filter(
   (factory) => factory.address.toLowerCase() === ARC_TESTNET_ACTIVE_FACTORY.toLowerCase(),
@@ -126,6 +126,15 @@ function ipfsURL(uri: string) {
     : "";
 }
 
+function ipfsURLs(uri: string) {
+  const publicURL = ipfsURL(uri);
+  if (!publicURL) return [];
+  return [
+    publicURL.replace("https://ipfs.io/ipfs/", "https://gateway.pinata.cloud/ipfs/"),
+    publicURL,
+  ];
+}
+
 function metadataText(value: unknown, maxLength: number) {
   return typeof value === "string" && value.trim().length > 0 && value.trim().length <= maxLength
     ? value.trim()
@@ -137,37 +146,39 @@ function metadataDescription(value: unknown) {
 }
 
 async function loadMetadata(metadataURI: string): Promise<ClientMetadata | null> {
-  const url = ipfsURL(metadataURI);
-  if (!url) return null;
+  const urls = ipfsURLs(metadataURI);
+  if (urls.length === 0) return null;
   try {
-    const response = await fetch(url, {
-      headers: { Accept: "application/json" },
-      redirect: "error",
-      signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
-    });
-    if (!response.ok) return null;
-    const declaredLength = Number(response.headers.get("content-length") ?? 0);
-    if (declaredLength > MAX_METADATA_BYTES || !response.body) return null;
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > MAX_METADATA_BYTES) {
-        await reader.cancel();
-        return null;
+    const payload = await Promise.any(urls.map(async (url) => {
+      const response = await fetch(url, {
+        headers: { Accept: "application/json" },
+        redirect: "error",
+        signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
+      });
+      if (!response.ok) throw new Error("Metadata gateway rejected the request.");
+      const declaredLength = Number(response.headers.get("content-length") ?? 0);
+      if (declaredLength > MAX_METADATA_BYTES || !response.body) throw new Error("Invalid metadata response.");
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_METADATA_BYTES) {
+          await reader.cancel();
+          throw new Error("Metadata is too large.");
+        }
+        chunks.push(value);
       }
-      chunks.push(value);
-    }
-    const bytes = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    const payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as Record<string, unknown>;
+      const bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as Record<string, unknown>;
+    }));
     const properties = payload.properties && typeof payload.properties === "object"
       ? payload.properties as Record<string, unknown>
       : {};

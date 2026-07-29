@@ -104,7 +104,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
   const cached = state.hydratedTokens.get(cacheKey);
   if (cached) {
     const metadata = cached.metadataURI ? await resolveTokenMetadata(cached.metadataURI) : null;
-    return {
+    const refreshedToken: TokenData = {
       ...cached,
       launchedAt: launch.launchedAt,
       ageMinutes: Math.max(0, Math.floor((Date.now() / 1_000 - launch.launchedAt) / 60)),
@@ -117,6 +117,8 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
       },
       creatorProfile: { ...cached.creatorProfile, launches: creatorLaunches },
     };
+    state.hydratedTokens.set(cacheKey, refreshedToken);
+    return refreshedToken;
   }
 
   if (launch.token.toLowerCase() === legacyGenesisToken.address.toLowerCase()) {
