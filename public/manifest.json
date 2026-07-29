@@ -1,0 +1,22 @@
+{
+  "name": "ArcOrigin",
+  "short_name": "ArcOrigin",
+  "description": "Launch, discover, and trade fixed-supply tokens through transparent USDC bonding curves on Arc.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#060811",
+  "theme_color": "#060811",
+  "icons": [
+    {
+      "src": "/brand/arcorigin-favicon-v2.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/brand/arcorigin-logo-v2.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
