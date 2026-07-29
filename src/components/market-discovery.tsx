@@ -164,13 +164,14 @@ export function LatestBuys({ tokens, limit = 10 }: { tokens: TokenData[]; limit?
         </div>
       </Link>)}
     </div>
-    {!showMore && allLatestBuys.length > limit && <div className="border-t border-line px-3 py-3">
+    {allLatestBuys.length > limit && <div className="border-t border-line px-3 py-3">
       <button
         type="button"
-        onClick={() => setShowMore(true)}
+        onClick={() => setShowMore((current) => !current)}
+        aria-expanded={showMore}
         className="flex h-11 w-full items-center justify-center rounded-xl border border-line bg-white/[.025] text-sm font-semibold text-slate-300 transition hover:border-cyan/30 hover:bg-white/[.05] hover:text-white"
       >
-        Show more
+        {showMore ? "Show less" : "Show more"}
       </button>
     </div>}
   </section>;
