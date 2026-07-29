@@ -99,7 +99,9 @@ async function main() {
       vaultOwner,
       feeRecipient,
       uniquePrivilegedAddresses: adminAddresses.size,
-      governanceConfigured: Boolean(manifest.governance?.timelock),
+      governanceConfigured: Boolean(
+        manifest.governance?.timelock || manifest.governance?.safe,
+      ),
     },
     activeConfiguration: {
       registryFactory,
@@ -115,7 +117,9 @@ async function main() {
       liquidityLocker,
     },
     findings: [
-      ...(adminAddresses.size === 1 && !manifest.governance?.timelock
+      ...(adminAddresses.size === 1
+      && !manifest.governance?.timelock
+      && !manifest.governance?.safe
         ? ["HIGH: one address controls all owner roles and immediate FeeVault withdrawal."]
         : []),
       ...(feeRecipient.toLowerCase() === manifest.deployer.toLowerCase()

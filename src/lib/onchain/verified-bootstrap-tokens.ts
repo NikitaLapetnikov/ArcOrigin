@@ -129,7 +129,7 @@ export function getVerifiedBootstrapTokens(): TokenData[] {
       launchTxHash: "0x3cf731021194e4596fb751d18bc9541f83d06ff5711cff741f5416efc732a970",
       launchBlock: 53_091_112,
       launchedAt: 1_784_727_728,
-      description: "ArcOrigin factory launch indexed from Arc Testnet events.",
+      description: "ArcOrigin factory launch indexed from confirmed Arc events.",
     }),
     {
       ...legacyGenesisToken,

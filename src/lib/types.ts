@@ -18,12 +18,12 @@ export type ChartPoint = {
   time: string;
   price: number;
   volume: number;
-  /** Unix timestamp from the indexed Arc Testnet block when available. */
+  /** Unix timestamp from the indexed Arc block when available. */
   timestamp?: number;
 };
 export type Trade = {
   time: string;
-  /** Unix timestamp from the indexed Arc Testnet block when available. */
+  /** Unix timestamp from the indexed Arc block when available. */
   timestamp?: number;
   type: "Buy" | "Sell";
   wallet: string;

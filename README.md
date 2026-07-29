@@ -1,12 +1,13 @@
 # ArcOrigin
 
-ArcOrigin is a USDC-native token launch and discovery layer for Arc. This repository contains a Next.js product interface and a local, tested Solidity protocol implementation for fixed-supply launches and virtual-reserve bonding curves.
+ArcOrigin is a USDC-native token launch and discovery layer for Arc. This repository contains a Next.js product interface and a local, tested Solidity protocol implementation for fixed-supply launches and virtual-reserve bonding curves. Testnet and mainnet use separate deployments of the same codebase and never share contract or indexer configuration.
 
 ## Current status
 
 - Frontend: real Arc Testnet approval, launch, trade, chart, holder, and fee flows backed by confirmed onchain data.
-- Contracts: V6 is active on Arc Testnet after bytecode verification and onchain launch/trade/claim exercises. Its Safe/Timelock handoff is scheduled but incomplete, so the deployer remains temporary owner until the delayed batch executes. V6 is not independently audited.
+- Contracts: V6 is active on Arc Testnet after bytecode verification and onchain launch/trade/claim exercises. The Arc mainnet V6 candidate is deployed, remains paused, and is owned directly by the reviewed 2-of-3 Governance Safe.
 - Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
+- Arc mainnet: chain ID `5042`; public RPC/explorer and Uniswap V3 runtime hashes are pinned and checked by `pnpm network:verify:arc-mainnet`. The ArcOrigin production candidate is deployed and Safe-owned but is not activated.
 - Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcOrigin deployment addresses are recorded in `deployment/arc-testnet.json`.
 
 The production interface does not insert simulated token listings or trading activity. The internal review and unresolved mainnet blockers are documented in [`SECURITY.md`](./SECURITY.md). Nothing in this repository is an independent audit claim or investment advice.
@@ -31,6 +32,12 @@ pnpm typecheck
 pnpm lint
 pnpm build
 ```
+
+Select the target web environment at build time with
+`NEXT_PUBLIC_ARC_NETWORK=testnet|mainnet`. Mainnet requires its own reviewed
+RPC, explorer, contracts, deployment block, and cache. The header links to the
+other independently deployed environment; it does not mix two chains inside
+one index.
 
 ## Contracts
 
@@ -75,6 +82,28 @@ pnpm verify:arc-testnet:v6
 
 The command requires contract addresses for both Safe roles, deploys migration disabled and paused, binds the CurveDeployer permanently, authorizes only the Factory, and writes `deployment/arcTestnet-v6.local.json`. It does not activate the candidate.
 
+### Prepare Arc mainnet
+
+The mainnet deployment script validates chain `5042`, the expected deployer,
+Safe/guardian bytecode, canonical USDC metadata, and gas before sending
+transactions. It deploys a candidate with launches and migrations paused:
+
+```bash
+pnpm network:verify:arc-mainnet
+pnpm preflight:arc-mainnet:v6
+pnpm deploy:arc-mainnet:v6
+pnpm verify:arc-mainnet:v6
+pnpm deploy:migration:arc-mainnet:v6
+```
+
+Do not activate the mainnet UI or accept public launches after these commands.
+The migration deployment command creates the immutable V3 Adapter, permanent
+LP-NFT Locker, and independent Verifier without changing Factory state.
+Runtime code-hash checks, source verification, the direct 2-of-3 Safe ownership handoff,
+fork exercises, monitoring, and the final readiness gate must complete before
+governance configures or enables it. The exact dual-environment and release procedure is in
+[`docs/ARC_MAINNET_RELEASE_RUNBOOK.md`](./docs/ARC_MAINNET_RELEASE_RUNBOOK.md).
+
 Factory-only upgrades use separate deployment and activation commands so the new Factory can be inspected and the multi-factory indexer deployed before `CreatorRegistry` is changed:
 
 ```bash
@@ -84,7 +113,7 @@ pnpm deploy:arc-testnet:v4:activate
 
 ### Governance preparation
 
-The repository includes a fail-closed preparation path for a 2-of-3 Governance Safe, 2-of-3 Treasury Safe, and a self-administered OpenZeppelin timelock with a minimum 48-hour delay:
+The repository includes a fail-closed preparation path for a 2-of-3 Governance Safe and 2-of-3 Treasury Safe. Arc mainnet V6 uses direct Safe ownership; the deployed Timelock is retained only as an unused historical deployment:
 
 ```bash
 pnpm security:audit-admin:arc-testnet
@@ -93,7 +122,15 @@ pnpm governance:handoff:arc-testnet
 pnpm governance:verify:arc-testnet
 ```
 
-The legacy handoff command is dry-run unless both `EXECUTE_ADMIN_HANDOFF=true` and an exact `CONFIRM_ADMIN_HANDOFF` timelock address are provided. The isolated V6 candidate uses the separate two-step Safe/Timelock flow documented in [`docs/MAINNET_GOVERNANCE_RUNBOOK.md`](./docs/MAINNET_GOVERNANCE_RUNBOOK.md). Never use placeholder signer addresses or store signer keys in the repository.
+The legacy Timelock handoff command is dry-run unless both `EXECUTE_ADMIN_HANDOFF=true` and an exact `CONFIRM_ADMIN_HANDOFF` address are provided. It is not the active Arc mainnet V6 ownership path. Never use placeholder signer addresses or store signer keys in the repository.
+
+The completed mainnet direct-Safe path is prepared and verified with:
+
+```bash
+pnpm governance:prepare-direct-safe:arc-mainnet:v6
+V6_DIRECT_SAFE_EXECUTION_TX_HASH=0x... \
+  pnpm governance:verify-direct-safe:arc-mainnet:v6
+```
 
 ## VPS deployment
 
@@ -117,13 +154,14 @@ certbot --nginx -d arcorigin.xyz -d www.arcorigin.xyz
 
 Run package and OS upgrades deliberately rather than unattended on a production host; validate the build after upgrades and retain a rollback artifact.
 
-## Production work still required
+## Production release gates
 
-1. Confirm official Arc mainnet and USDC addresses.
+1. Confirm official Arc mainnet RPC/explorer and pin runtime code hashes for the
+   Uniswap addresses published by the official SDK.
 2. Independent smart-contract audit and formal deployment review.
 3. Contract source verification on Arcscan.
 4. Durable event indexer and PostgreSQL persistence.
-5. Complete and independently review the V6 Safe/Timelock ownership handoff before activation.
+5. Re-verify the completed V6 direct 2-of-3 Safe ownership handoff before activation.
 6. Durable reorg-aware indexing plus resilient transaction-state recovery.
 7. Monitoring, edge rate limiting, backups, and incident response.
 

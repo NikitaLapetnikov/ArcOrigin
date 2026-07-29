@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { ARCORIGIN_NETWORK, arcChain } from "@/lib/chains";
 
 const productLinks = [
   ["Explore", "/tokens"],
@@ -23,7 +24,7 @@ export function Footer() {
             <span className="text-lg font-semibold tracking-[-.035em]">ArcOrigin</span>
           </Link>
           <p className="mt-4 max-w-[310px] text-[13px] leading-6 text-slate-400">
-            Launch and explore fixed-supply tokens on Arc Testnet. Every transaction is prepared by the interface and submitted through your wallet.
+            Launch and explore fixed-supply tokens on {arcChain.name}. Every transaction is prepared by the interface and submitted through your wallet.
           </p>
         </div>
         <FooterColumn title="Product" links={productLinks} />
@@ -31,7 +32,7 @@ export function Footer() {
         <div>
           <p className="text-xs font-semibold text-slate-300">Risk notice</p>
           <p className="mt-3 text-[13px] leading-6 text-slate-400">
-            Transactions may be irreversible. Testnet tokens can be volatile and have no guaranteed value. ArcOrigin does not custody assets or provide financial advice.
+            Transactions may be irreversible. Tokens can be volatile and lose all value. ArcOrigin does not custody assets or provide financial advice.{ARCORIGIN_NETWORK === "testnet" ? " Testnet assets have no guaranteed value." : ""}
           </p>
         </div>
       </div>

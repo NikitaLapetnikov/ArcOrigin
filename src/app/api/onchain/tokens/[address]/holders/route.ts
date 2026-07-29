@@ -36,8 +36,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     return NextResponse.json({
       error: isHolderRpcError(error)
-        ? "Arc Testnet RPC is temporarily rate-limited. Retry in a moment."
-        : "Holder data could not be loaded from confirmed Arc Testnet transfers.",
+        ? "Arc RPC is temporarily rate-limited. Retry in a moment."
+        : "Holder data could not be loaded from confirmed Arc transfers.",
     }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

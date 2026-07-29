@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
 import { isAddress } from "viem";
 
-export const WATCHLIST_STORAGE_KEY = "arcorigin:5042002:watchlist";
+import { arcChain } from "@/lib/chains";
+
+export const WATCHLIST_STORAGE_KEY = `arcorigin:${arcChain.id}:watchlist`;
 const MAX_WATCHLIST_SIZE = 100;
 
 export function readWatchlist() {

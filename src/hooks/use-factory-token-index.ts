@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatUnits, parseAbiItem, type Address } from "viem";
-import { ARCORIGIN_PROTOCOL_VERSION, ARC_TESTNET_ACTIVE_FACTORY } from "@/lib/chains";
+import { ARCORIGIN_PROTOCOL_VERSION, ARC_ACTIVE_FACTORY, arcChain } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
 import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
@@ -12,9 +12,9 @@ import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tok
 import type { TokenData, Trade } from "@/lib/types";
 
 const TOKEN_INDEX_CACHE_KEY =
-  `arcorigin:5042002:v${ARCORIGIN_PROTOCOL_VERSION}:factory-index:${ARC_TESTNET_ACTIVE_FACTORY.toLowerCase()}`;
-const LAST_CONFIRMED_LAUNCH_KEY = "arcorigin:5042002:last-launch-confirmed-at";
-const PENDING_TRADES_KEY = "arcorigin:5042002:confirmed-trades";
+  `arcorigin:${arcChain.id}:v${ARCORIGIN_PROTOCOL_VERSION}:factory-index:${ARC_ACTIVE_FACTORY.toLowerCase()}`;
+const LAST_CONFIRMED_LAUNCH_KEY = `arcorigin:${arcChain.id}:last-launch-confirmed-at`;
+const PENDING_TRADES_KEY = `arcorigin:${arcChain.id}:confirmed-trades`;
 const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
 const PENDING_TRADE_TTL = 24 * 60 * 60 * 1_000;
 const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
@@ -382,7 +382,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       if (result.marketDataError) {
         setError("Live market refresh is delayed. Confirm trade amounts with the onchain quote.");
       } else if (result.stale) {
-        setError("Showing the latest confirmed Factory snapshot while Arc Testnet RPC recovers.");
+        setError(`Showing the latest confirmed Factory snapshot while ${arcChain.name} RPC recovers.`);
       }
     } catch (loadError) {
       if (!isCurrentRequest()) return;
@@ -392,7 +392,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
           ? loadError.message
           : String(loadError);
       setIsPartial(false);
-      setError(message || "Factory launch data could not be refreshed from Arc Testnet.");
+      setError(message || `Factory launch data could not be refreshed from ${arcChain.name}.`);
     } finally {
       if (isCurrentRequest()) setLoading(false);
     }

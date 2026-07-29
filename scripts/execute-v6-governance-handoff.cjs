@@ -2,18 +2,19 @@ const hre = require("hardhat");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const EXPECTED_CHAIN_ID = 5_042_002n;
 const ZERO_ADDRESS = hre.ethers.ZeroAddress;
 const ZERO_HASH = hre.ethers.ZeroHash;
 const planPath = process.env.V6_HANDOFF_PLAN
   ? path.resolve(process.env.V6_HANDOFF_PLAN)
   : path.join(__dirname, "..", "deployment", "v6-governance-handoff.local.json");
-const outputPath = path.join(
-  __dirname,
-  "..",
-  "deployment",
-  "v6-governance-handoff-execution.local.json",
-);
+const outputPath = process.env.V6_HANDOFF_EXECUTION_OUTPUT
+  ? path.resolve(process.env.V6_HANDOFF_EXECUTION_OUTPUT)
+  : path.join(
+    __dirname,
+    "..",
+    "deployment",
+    "v6-governance-handoff-execution.local.json",
+  );
 const ownableAbi = [
   "function owner() view returns (address)",
   "function pendingOwner() view returns (address)",
@@ -89,7 +90,7 @@ async function main() {
   }
   const plan = JSON.parse(fs.readFileSync(planPath, "utf8"));
   const network = await hre.ethers.provider.getNetwork();
-  assertEqual("chain ID", network.chainId, EXPECTED_CHAIN_ID);
+  assertEqual("chain ID", network.chainId, BigInt(plan.chainId ?? 5_042_002));
   await requireContract("Governance Timelock", plan.timelock);
   for (const target of plan.targets) {
     await requireContract(target.label, target.address);
@@ -199,7 +200,7 @@ async function main() {
   assertOwnershipState(ownershipAfter, plan.timelock, true);
   const execution = {
     executedAt: new Date().toISOString(),
-    chainId: Number(EXPECTED_CHAIN_ID),
+    chainId: Number(network.chainId),
     operationId,
     timelock: plan.timelock,
     executor: signer.address,

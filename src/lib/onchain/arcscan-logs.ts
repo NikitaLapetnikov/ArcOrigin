@@ -1,5 +1,5 @@
 import { isAddress, isHash, type Address, type Hash, type Hex } from "viem";
-import { EXPLORER_URL } from "@/lib/chains";
+import { EXPLORER_API_URL } from "@/lib/chains";
 
 const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_LOGS_PER_REQUEST = 1_000;
@@ -82,7 +82,10 @@ export async function getArcscanLogs({
   toBlock: bigint | "latest";
   topic0?: Hash;
 }) {
-  const url = new URL("/api", EXPLORER_URL);
+  if (!EXPLORER_API_URL) {
+    throw new Error("No compatible explorer log API is configured; use canonical RPC logs.");
+  }
+  const url = new URL(EXPLORER_API_URL);
   url.searchParams.set("module", "logs");
   url.searchParams.set("action", "getLogs");
   url.searchParams.set("fromBlock", fromBlock.toString());

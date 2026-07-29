@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Check, Copy, ExternalLink, ShieldCheck } from "lucide-react";
-import { EXPLORER_URL } from "@/lib/chains";
+import { EXPLORER_URL, arcChain } from "@/lib/chains";
 import type { TokenData } from "@/lib/types";
 import { shortAddress, utcDateTime } from "@/lib/utils";
 import { Badge } from "./ui";
@@ -34,7 +34,7 @@ export function TokenInfoPanel({ token }: { token: TokenData }) {
     <div className="flex items-center justify-between border-b border-line/70 px-5 py-4">
       <div>
         <p className="text-sm font-semibold text-white">Token info</p>
-        <p className="mt-0.5 font-mono text-[9px] text-slate-600">Verified on Arc Testnet</p>
+        <p className="mt-0.5 font-mono text-[9px] text-slate-600">Verified on {arcChain.name}</p>
       </div>
     </div>
 

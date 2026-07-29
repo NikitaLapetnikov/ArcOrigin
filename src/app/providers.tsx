@@ -5,24 +5,38 @@ import { fallback, http } from "viem";
 import { WagmiProvider, createConfig } from "wagmi";
 import { injected } from "@wagmi/core";
 import { useEffect, useState, type ReactNode } from "react";
-import { arcTestnet } from "@/lib/chains";
+import { ARCORIGIN_NETWORK, arcMainnet, arcTestnet } from "@/lib/chains";
 import { getSafeAppContext, safeAppConnector } from "@/lib/wallet/safe-app-connector";
 
-const config = createConfig({
-  chains: [arcTestnet],
-  connectors: [
+function connectors() {
+  return [
     safeAppConnector({ shimDisconnect: true }),
     injected({ shimDisconnect: true }),
-  ],
-  multiInjectedProviderDiscovery: true,
-  transports: {
-    [arcTestnet.id]: fallback(
-      arcTestnet.rpcUrls.default.http.map((url) => http(url, { retryCount: 0, timeout: 8_000 })),
-      { rank: false, retryCount: 0 },
-    ),
-  },
-  ssr: true,
-});
+  ];
+}
+
+function rpcTransport(urls: readonly string[]) {
+  return fallback(
+    urls.map((url) => http(url, { retryCount: 0, timeout: 8_000 })),
+    { rank: false, retryCount: 0 },
+  );
+}
+
+const config = ARCORIGIN_NETWORK === "mainnet"
+  ? createConfig({
+    chains: [arcMainnet],
+    connectors: connectors(),
+    multiInjectedProviderDiscovery: true,
+    transports: { [arcMainnet.id]: rpcTransport(arcMainnet.rpcUrls.default.http) },
+    ssr: true,
+  })
+  : createConfig({
+    chains: [arcTestnet],
+    connectors: connectors(),
+    multiInjectedProviderDiscovery: true,
+    transports: { [arcTestnet.id]: rpcTransport(arcTestnet.rpcUrls.default.http) },
+    ssr: true,
+  });
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());

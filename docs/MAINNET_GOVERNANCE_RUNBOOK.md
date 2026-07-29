@@ -1,6 +1,9 @@
-# ArcOrigin mainnet governance runbook
+# ArcOrigin legacy Timelock governance runbook
 
-Status: preparation only. No Safe or timelock address is configured in the public deployment manifest yet.
+Status: historical reference. Arc mainnet V6 uses direct 2-of-3 Governance Safe
+ownership. Use [`ARC_MAINNET_RELEASE_RUNBOOK.md`](./ARC_MAINNET_RELEASE_RUNBOOK.md)
+for the active deployment and release process. The Timelock flow below is not
+the active Arc mainnet ownership path.
 
 This runbook does not replace an independent smart-contract audit. Do not transfer production ownership until every address, signer, bytecode deployment, and role assignment has been independently reviewed.
 

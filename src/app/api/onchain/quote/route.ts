@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
-import { getAddress, isAddress, maxUint256 } from "viem";
-import { ARC_TESTNET_CONTRACTS } from "@/lib/chains";
-import { bondingCurveAbi, factoryAbi } from "@/lib/contracts";
+import { getAddress, isAddress, maxUint256, zeroAddress } from "viem";
+import {
+  ARC_ACTIVE_CONTRACTS,
+  ARC_UNISWAP_V3,
+  ARCORIGIN_NETWORK,
+} from "@/lib/chains";
+import {
+  bondingCurveAbi,
+  factoryAbi,
+  uniswapV3FactoryAbi,
+  uniswapV3QuoterAbi,
+} from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
 
@@ -40,10 +49,15 @@ export async function GET(request: Request) {
         && indexedToken.curveAddress?.toLowerCase() === normalizedCurve.toLowerCase(),
     );
 
-    const client = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL, 4_000);
+    const client = createArcPublicClient(
+      ARCORIGIN_NETWORK === "mainnet"
+        ? process.env.ARC_MAINNET_RPC_URL
+        : process.env.ARC_TESTNET_RPC_URL,
+      4_000,
+    );
     if (!verifiedCurve) {
       const tokenInfo = await client.readContract({
-        address: ARC_TESTNET_CONTRACTS.factory,
+        address: ARC_ACTIVE_CONTRACTS.factory,
         abi: factoryAbi,
         functionName: "getTokenInfo",
         args: [normalizedToken],
@@ -53,6 +67,62 @@ export async function GET(request: Request) {
     }
     if (!verifiedCurve) return errorResponse("Token and curve are not a verified ArcOrigin market.", 404);
 
+    if (ARCORIGIN_NETWORK === "mainnet" && ARC_UNISWAP_V3) {
+      const [migrated, migratedPool] = await Promise.all([
+        client.readContract({
+          address: normalizedCurve,
+          abi: bondingCurveAbi,
+          functionName: "isMigrated",
+        }),
+        client.readContract({
+          address: normalizedCurve,
+          abi: bondingCurveAbi,
+          functionName: "migratedPool",
+        }),
+      ]);
+      if (migrated) {
+        const canonicalPool = await client.readContract({
+          address: ARC_UNISWAP_V3.factory,
+          abi: uniswapV3FactoryAbi,
+          functionName: "getPool",
+          args: [normalizedToken, ARC_ACTIVE_CONTRACTS.usdc, ARC_UNISWAP_V3.fee],
+        });
+        if (
+          migratedPool === zeroAddress ||
+          canonicalPool === zeroAddress ||
+          migratedPool.toLowerCase() !== canonicalPool.toLowerCase()
+        ) {
+          return errorResponse("The migrated Uniswap pool could not be verified.", 409);
+        }
+        const tokenIn = side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : normalizedToken;
+        const tokenOut = side === "Buy" ? normalizedToken : ARC_ACTIVE_CONTRACTS.usdc;
+        const { result } = await client.simulateContract({
+          address: ARC_UNISWAP_V3.quoter,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactInputSingle",
+          args: [{
+            tokenIn,
+            tokenOut,
+            amountIn: amount,
+            fee: ARC_UNISWAP_V3.fee,
+            sqrtPriceLimitX96: 0n,
+          }],
+        });
+        const [output] = result;
+        return NextResponse.json(
+          {
+            input: amount.toString(),
+            output: output.toString(),
+            fee: (amount * BigInt(ARC_UNISWAP_V3.fee) / 1_000_000n).toString(),
+            venue: "uniswap-v3",
+            spender: ARC_UNISWAP_V3.router,
+            pool: canonicalPool,
+          },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      }
+    }
+
     const [output, fee] = await client.readContract({
       address: normalizedCurve,
       abi: bondingCurveAbi,
@@ -61,7 +131,13 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json(
-      { input: amount.toString(), output: output.toString(), fee: fee.toString() },
+      {
+        input: amount.toString(),
+        output: output.toString(),
+        fee: fee.toString(),
+        venue: "curve",
+        spender: normalizedCurve,
+      },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch {

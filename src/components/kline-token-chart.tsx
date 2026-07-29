@@ -27,6 +27,7 @@ import {
   ZoomOut,
 } from "lucide-react";
 import type { CandleType, Chart as KLineChart, KLineData, Overlay, OverlayCreate, Period } from "klinecharts";
+import { arcChain } from "@/lib/chains";
 import type { ChartPoint, Trade } from "@/lib/types";
 import { money, tickerLabel } from "@/lib/utils";
 import { buildCandles, type ChartTimeframe } from "@/components/token-chart";
@@ -106,7 +107,8 @@ export function KLineTokenChart({
   const dataRef = useRef<KLineData[]>([]);
   const indicatorIdsRef = useRef<Record<IndicatorName, string | null>>({ MA: null, EMA: null, BOLL: null, SAR: null, VOL: null, MACD: null, RSI: null, KDJ: null });
   const [ready, setReady] = useState(false);
-  const storageKey = `arc-origin-chart:${tokenAddress.toLowerCase()}:${displayMode.toLowerCase()}`;
+  const storageKey =
+    `arc-origin-chart:${arcChain.id}:${tokenAddress.toLowerCase()}:${displayMode.toLowerCase()}`;
 
   const sourceCandles = useMemo(() => buildCandles(data, compact ? "1h" : timeframe), [compact, data, timeframe]);
   const multiplier = displayMode === "MCap" ? totalSupply : 1;

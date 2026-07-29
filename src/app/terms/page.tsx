@@ -13,7 +13,7 @@ const sections: LegalSection[] = [
   },
   {
     title: "About ArcOrigin",
-    content: <><p>ArcOrigin is a software interface for discovering tokens and interacting with wallets, Arc Testnet, smart contracts, public market data, and distributed storage.</p><p>ArcOrigin is not a bank, broker, exchange, custodian, investment adviser, fiduciary, or financial institution.</p></>,
+    content: <><p>ArcOrigin is a software interface for discovering tokens and interacting with wallets, Arc networks, smart contracts, public market data, and distributed storage.</p><p>ArcOrigin is not a bank, broker, exchange, custodian, investment adviser, fiduciary, or financial institution.</p></>,
   },
   {
     title: "Eligibility",
@@ -37,7 +37,7 @@ const sections: LegalSection[] = [
   },
   {
     title: "Testnet and technical risk",
-    content: <><p>ArcOrigin currently operates on Arc Testnet. Testnet assets are experimental and may have no monetary value. Networks may reset, contracts may change, and data may be unavailable.</p><p>Smart contracts, wallets, RPC providers, indexers, explorers, storage systems, and browsers can fail, contain defects, or behave unexpectedly. Use only assets you can afford to lose.</p></>,
+    content: <><p>ArcOrigin may expose separate testnet and mainnet environments. Testnet assets are experimental and may have no monetary value. Mainnet assets can be volatile or lose all value. Networks may reset, contracts may change, and data may be unavailable.</p><p>Smart contracts, wallets, RPC providers, indexers, explorers, storage systems, and browsers can fail, contain defects, or behave unexpectedly. Use only assets you can afford to lose.</p></>,
   },
   {
     title: "Acceptable use",
@@ -45,7 +45,7 @@ const sections: LegalSection[] = [
   },
   {
     title: "Third-party services",
-    content: <p>Wallets, Arc Testnet, smart contracts, explorers, RPC providers, IPFS gateways, and external websites are independent services. ArcOrigin does not control or guarantee their security, availability, accuracy, or privacy practices. Their own terms may apply.</p>,
+    content: <p>Wallets, Arc networks, smart contracts, explorers, RPC providers, IPFS gateways, and external websites are independent services. ArcOrigin does not control or guarantee their security, availability, accuracy, or privacy practices. Their own terms may apply.</p>,
   },
   {
     title: "No warranties",

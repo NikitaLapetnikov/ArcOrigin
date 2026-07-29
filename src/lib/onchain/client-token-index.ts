@@ -1,5 +1,5 @@
-import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector } from "viem";
-import { ARC_TESTNET_ACTIVE_FACTORY, ARC_TESTNET_FACTORY_INDEXES } from "@/lib/chains";
+import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector, type Address } from "viem";
+import { ARC_ACTIVE_FACTORY, ARC_ACTIVE_FACTORY_INDEXES, arcChain } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
@@ -21,8 +21,9 @@ const curveConfigAbi = [
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const METADATA_TIMEOUT_MS = 10_000;
 const MAX_METADATA_BYTES = 2 * 1024 * 1024;
-const ACTIVE_FACTORY_INDEXES = ARC_TESTNET_FACTORY_INDEXES.filter(
-  (factory) => factory.address.toLowerCase() === ARC_TESTNET_ACTIVE_FACTORY.toLowerCase(),
+const FACTORY_LOG_BLOCK_RANGE = 9_999n;
+const ACTIVE_FACTORY_INDEXES = ARC_ACTIVE_FACTORY_INDEXES.filter(
+  (factory) => factory.address.toLowerCase() === ARC_ACTIVE_FACTORY.toLowerCase(),
 );
 const verifiedBootstrapByAddress = new Map(
   getVerifiedBootstrapTokens().map((token) => [token.address.toLowerCase(), token]),
@@ -49,6 +50,79 @@ type ClientMetadata = {
 };
 
 const publicClient = createArcPublicClient();
+
+async function loadFactoryLaunches(
+  factory: (typeof ACTIVE_FACTORY_INDEXES)[number],
+  indexedBlock: bigint,
+): Promise<ClientLaunch[]> {
+  try {
+    const logs = await getArcscanLogs({
+      address: factory.address,
+      fromBlock: factory.fromBlock,
+      toBlock: indexedBlock,
+      topic0: toEventSelector(tokenLaunchedEvent),
+    });
+    return logs.map((log) => {
+      const decoded = decodeEventLog({ abi: [tokenLaunchedEvent], data: log.data, topics: log.topics });
+      return {
+        factory: factory.address,
+        token: decoded.args.token,
+        curve: decoded.args.curve,
+        creator: decoded.args.creator,
+        name: decoded.args.name,
+        symbol: decoded.args.symbol,
+        launchBlock: log.blockNumber,
+        launchedAt: log.timestamp,
+        transactionHash: log.transactionHash,
+      };
+    });
+  } catch {
+    // Explorer indexes are optional. Canonical RPC logs are the source of truth.
+  }
+
+  const launches: ClientLaunch[] = [];
+  for (
+    let fromBlock = factory.fromBlock;
+    fromBlock <= indexedBlock;
+    fromBlock += FACTORY_LOG_BLOCK_RANGE + 1n
+  ) {
+    const toBlock = fromBlock + FACTORY_LOG_BLOCK_RANGE < indexedBlock
+      ? fromBlock + FACTORY_LOG_BLOCK_RANGE
+      : indexedBlock;
+    const logs = await publicClient.getLogs({
+      address: factory.address,
+      event: tokenLaunchedEvent,
+      fromBlock,
+      toBlock,
+    });
+    for (const log of logs) {
+      launches.push({
+        factory: factory.address,
+        token: log.args.token as Address,
+        curve: log.args.curve as Address,
+        creator: log.args.creator as Address,
+        name: log.args.name ?? "Indexed token",
+        symbol: log.args.symbol ?? "TOKEN",
+        launchBlock: log.blockNumber,
+        launchedAt: 0,
+        transactionHash: log.transactionHash,
+      });
+    }
+  }
+
+  const timestamps = new Map<string, number>();
+  const uniqueBlocks = [...new Set(launches.map((launch) => launch.launchBlock.toString()))];
+  for (let index = 0; index < uniqueBlocks.length; index += 8) {
+    await Promise.all(uniqueBlocks.slice(index, index + 8).map(async (blockNumber) => {
+      const block = await publicClient.getBlock({ blockNumber: BigInt(blockNumber) });
+      timestamps.set(blockNumber, Number(block.timestamp));
+    }));
+  }
+  return launches.map((launch) => ({
+    ...launch,
+    launchedAt: timestamps.get(launch.launchBlock.toString()) ?? 0,
+  }));
+}
 
 function iconFor(name: string, symbol: string) {
   const initials = name.trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join("");
@@ -275,7 +349,7 @@ async function hydrateLaunch(launch: ClientLaunch, creatorLaunches: number): Pro
     launchedAt: launch.launchedAt,
     totalSupply,
     virtualUsdcReserve,
-    description: metadata?.description ?? "ArcOrigin factory launch indexed from Arc Testnet events.",
+    description: metadata?.description ?? `ArcOrigin factory launch indexed from ${arcChain.name} events.`,
     ageMinutes: Math.max(0, Math.floor((Date.now() / 1_000 - launch.launchedAt) / 60)),
     price: launchPrice,
     priceChange24h: 0,
@@ -303,27 +377,10 @@ async function hydrateLaunch(launch: ClientLaunch, creatorLaunches: number): Pro
 export async function loadClientTokenIndex(
   onLaunchesLoaded?: (snapshot: { tokens: TokenData[]; indexedBlock: string; generatedAt: string }) => void,
 ) {
-  const indexedBlockPromise = publicClient.getBlockNumber();
-  const logGroups = await Promise.all(ACTIVE_FACTORY_INDEXES.map((factory) => getArcscanLogs({
-    address: factory.address,
-    fromBlock: factory.fromBlock,
-    toBlock: "latest",
-    topic0: toEventSelector(tokenLaunchedEvent),
-  })));
-  const launches: ClientLaunch[] = logGroups.flatMap((logs, factoryIndex) => logs.map((log) => {
-    const decoded = decodeEventLog({ abi: [tokenLaunchedEvent], data: log.data, topics: log.topics });
-    return {
-      factory: ACTIVE_FACTORY_INDEXES[factoryIndex].address,
-      token: decoded.args.token,
-      curve: decoded.args.curve,
-      creator: decoded.args.creator,
-      name: decoded.args.name,
-      symbol: decoded.args.symbol,
-      launchBlock: log.blockNumber,
-      launchedAt: log.timestamp,
-      transactionHash: log.transactionHash,
-    };
-  }));
+  const indexedBlock = await publicClient.getBlockNumber();
+  const launches = (await Promise.all(
+    ACTIVE_FACTORY_INDEXES.map((factory) => loadFactoryLaunches(factory, indexedBlock)),
+  )).flat();
   if (launches.length === 0) throw new Error("No verified Factory launches were returned.");
   const creatorCounts = new Map<string, number>();
   for (const launch of launches) {
@@ -355,7 +412,7 @@ export async function loadClientTokenIndex(
     }
     return hydratedTokens;
   })();
-  const [indexedBlock, tokens] = await Promise.all([indexedBlockPromise, tokensPromise]);
+  const tokens = await tokensPromise;
   return {
     tokens,
     indexedBlock: indexedBlock.toString(),

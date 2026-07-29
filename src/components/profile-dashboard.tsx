@@ -21,7 +21,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
-import { arcTestnet, EXPLORER_URL } from "@/lib/chains";
+import { arcChain, EXPLORER_URL } from "@/lib/chains";
 import { bondingCurveAbi, erc20Abi } from "@/lib/contracts";
 import type { TokenData, Trade } from "@/lib/types";
 import { money, number, shortAddress, tickerLabel, utcDateTime } from "@/lib/utils";
@@ -98,7 +98,7 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
   );
   const { disconnect } = useDisconnect();
   const { data: walletClient } = useWalletClient();
-  const publicClient = usePublicClient({ chainId: arcTestnet.id });
+  const publicClient = usePublicClient({ chainId: arcChain.id });
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const { tokens, loading, error, refresh, isPartial } = useFactoryTokenIndex();
@@ -129,7 +129,7 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
       abi: erc20Abi,
       functionName: "balanceOf",
       args: [address ?? "0x0000000000000000000000000000000000000000"],
-      chainId: arcTestnet.id,
+      chainId: arcChain.id,
     })),
     query: {
       enabled: Boolean(address) && tokens.length > 0,
@@ -143,7 +143,7 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
       address: token.curveAddress as Address,
       abi: bondingCurveAbi,
       functionName: "totalCreatorFees",
-      chainId: arcTestnet.id,
+      chainId: arcChain.id,
     })),
     query: {
       enabled: creatorFeeTargets.length > 0,
@@ -157,7 +157,7 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
       address: token.curveAddress as Address,
       abi: bondingCurveAbi,
       functionName: "claimableCreatorFees",
-      chainId: arcTestnet.id,
+      chainId: arcChain.id,
     })),
     query: {
       enabled: creatorFeeTargets.length > 0,
@@ -295,13 +295,13 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
     setClaimingCurve(curveAddress);
     setActionMessage("");
     try {
-      if (chainId !== arcTestnet.id) await switchChainAsync({ chainId: arcTestnet.id });
+      if (chainId !== arcChain.id) await switchChainAsync({ chainId: arcChain.id });
       const hash = await writeContractAsync({
         address: curveAddress,
         abi: bondingCurveAbi,
         functionName: "claimCreatorFees",
         args: [connectedAddress],
-        chainId: arcTestnet.id,
+        chainId: arcChain.id,
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("Creator fee claim reverted onchain.");
@@ -560,7 +560,7 @@ function CreatorEarningsPanel({
     </div>
     <div className="border-t border-line bg-black/[.08] px-5 py-3 text-xs font-medium leading-5 text-slate-400 sm:px-6">
       V5 curves pay automatically. V6 curves keep creator fees separate from trading reserves and require a creator-authorized claim.
-      {unavailable && !loading ? " Some curve totals could not be read from Arc Testnet, so the visible total is partial." : ""}
+      {unavailable && !loading ? ` Some curve totals could not be read from ${arcChain.name}, so the visible total is partial.` : ""}
     </div>
   </section>;
 }
@@ -770,7 +770,7 @@ function PositionsTable({ positions, loading }: { positions: Position[]; loading
 }
 
 function HistoryTable({ trades }: { trades: WalletTrade[] }) {
-  if (trades.length === 0) return <EmptyPanel title="No confirmed trades" body="Wallet buys and sells will appear here after their Arc Testnet transaction is confirmed." action />;
+  if (trades.length === 0) return <EmptyPanel title="No confirmed trades" body={`Wallet buys and sells will appear here after their ${arcChain.name} transaction is confirmed.`} action />;
   return <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left text-sm">
     <thead><tr className="border-b border-line text-[10px] font-semibold uppercase tracking-[.08em] text-slate-400"><th className="px-6 py-3">Time</th><th>Token</th><th>Type</th><th>USDC</th><th>Tokens</th><th className="pr-6 text-right">Transaction</th></tr></thead>
     <tbody>{trades.map(({ token, trade }) => <tr key={`${token.address}-${trade.txHash}`} className="border-b border-line/70 last:border-0 hover:bg-white/[.02]">

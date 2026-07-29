@@ -1,8 +1,15 @@
 # ArcOrigin V6 security architecture
 
-Status: active on Arc Testnet after bytecode verification and onchain exercises. Governance handoff is scheduled but incomplete, and the deployment is not independently audited.
+Status: active on Arc Testnet after bytecode verification and onchain exercises.
+The isolated Arc mainnet V6 candidate is deployed, owned by the reviewed 2-of-3
+Governance Safe, and remains launch-paused and migration-paused pending the
+remaining release gates.
 
-V6 is a new, isolated contract stack. It does not modify any deployed V4 or V5 bytecode. Arc Testnet was activated early with explicit acceptance of the temporary single-key administrator risk while the already-scheduled Timelock delay completes. This exception is not a mainnet precedent: mainnet activation still requires an independently reviewed governance handoff, frontend compatibility testing, a full exercise, and an independent audit.
+V6 is a new, isolated contract stack. It does not modify any deployed V4 or V5
+bytecode. Arc mainnet uses direct 2-of-3 Safe ownership for Factory, FeeVault,
+and CreatorRegistry. This removes the former single-key owner but intentionally
+does not provide a governance time delay; two Safe owners can execute an owner
+action as soon as the Safe threshold is reached.
 
 ## Security objectives
 
@@ -52,7 +59,8 @@ The deployer separates curve creation bytecode from Factory runtime to stay safe
 
 - Accepts fees only from owner-approved collectors or curves registered by an approved Factory.
 - Verifies exact token balance changes when collecting fees.
-- Only its owner may withdraw; the configured recipient cannot trigger a withdrawal and bypass the timelock.
+- Only its owner may withdraw; the configured recipient cannot trigger a
+  withdrawal or bypass the Governance Safe threshold.
 - Every withdrawal always goes to the visible `feeRecipient`.
 - Uses `Ownable2Step`; ownership renunciation is disabled.
 
@@ -90,15 +98,18 @@ Migration should remain disabled when no audited DEX-specific adapter, locker, a
 
 ## Governance model
 
-Recommended mainnet layout:
+Deployed Arc mainnet layout:
 
 - Governance Safe: exactly 2-of-3 independent hardware-backed signers.
-- Timelock: self-administered, minimum 48–72 hours, Governance Safe as sole proposer/canceller, open execution after delay.
-- Treasury Safe: exactly 2-of-3, configured as FeeVault recipient.
-- Factory, FeeVault, and CreatorRegistry owner: Timelock.
+- Treasury Safe: the reviewed 2-of-3 Safe, configured as FeeVault recipient.
+- Factory, FeeVault, and CreatorRegistry owner: Governance Safe directly.
 - Emergency guardian: a reviewed Safe that can only pause launches and migrations.
 
-V6 uses two-step ownership. The deployer first sets the Timelock as `pendingOwner`; the Timelock later executes a scheduled batch of `acceptOwnership()` calls. Until that batch executes, ownership remains with the deployer. Never describe a pending handoff as completed.
+V6 uses two-step ownership. The deployer set the Governance Safe as
+`pendingOwner`; the Safe then atomically accepted ownership of all three
+governed contracts. The superseded Timelock operation was cancelled. The
+post-handoff verifier requires the Safe as owner and the zero address as
+`pendingOwner` on every target.
 
 ## Deployment gate
 
@@ -109,7 +120,7 @@ Required before activation:
 3. Static analysis with all warnings manually triaged.
 4. Deploy V6 as an isolated candidate; keep migration disabled and paused.
 5. `pnpm verify:arc-testnet:v6` for exact runtime bytecode and wiring.
-6. Execute the two-step Safe/Timelock handoff and verify final owners.
+6. Execute the two-step direct-Safe handoff and verify final owners.
 7. Launch and trade multiple Testnet tokens, including graduation and creator fee claims.
 8. Independently review the deployed source, compiler settings, transactions, Safe owners, Timelock roles, and manifest.
 9. Obtain an independent audit and remediation review.

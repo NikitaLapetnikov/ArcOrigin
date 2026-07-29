@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { factoryForLaunchBlock } from "@/lib/chains";
+import { arcChain, factoryForLaunchBlock } from "@/lib/chains";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import type { TokenData } from "@/lib/types";
 
-const STORAGE_PREFIX = "arcorigin:5042002:holders:";
+const STORAGE_PREFIX = `arcorigin:${arcChain.id}:holders:`;
 const STORAGE_TTL_MS = 24 * 60 * 60 * 1_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 const pendingRequests = new Map<string, Promise<HolderSnapshot>>();

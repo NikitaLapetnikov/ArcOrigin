@@ -19,5 +19,29 @@ module.exports = {
       chainId: 5042002,
       accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
     },
+    arcMainnet: {
+      // No public fallback: deployment must use a reviewed, dedicated endpoint.
+      url: process.env.ARC_MAINNET_RPC_URL || "http://127.0.0.1:1",
+      chainId: 5042,
+      accounts: process.env.MAINNET_DEPLOYER_PRIVATE_KEY
+        ? [process.env.MAINNET_DEPLOYER_PRIVATE_KEY]
+        : [],
+    },
+  },
+  etherscan: {
+    apiKey: {
+      arcMainnet:
+        process.env.MAINNET_EXPLORER_API_KEY || "blockscout-api-key-not-required",
+    },
+    customChains: [
+      {
+        network: "arcMainnet",
+        chainId: 5042,
+        urls: {
+          apiURL: "https://arc-mainnet.cloud.blockscout.com/api",
+          browserURL: "https://arc-mainnet.cloud.blockscout.com",
+        },
+      },
+    ],
   },
 };

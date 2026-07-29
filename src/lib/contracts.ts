@@ -109,6 +109,8 @@ export const bondingCurveAbi = [
   { type: "function", name: "tokenReserve", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "usdcReserve", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "isGraduated", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "bool" }] },
+  { type: "function", name: "isMigrated", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "bool" }] },
+  { type: "function", name: "migratedPool", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "tokensSold", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { type: "function", name: "buyFeeBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint16" }] },
   { type: "function", name: "sellFeeBps", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint16" }] },
@@ -123,4 +125,104 @@ export const bondingCurveAbi = [
   { type: "function", name: "buy", stateMutability: "nonpayable", inputs: [{ name: "usdcAmount", type: "uint256" }, { name: "minTokensOut", type: "uint256" }, { name: "deadline", type: "uint256" }], outputs: [{ name: "tokensOut", type: "uint256" }] },
   { type: "function", name: "sell", stateMutability: "nonpayable", inputs: [{ name: "tokenAmount", type: "uint256" }, { name: "minUsdcOut", type: "uint256" }], outputs: [{ name: "usdcOut", type: "uint256" }] },
   { type: "function", name: "sell", stateMutability: "nonpayable", inputs: [{ name: "tokenAmount", type: "uint256" }, { name: "minUsdcOut", type: "uint256" }, { name: "deadline", type: "uint256" }], outputs: [{ name: "usdcOut", type: "uint256" }] },
+] as const;
+
+export const uniswapV3FactoryAbi = [
+  {
+    type: "function",
+    name: "getPool",
+    stateMutability: "view",
+    inputs: [
+      { name: "tokenA", type: "address" },
+      { name: "tokenB", type: "address" },
+      { name: "fee", type: "uint24" },
+    ],
+    outputs: [{ name: "pool", type: "address" }],
+  },
+] as const;
+
+export const uniswapV3QuoterAbi = [
+  {
+    type: "function",
+    name: "quoteExactInputSingle",
+    stateMutability: "nonpayable",
+    inputs: [{
+      name: "params",
+      type: "tuple",
+      components: [
+        { name: "tokenIn", type: "address" },
+        { name: "tokenOut", type: "address" },
+        { name: "amountIn", type: "uint256" },
+        { name: "fee", type: "uint24" },
+        { name: "sqrtPriceLimitX96", type: "uint160" },
+      ],
+    }],
+    outputs: [
+      { name: "amountOut", type: "uint256" },
+      { name: "sqrtPriceX96After", type: "uint160" },
+      { name: "initializedTicksCrossed", type: "uint32" },
+      { name: "gasEstimate", type: "uint256" },
+    ],
+  },
+] as const;
+
+export const uniswapV3RouterAbi = [
+  {
+    type: "function",
+    name: "exactInputSingle",
+    stateMutability: "payable",
+    inputs: [{
+      name: "params",
+      type: "tuple",
+      components: [
+        { name: "tokenIn", type: "address" },
+        { name: "tokenOut", type: "address" },
+        { name: "fee", type: "uint24" },
+        { name: "recipient", type: "address" },
+        { name: "amountIn", type: "uint256" },
+        { name: "amountOutMinimum", type: "uint256" },
+        { name: "sqrtPriceLimitX96", type: "uint160" },
+      ],
+    }],
+    outputs: [{ name: "amountOut", type: "uint256" }],
+  },
+] as const;
+
+export const uniswapV3PoolAbi = [
+  {
+    type: "function",
+    name: "token0",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "slot0",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "sqrtPriceX96", type: "uint160" },
+      { name: "tick", type: "int24" },
+      { name: "observationIndex", type: "uint16" },
+      { name: "observationCardinality", type: "uint16" },
+      { name: "observationCardinalityNext", type: "uint16" },
+      { name: "feeProtocol", type: "uint8" },
+      { name: "unlocked", type: "bool" },
+    ],
+  },
+  {
+    type: "event",
+    name: "Swap",
+    anonymous: false,
+    inputs: [
+      { name: "sender", type: "address", indexed: true },
+      { name: "recipient", type: "address", indexed: true },
+      { name: "amount0", type: "int256", indexed: false },
+      { name: "amount1", type: "int256", indexed: false },
+      { name: "sqrtPriceX96", type: "uint160", indexed: false },
+      { name: "liquidity", type: "uint128", indexed: false },
+      { name: "tick", type: "int24", indexed: false },
+    ],
+  },
 ] as const;

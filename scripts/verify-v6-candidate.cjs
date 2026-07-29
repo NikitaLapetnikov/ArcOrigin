@@ -2,7 +2,6 @@ const hre = require("hardhat");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const EXPECTED_CHAIN_ID = 5_042_002n;
 const EXPECTED_USDC = "0x3600000000000000000000000000000000000000";
 const EXPECTED_LAUNCH_FEE = 10n * 10n ** 6n;
 const candidatePath = process.env.V6_MANIFEST
@@ -57,8 +56,8 @@ async function main() {
   }
   const manifest = JSON.parse(fs.readFileSync(candidatePath, "utf8"));
   const network = await hre.ethers.provider.getNetwork();
-  assertEqual("chain ID", network.chainId, EXPECTED_CHAIN_ID);
-  assertEqual("manifest chain ID", manifest.chainId, EXPECTED_CHAIN_ID);
+  assertEqual("chain ID", network.chainId, BigInt(manifest.chainId));
+  assertEqual("manifest chain ID", manifest.chainId, Number(network.chainId));
   assertEqual("USDC", manifest.contracts.usdc, EXPECTED_USDC);
 
   await verifyRuntime("V6 Factory", manifest.contracts.factory, "ArcForgeFactoryV6");
@@ -101,11 +100,42 @@ async function main() {
   assertEqual("launch fee", await factory.launchFee(), EXPECTED_LAUNCH_FEE);
   assertEqual("buy fee", await factory.buyFeeBps(), 100n);
   assertEqual("sell fee", await factory.sellFeeBps(), 100n);
-  assertEqual("migration adapter", await factory.dexMigrationAdapter(), hre.ethers.ZeroAddress);
-  assertEqual("migration locker", await factory.liquidityLocker(), hre.ethers.ZeroAddress);
-  assertEqual("migration verifier", await factory.migrationVerifier(), hre.ethers.ZeroAddress);
-  assertEqual("migration hash", await factory.currentMigrationConfigurationHash(), hre.ethers.ZeroHash);
-  assertEqual("migration paused", await factory.migrationPaused(), true);
+  const migration = manifest.dexMigration;
+  if (migration?.configured) {
+    assertEqual("migration adapter", await factory.dexMigrationAdapter(), migration.adapter);
+    assertEqual("migration locker", await factory.liquidityLocker(), migration.locker);
+    assertEqual(
+      "migration verifier",
+      await factory.migrationVerifier(),
+      migration.verifier,
+    );
+    assertEqual(
+      "migration hash",
+      await factory.currentMigrationConfigurationHash(),
+      migration.configurationHash,
+    );
+  } else {
+    assertEqual("migration adapter", await factory.dexMigrationAdapter(), hre.ethers.ZeroAddress);
+    assertEqual("migration locker", await factory.liquidityLocker(), hre.ethers.ZeroAddress);
+    assertEqual("migration verifier", await factory.migrationVerifier(), hre.ethers.ZeroAddress);
+    assertEqual(
+      "migration hash",
+      await factory.currentMigrationConfigurationHash(),
+      hre.ethers.ZeroHash,
+    );
+  }
+  assertEqual(
+    "migration paused",
+    await factory.migrationPaused(),
+    migration?.paused ?? true,
+  );
+  if (manifest.network === "arc-mainnet") {
+    assertEqual(
+      "mainnet launches paused",
+      await factory.paused(),
+      manifest.launchesPaused ?? true,
+    );
+  }
   assertEqual("vault recipient", await vault.feeRecipient(), manifest.feeRecipient);
   assertEqual("vault registrar", await vault.isRegistrar(manifest.contracts.factory), true);
   assertEqual("vault collector", await vault.isCollector(manifest.contracts.factory), true);
@@ -117,9 +147,25 @@ async function main() {
   if (new Set(owners.map((owner) => owner.toLowerCase())).size !== 1) {
     throw new Error(`V6 owner mismatch: ${owners.join(", ")}.`);
   }
+  const governanceMode = manifest.governance?.mode;
+  const governanceHandoffComplete =
+    manifest.governanceHandoffComplete === true ||
+    manifest.governance?.handoffComplete === true;
+  if (
+    governanceHandoffComplete &&
+    governanceMode === "DIRECT_SAFE_2_OF_3"
+  ) {
+    if (!manifest.governance?.safe) {
+      throw new Error("Completed direct-Safe manifest does not define governance.safe.");
+    }
+    assertEqual("V6 direct Safe owner", owners[0], manifest.governance.safe);
+  }
   console.log(`V6 candidate owner: ${owners[0]}`);
   console.log("V6 candidate wiring and exact runtime bytecode verified.");
-  if (owners[0].toLowerCase() === manifest.deployer.toLowerCase()) {
+  if (
+    !governanceHandoffComplete &&
+    owners[0].toLowerCase() === manifest.deployer.toLowerCase()
+  ) {
     console.log("NOTICE: governance handoff is still required before activation.");
   }
 }

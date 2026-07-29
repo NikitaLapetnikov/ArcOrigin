@@ -1,7 +1,12 @@
 import "server-only";
 
 import { formatUnits, type Address } from "viem";
-import { ARCORIGIN_PROTOCOL_VERSION, ARC_TESTNET_ACTIVE_FACTORY } from "@/lib/chains";
+import {
+  ARCORIGIN_NETWORK,
+  ARCORIGIN_PROTOCOL_VERSION,
+  ARC_ACTIVE_FACTORY,
+  arcChain,
+} from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
 import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
@@ -26,7 +31,7 @@ const MIN_REFRESH_INTERVAL_MS = 10_000;
 const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const REQUEST_WAIT_TIMEOUT_MS = 10_000;
 const PERSISTENT_CACHE_KEY =
-  `arcorigin:v${ARCORIGIN_PROTOCOL_VERSION}:token-index:${ARC_TESTNET_ACTIVE_FACTORY.toLowerCase()}`;
+  `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:token-index:${ARC_ACTIVE_FACTORY.toLowerCase()}`;
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 type TokenIndexSnapshot = {
@@ -43,7 +48,12 @@ type TokenIndexState = {
   hydratedTokens: Map<string, TokenData>;
 };
 
-const publicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL, 8_000);
+const publicClient = createArcPublicClient(
+  ARCORIGIN_NETWORK === "mainnet"
+    ? process.env.ARC_MAINNET_RPC_URL
+    : process.env.ARC_TESTNET_RPC_URL,
+  8_000,
+);
 const verifiedV4Tokens = currentV4Tokens(getVerifiedBootstrapTokens());
 
 declare global {
@@ -201,7 +211,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     launchedAt: launch.launchedAt,
     totalSupply,
     virtualUsdcReserve,
-    description: metadata?.description ?? "ArcOrigin factory launch indexed from Arc Testnet events.",
+    description: metadata?.description ?? `ArcOrigin factory launch indexed from ${arcChain.name} events.`,
     ageMinutes: Math.max(0, Math.floor((Date.now() / 1_000 - launch.launchedAt) / 60)),
     price: launchPrice,
     priceChange24h: 0,
@@ -231,7 +241,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
 async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot> {
   const { launches, indexedBlock } = await getFactoryLaunchIndex(forceRefresh);
   const activeLaunches = launches.filter(
-    (launch) => launch.factory.toLowerCase() === ARC_TESTNET_ACTIVE_FACTORY.toLowerCase(),
+    (launch) => launch.factory.toLowerCase() === ARC_ACTIVE_FACTORY.toLowerCase(),
   );
   if (activeLaunches.length === 0) {
     if (verifiedV4Tokens.length > 0) {

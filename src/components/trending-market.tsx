@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowUpRight, Flame } from "lucide-react";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
+import { arcChain } from "@/lib/chains";
 import { calculateMomentumScore } from "@/lib/scoring";
 import { money, tickerLabel } from "@/lib/utils";
 import { EmptyState, Progress, TokenIcon, WarningBox } from "./ui";
@@ -15,7 +16,7 @@ export function TrendingMarket() {
 
   return <div className="container-shell pb-20">
     {error && <div className="mb-5 flex items-center gap-3"><div className="flex-1"><WarningBox>{error}</WarningBox></div><button onClick={() => void refresh()} className="shrink-0 text-xs font-semibold text-cyan">Retry live data</button></div>}
-    {ranked.length === 0 && !loading ? <EmptyState title="No confirmed market activity" body="Trending tokens will appear after Factory launches are indexed from Arc Testnet."/> : <div className="panel overflow-hidden">{ranked.map(({token},index) => {
+    {ranked.length === 0 && !loading ? <EmptyState title="No confirmed market activity" body={`Trending tokens will appear after Factory launches are indexed from ${arcChain.name}.`}/> : <div className="panel overflow-hidden">{ranked.map(({token},index) => {
       const onchainUnavailable = isPartial || (loading && indexedTokens.length === 0);
       return <Link href={`/tokens/${token.address}`} key={token.address} className="grid items-center gap-4 border-b border-line/70 p-4 transition last:border-0 hover:bg-white/[.025] md:grid-cols-[56px_1.3fr_1fr_1fr_1fr_auto]">
         <div className="flex items-center gap-2"><span className="font-mono text-lg text-slate-600">{String(index + 1).padStart(2,"0")}</span>{index < 3 && <Flame className="size-4 text-amber-300"/>}</div>

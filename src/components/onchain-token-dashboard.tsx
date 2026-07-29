@@ -8,7 +8,7 @@ import { KLineTokenChart } from "@/components/kline-token-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, TokenIcon, WarningBox } from "@/components/ui";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
-import { EXPLORER_URL } from "@/lib/chains";
+import { EXPLORER_URL, arcChain } from "@/lib/chains";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import type { TokenData, Trade } from "@/lib/types";
@@ -91,7 +91,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
         if (!isCurrentRequest()) return;
         applyRefreshedSnapshot(payload.snapshot);
         setStale(Boolean(payload.stale));
-        if (payload.stale) setError("Showing the latest confirmed market snapshot while Arc Testnet RPC recovers.");
+        if (payload.stale) setError(`Showing the latest confirmed market snapshot while ${arcChain.name} RPC recovers.`);
       } catch {
         const fallback = await loadIndexedMarketSnapshot(token);
         if (!isCurrentRequest()) return;
@@ -334,7 +334,7 @@ export function OnchainTokenDashboard({
           <table className="w-full min-w-[850px] text-left text-xs">
             <thead><tr className="border-b border-line bg-black/15 font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="px-4 py-3">Token</th><th>Actual balance</th><th>Current value</th><th>Bought</th><th>Sold</th><th>Estimated PnL</th><th className="pr-4 text-right">Action</th></tr></thead>
             <tbody><tr>
-              <td className="px-4 py-4"><div className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image} className="size-8 rounded-lg"/><div><p className="font-semibold text-white">{tickerLabel(token.ticker)}</p><p className="mt-0.5 text-[9px] text-slate-600">Arc Testnet</p></div></div></td>
+              <td className="px-4 py-4"><div className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image} className="size-8 rounded-lg"/><div><p className="font-semibold text-white">{tickerLabel(token.ticker)}</p><p className="mt-0.5 text-[9px] text-slate-600">{arcChain.name}</p></div></div></td>
               <td className="text-slate-200">{formatTokenAmount(walletBalance)}</td>
               <td className="text-slate-200">{money(walletValue)}</td>
               <td className="text-emerald-300">{money(walletBought)}</td>

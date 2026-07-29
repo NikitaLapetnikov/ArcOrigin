@@ -15,7 +15,7 @@ import {
   useSwitchChain,
   type Connector,
 } from "wagmi";
-import { arcTestnet } from "@/lib/chains";
+import { ARCORIGIN_NETWORK, arcChain } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 import { Badge, Button } from "./ui";
 import { ThemeToggle } from "./theme-toggle";
@@ -91,8 +91,8 @@ function WalletButton() {
     return <Button variant="secondary" disabled><Wallet className="size-4" />Restoring wallet…</Button>;
   }
 
-  if (isConnected && chainId !== arcTestnet.id) {
-    return <Button variant="secondary" onClick={() => switchChain({ chainId: arcTestnet.id })}>Switch to Arc</Button>;
+  if (isConnected && chainId !== arcChain.id) {
+    return <Button variant="secondary" onClick={() => switchChain({ chainId: arcChain.id })}>Switch to {arcChain.name}</Button>;
   }
   if (isConnected) return <div className="relative">
     <button
@@ -251,13 +251,7 @@ export function Header() {
       </nav>
       <div className="hidden items-center gap-2 md:flex">
         <ThemeToggle />
-        <Badge
-          tone="cyan"
-          className="hidden h-10 gap-2 rounded-[10px] px-3 text-[11px] normal-case tracking-[-.01em] xl:inline-flex"
-        >
-          <Radio className="size-3.5 text-cyan" />
-          Arc Testnet
-        </Badge>
+        <NetworkLink />
         <WalletButton />
       </div>
       <button
@@ -271,7 +265,40 @@ export function Header() {
     {open && <div id="mobile-navigation" className="mx-auto grid w-full max-w-[1800px] gap-1 border-t border-line px-3 py-3 sm:px-4 lg:hidden">
       {nav.map(([label, href]) => <NavLink key={href} label={label} href={href} path={path} onClick={() => setOpen(false)} />)}
       <div className="my-2 h-px bg-line md:hidden" />
-      <div className="mt-2 flex items-center gap-2 md:hidden"><ThemeToggle /><WalletButton /></div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 md:hidden"><ThemeToggle /><NetworkLink mobile /><WalletButton /></div>
     </div>}
   </header>;
+}
+
+function NetworkLink({ mobile = false }: { mobile?: boolean }) {
+  const otherNetwork = ARCORIGIN_NETWORK === "mainnet" ? "testnet" : "mainnet";
+  const destination = (
+    otherNetwork === "mainnet"
+      ? process.env.NEXT_PUBLIC_MAINNET_APP_URL
+      : process.env.NEXT_PUBLIC_TESTNET_APP_URL
+  )?.trim();
+  const label = ARCORIGIN_NETWORK === "mainnet" ? "Arc Mainnet" : "Arc Testnet";
+  const content = <>
+    <Radio className="size-3.5 text-cyan" />
+    {label}
+    {destination && <ChevronDown className="size-3.5 text-slate-500" />}
+  </>;
+
+  if (!destination) {
+    return <Badge
+      tone="cyan"
+      className={cn(
+        "h-10 gap-2 rounded-[10px] px-3 text-[11px] normal-case tracking-[-.01em]",
+        mobile ? "inline-flex" : "hidden xl:inline-flex",
+      )}
+    >{content}</Badge>;
+  }
+  return <a
+    href={destination}
+    title={`Open Arc ${otherNetwork}`}
+    className={cn(
+      "h-10 items-center gap-2 rounded-[10px] border border-cyan/25 bg-cyan/[.055] px-3 text-[11px] font-semibold text-cyan transition hover:border-cyan/45 hover:bg-cyan/[.09]",
+      mobile ? "inline-flex" : "hidden xl:inline-flex",
+    )}
+  >{content}</a>;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
+import { arcChain } from "@/lib/chains";
 import { money } from "@/lib/utils";
 import { Badge, EmptyState, StatCard, WarningBox } from "./ui";
 import { TokenTable } from "./token-table";
@@ -13,8 +14,8 @@ export function CreatorDashboard({ address }: { address: string }) {
   const graduated = tokens.filter((token) => token.status === "Graduated").length;
   const onchainState = isPartial ? "unavailable" : isCached ? "cached" : loading ? "loading" : "live";
 
-  if (tokens.length === 0 && loading) return <div className="container-shell pb-20"><EmptyState title="Reading Factory history…" body="Checking confirmed Arc Testnet launches for this wallet."/></div>;
-  if (tokens.length === 0) return <div className="container-shell pb-20"><div className="mb-5"><WarningBox>{error || "No confirmed Factory launch was found for this wallet."}</WarningBox></div><EmptyState title="No indexed creator history" body="Only creator history confirmed by Arc Testnet Factory events is displayed."/></div>;
+  if (tokens.length === 0 && loading) return <div className="container-shell pb-20"><EmptyState title="Reading Factory history…" body={`Checking confirmed ${arcChain.name} launches for this wallet.`}/></div>;
+  if (tokens.length === 0) return <div className="container-shell pb-20"><div className="mb-5"><WarningBox>{error || "No confirmed Factory launch was found for this wallet."}</WarningBox></div><EmptyState title="No indexed creator history" body={`Only creator history confirmed by ${arcChain.name} Factory events is displayed.`}/></div>;
 
   return <div className="container-shell pb-20">
     <div className="mb-5 flex flex-wrap items-center gap-2">{isCached && <Badge tone="neutral">Cached profile</Badge>}<Badge tone="neutral">Unverified metadata</Badge>{tokens.length === 1 && <Badge tone="neutral">New creator</Badge>}</div>

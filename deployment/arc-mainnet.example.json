@@ -1,0 +1,44 @@
+{
+  "network": "arc-mainnet",
+  "chainId": 5042,
+  "contracts": {
+    "feeVault": null,
+    "creatorRegistry": null,
+    "curveDeployer": null,
+    "factory": null,
+    "usdc": "0x3600000000000000000000000000000000000000"
+  },
+  "deployer": null,
+  "feeRecipient": null,
+  "emergencyGuardian": null,
+  "deployedAt": null,
+  "factoryDeploymentBlock": null,
+  "explorerBaseUrl": "https://arc-mainnet.cloud.blockscout.com",
+  "status": "NOT_DEPLOYED",
+  "launchesPaused": true,
+  "governance": {
+    "mode": "DIRECT_SAFE_2_OF_3",
+    "safe": null,
+    "timelock": null,
+    "timelockInUse": false,
+    "minimumDelaySeconds": 0,
+    "handoffComplete": false
+  },
+  "curveModel": {
+    "version": 6,
+    "virtualUsdcReserve": 2500,
+    "graduationThreshold": 10000,
+    "creatorFeeShareBps": 7000,
+    "protocolFeeShareBps": 3000,
+    "postGraduationVenue": "INTERNAL_AMM_UNTIL_VERIFIED_UNISWAP_V3_MIGRATION"
+  },
+  "dexMigration": {
+    "target": "UNISWAP",
+    "configured": false,
+    "enabled": false,
+    "paused": true,
+    "adapter": null,
+    "locker": null,
+    "verifier": null
+  }
+}

@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { getAddress, isAddress, verifyMessage as verifyEoaMessage, type Address, type Hex } from "viem";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
+import { ARCORIGIN_NETWORK, arcChain } from "@/lib/chains";
 import {
   TOKEN_IMAGE_MAX_BYTES,
   canonicalMetadataCommitment,
@@ -43,7 +44,12 @@ const state = globalThis.__arcOriginMetadataUploadState ?? {
   rates: new Map(),
 };
 globalThis.__arcOriginMetadataUploadState = state;
-const signaturePublicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL, 6_000);
+const signaturePublicClient = createArcPublicClient(
+  ARCORIGIN_NETWORK === "mainnet"
+    ? process.env.ARC_MAINNET_RPC_URL
+    : process.env.ARC_TESTNET_RPC_URL,
+  6_000,
+);
 
 export class MetadataUploadError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -105,6 +111,7 @@ export function createMetadataChallenge(rawAddress: string, rawCommitment: strin
   const expiresAt = Date.now() + CHALLENGE_TTL_MS;
   const message = [
     "ArcOrigin token metadata upload",
+    `Network: ${arcChain.name} (${arcChain.id})`,
     `Wallet: ${address}`,
     `Metadata: ${commitment}`,
     `Nonce: ${nonce}`,
@@ -309,7 +316,7 @@ export async function publishTokenMetadata({
     ...(imageURI ? { image: imageURI } : {}),
     ...(normalized.website ? { external_url: normalized.website } : {}),
     attributes: [
-      { trait_type: "Network", value: "Arc Testnet" },
+      { trait_type: "Network", value: arcChain.name },
       { trait_type: "Launchpad", value: "ArcOrigin" },
     ],
     properties: {

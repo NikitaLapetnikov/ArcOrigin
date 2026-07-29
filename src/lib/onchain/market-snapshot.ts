@@ -2,7 +2,8 @@ import "server-only";
 
 import { decodeEventLog, formatUnits, parseAbiItem, type Address, type Hash } from "viem";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
-import { bondingCurveAbi } from "@/lib/contracts";
+import { ARCORIGIN_NETWORK, ARCORIGIN_PROTOCOL_VERSION } from "@/lib/chains";
+import { bondingCurveAbi, uniswapV3PoolAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
@@ -12,6 +13,9 @@ import type { ChartPoint, Trade } from "@/lib/types";
 
 const tokenBoughtEvent = parseAbiItem("event TokenBought(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 fee)");
 const tokenSoldEvent = parseAbiItem("event TokenSold(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 fee)");
+const uniswapSwapEvent = parseAbiItem(
+  "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
+);
 const tradeEvents = [tokenBoughtEvent, tokenSoldEvent] as const;
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const LOG_BLOCK_RANGE = 9_999n;
@@ -60,6 +64,7 @@ type IndexedTrade = {
   notional: number;
   reserveUsdcDelta: number;
   tokens: number;
+  executionPrice?: number;
   timestamp?: number;
 };
 
@@ -73,7 +78,11 @@ type MarketState = {
   blockTimestamps: Map<string, number>;
 };
 
-const publicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL);
+const publicClient = createArcPublicClient(
+  ARCORIGIN_NETWORK === "mainnet"
+    ? process.env.ARC_MAINNET_RPC_URL
+    : process.env.ARC_TESTNET_RPC_URL,
+);
 
 declare global {
   var __arcOriginMarketState: MarketState | undefined;
@@ -105,6 +114,18 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
 
 function roundUsdc(value: number) {
   return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function uniswapPriceFromSqrt(sqrtPriceX96: bigint, tokenIsToken0: boolean) {
+  const normalized = Number(sqrtPriceX96) / 2 ** 96;
+  const rawToken1PerToken0 = normalized * normalized;
+  const price = tokenIsToken0
+    ? rawToken1PerToken0 * 1e12
+    : 1e12 / rawToken1PerToken0;
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error("Uniswap pool price is invalid.");
+  }
+  return price;
 }
 
 async function loadBlockTimestamps(blockNumbers: bigint[]) {
@@ -248,6 +269,114 @@ async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean):
     }
   }
 
+  const [tokenReserveRaw, usdcReserveRaw, graduated, tokensSoldRaw] =
+    await withRpcRetry(
+    () => publicClient.multicall({
+      allowFailure: false,
+      blockNumber: indexedBlock,
+      multicallAddress: MULTICALL3_ADDRESS,
+      contracts: [
+        { address: launch.curve, abi: bondingCurveAbi, functionName: "tokenReserve" },
+        { address: launch.curve, abi: bondingCurveAbi, functionName: "usdcReserve" },
+        { address: launch.curve, abi: bondingCurveAbi, functionName: "isGraduated" },
+        { address: launch.curve, abi: bondingCurveAbi, functionName: "tokensSold" },
+      ],
+    }),
+    2,
+  );
+  let migrated = false;
+  let migratedPool =
+    "0x0000000000000000000000000000000000000000" as Address;
+  if (ARCORIGIN_PROTOCOL_VERSION === 6) {
+    [migrated, migratedPool] = await withRpcRetry(
+      () => publicClient.multicall({
+        allowFailure: false,
+        blockNumber: indexedBlock,
+        multicallAddress: MULTICALL3_ADDRESS,
+        contracts: [
+          { address: launch.curve, abi: bondingCurveAbi, functionName: "isMigrated" },
+          { address: launch.curve, abi: bondingCurveAbi, functionName: "migratedPool" },
+        ],
+      }),
+      2,
+    );
+  }
+
+  let migratedPrice: number | null = null;
+  if (migrated) {
+    if (migratedPool === "0x0000000000000000000000000000000000000000") {
+      throw new Error("Migrated curve has no pool.");
+    }
+    const [poolToken0, slot0] = await Promise.all([
+      withRpcRetry(() => publicClient.readContract({
+        address: migratedPool,
+        abi: uniswapV3PoolAbi,
+        functionName: "token0",
+        blockNumber: indexedBlock,
+      }), 2),
+      withRpcRetry(() => publicClient.readContract({
+        address: migratedPool,
+        abi: uniswapV3PoolAbi,
+        functionName: "slot0",
+        blockNumber: indexedBlock,
+      }), 2),
+    ]);
+    const tokenIsToken0 = poolToken0.toLowerCase() === tokenAddress.toLowerCase();
+    migratedPrice = uniswapPriceFromSqrt(slot0[0], tokenIsToken0);
+
+    for (
+      let fromBlock = launch.launchBlock;
+      fromBlock <= indexedBlock;
+      fromBlock += LOG_BLOCK_RANGE + 1n
+    ) {
+      const toBlock =
+        fromBlock + LOG_BLOCK_RANGE < indexedBlock
+          ? fromBlock + LOG_BLOCK_RANGE
+          : indexedBlock;
+      const logs = await withRpcRetry(() => publicClient.getLogs({
+        address: migratedPool,
+        event: uniswapSwapEvent,
+        fromBlock,
+        toBlock,
+      }));
+      for (const log of logs) {
+        const amount0 = log.args.amount0 ?? 0n;
+        const amount1 = log.args.amount1 ?? 0n;
+        const tokenDelta = tokenIsToken0 ? amount0 : amount1;
+        const usdcDelta = tokenIsToken0 ? amount1 : amount0;
+        if (
+          tokenDelta === 0n ||
+          usdcDelta === 0n ||
+          (tokenDelta < 0n) === (usdcDelta < 0n)
+        ) continue;
+        const usdcAmount = Number(formatUnits(
+          usdcDelta < 0n ? -usdcDelta : usdcDelta,
+          6,
+        ));
+        const tokenAmount = Number(formatUnits(
+          tokenDelta < 0n ? -tokenDelta : tokenDelta,
+          18,
+        ));
+        events.push({
+          blockNumber: log.blockNumber ?? 0n,
+          logIndex: log.logIndex ?? 0,
+          hash: log.transactionHash as Hash,
+          wallet: (log.args.recipient ?? log.args.sender) as Address,
+          type: tokenDelta < 0n ? "Buy" : "Sell",
+          usdc: usdcAmount,
+          notional: usdcAmount,
+          reserveUsdcDelta: 0,
+          tokens: tokenAmount,
+          executionPrice: uniswapPriceFromSqrt(
+            log.args.sqrtPriceX96 ?? slot0[0],
+            tokenIsToken0,
+          ),
+        });
+      }
+      await wait(180);
+    }
+  }
+
   const totalSupply = baseToken.totalSupply;
   const initialReserve = totalSupply * (1 - baseToken.creatorAllocationPercent / 100);
   const virtualUsdc = baseToken.virtualUsdcReserve;
@@ -263,6 +392,10 @@ async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean):
   const permanentLiquidityMode = usesPermanentLiquidityMode(virtualUsdc, targetUsdc);
   const priceTicks: IndexedPriceTick[] = [];
   for (const event of validEvents) {
+    if (event.executionPrice !== undefined) {
+      priceTicks.push({ event, price: event.executionPrice });
+      continue;
+    }
     reconstructedTokenReserve += event.type === "Buy" ? -event.tokens : event.tokens;
     reconstructedRaisedUsdc = roundUsdc(Math.max(0, reconstructedRaisedUsdc + event.reserveUsdcDelta));
     if (reconstructedTokenReserve <= 0) throw new Error("Curve reserves are invalid at the indexed block.");
@@ -285,27 +418,23 @@ async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean):
     throw new Error("Curve reserves are invalid at the indexed block.");
   }
 
-  const [tokenReserveRaw, usdcReserveRaw, graduated, tokensSoldRaw] = await withRpcRetry(
-    () => publicClient.multicall({
-      allowFailure: false,
-      blockNumber: indexedBlock,
-      multicallAddress: MULTICALL3_ADDRESS,
-      contracts: [
-        { address: launch.curve, abi: bondingCurveAbi, functionName: "tokenReserve" },
-        { address: launch.curve, abi: bondingCurveAbi, functionName: "usdcReserve" },
-        { address: launch.curve, abi: bondingCurveAbi, functionName: "isGraduated" },
-        { address: launch.curve, abi: bondingCurveAbi, functionName: "tokensSold" },
-      ],
-    }),
-    2,
-  );
   const tokenReserve = Number(formatUnits(tokenReserveRaw, 18));
-  const raisedUsdc = Number(formatUnits(usdcReserveRaw, 6));
+  const raisedUsdc = migrated
+    ? targetUsdc
+    : Number(formatUnits(usdcReserveRaw, 6));
   const tokensSold = Number(formatUnits(tokensSoldRaw, 18));
-  if (!Number.isFinite(tokenReserve) || tokenReserve <= 0 || !Number.isFinite(raisedUsdc) || raisedUsdc < 0) {
+  if (
+    !Number.isFinite(tokenReserve) ||
+    (!migrated && tokenReserve <= 0) ||
+    !Number.isFinite(raisedUsdc) ||
+    raisedUsdc < 0
+  ) {
     throw new Error("Curve state is invalid at the indexed block.");
   }
-  const price = (graduated && permanentLiquidityMode ? raisedUsdc : virtualUsdc + raisedUsdc) / tokenReserve;
+  const price = migrated
+    ? migratedPrice ?? 0
+    : (graduated && permanentLiquidityMode ? raisedUsdc : virtualUsdc + raisedUsdc) /
+      tokenReserve;
 
   const chartTicks = priceTicks.slice(-CHART_TRADE_LIMIT);
   const missingTimestampBlocks = validEvents
@@ -366,7 +495,7 @@ async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean):
 }
 
 function getTokenCache(tokenAddress: Address) {
-  const key = tokenAddress.toLowerCase();
+  const key = `${ARCORIGIN_NETWORK}:${tokenAddress.toLowerCase()}`;
   const existing = state.tokenCaches.get(key);
   if (existing) return existing;
   if (state.tokenCaches.size >= MAX_TOKEN_CACHES) {
@@ -380,8 +509,10 @@ function getTokenCache(tokenAddress: Address) {
 
 export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = false) {
   const cache = getTokenCache(tokenAddress);
+  const persistentKey =
+    `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:market:${tokenAddress.toLowerCase()}`;
   if (!cache.snapshot) {
-    const persisted = await readPersistentSnapshot<MarketSnapshot>(`arcorigin:v4:market:${tokenAddress.toLowerCase()}`);
+    const persisted = await readPersistentSnapshot<MarketSnapshot>(persistentKey);
     if (persisted?.indexedBlock && Array.isArray(persisted.trades)) {
       cache.snapshot = persisted;
       cache.cachedAt = Date.parse(persisted.generatedAt) || 0;
@@ -403,7 +534,7 @@ export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = fa
       .then((snapshot) => {
         cache.snapshot = snapshot;
         cache.cachedAt = Date.now();
-        void writePersistentSnapshot(`arcorigin:v4:market:${tokenAddress.toLowerCase()}`, snapshot);
+        void writePersistentSnapshot(persistentKey, snapshot);
         return snapshot;
       })
       .finally(() => {

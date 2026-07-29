@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ExternalLink, LoaderCircle, WalletCards } from "lucide-react";
 import { formatUnits, type Address, type Hash } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from "wagmi";
-import { ARC_TESTNET_CONTRACTS, EXPLORER_URL, arcTestnet } from "@/lib/chains";
+import { ARC_ACTIVE_CONTRACTS, EXPLORER_URL, arcChain } from "@/lib/chains";
 import { erc20Abi } from "@/lib/contracts";
 import { Button, WarningBox } from "@/components/ui";
 import { shortAddress } from "@/lib/utils";
@@ -29,7 +29,7 @@ type VaultState = {
 
 export function FeeVaultWithdrawal() {
   const { address, isConnected, chainId } = useAccount();
-  const publicClient = usePublicClient({ chainId: arcTestnet.id });
+  const publicClient = usePublicClient({ chainId: arcChain.id });
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const [vault, setVault] = useState<VaultState | null>(null);
@@ -45,18 +45,18 @@ export function FeeVaultWithdrawal() {
     try {
       const [balance, owner, recipient] = await Promise.all([
         publicClient.readContract({
-          address: ARC_TESTNET_CONTRACTS.usdc,
+          address: ARC_ACTIVE_CONTRACTS.usdc,
           abi: erc20Abi,
           functionName: "balanceOf",
-          args: [ARC_TESTNET_CONTRACTS.feeVault],
+          args: [ARC_ACTIVE_CONTRACTS.feeVault],
         }),
         publicClient.readContract({
-          address: ARC_TESTNET_CONTRACTS.feeVault,
+          address: ARC_ACTIVE_CONTRACTS.feeVault,
           abi: feeVaultAbi,
           functionName: "owner",
         }),
         publicClient.readContract({
-          address: ARC_TESTNET_CONTRACTS.feeVault,
+          address: ARC_ACTIVE_CONTRACTS.feeVault,
           abi: feeVaultAbi,
           functionName: "feeRecipient",
         }),
@@ -85,13 +85,13 @@ export function FeeVaultWithdrawal() {
     setError("");
     setHash(null);
     try {
-      if (chainId !== arcTestnet.id) await switchChainAsync({ chainId: arcTestnet.id });
+      if (chainId !== arcChain.id) await switchChainAsync({ chainId: arcChain.id });
       if (!authorized) throw new Error("The connected wallet is not the Vault owner or fee recipient.");
       const transactionHash = await writeContractAsync({
-        address: ARC_TESTNET_CONTRACTS.feeVault,
+        address: ARC_ACTIVE_CONTRACTS.feeVault,
         abi: feeVaultAbi,
         functionName: "withdraw",
-        args: [ARC_TESTNET_CONTRACTS.usdc, vault.balance],
+        args: [ARC_ACTIVE_CONTRACTS.usdc, vault.balance],
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash: transactionHash });
       if (receipt.status !== "success") throw new Error("The withdrawal reverted onchain.");

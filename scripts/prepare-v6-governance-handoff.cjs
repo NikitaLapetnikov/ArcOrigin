@@ -8,7 +8,9 @@ const ZERO_HASH = hre.ethers.ZeroHash;
 const candidatePath = process.env.V6_MANIFEST
   ? path.resolve(process.env.V6_MANIFEST)
   : path.join(__dirname, "..", "deployment", "arcTestnet-v6.local.json");
-const outputPath = path.join(__dirname, "..", "deployment", "v6-governance-handoff.local.json");
+const outputPath = process.env.V6_HANDOFF_OUTPUT
+  ? path.resolve(process.env.V6_HANDOFF_OUTPUT)
+  : path.join(__dirname, "..", "deployment", "v6-governance-handoff.local.json");
 const ownable2StepAbi = [
   "function owner() view returns (address)",
   "function pendingOwner() view returns (address)",
@@ -32,7 +34,12 @@ const safeAbi = [
 ];
 
 function requiredAddress(name) {
-  const value = process.env[name];
+  const aliases = {
+    GOVERNANCE_SAFE: "MAINNET_GOVERNANCE_SAFE",
+    TREASURY_SAFE: "MAINNET_TREASURY_SAFE",
+    GOVERNANCE_TIMELOCK: "MAINNET_GOVERNANCE_TIMELOCK",
+  };
+  const value = process.env[name] ?? process.env[aliases[name]];
   if (!value || !hre.ethers.isAddress(value) || value === ZERO_ADDRESS) {
     throw new Error(`${name} must be a non-zero address.`);
   }
@@ -70,12 +77,25 @@ async function main() {
   const governanceSafe = requiredAddress("GOVERNANCE_SAFE");
   const treasurySafe = requiredAddress("TREASURY_SAFE");
   const timelockAddress = requiredAddress("GOVERNANCE_TIMELOCK");
+  const network = await hre.ethers.provider.getNetwork();
+  if (Number(network.chainId) !== manifest.chainId) {
+    throw new Error(
+      `Manifest chain ID ${manifest.chainId} does not match connected chain ${network.chainId}.`,
+    );
+  }
   const execute = process.env.EXECUTE_V6_HANDOFF_PREPARE === "true";
   await requireTwoOfThreeSafe("GOVERNANCE_SAFE", governanceSafe);
   await requireTwoOfThreeSafe("TREASURY_SAFE", treasurySafe);
   await requireContract("GOVERNANCE_TIMELOCK", timelockAddress);
   if (!sameAddress(manifest.feeRecipient, treasurySafe)) {
     throw new Error("Candidate FeeVault recipient is not the reviewed Treasury Safe.");
+  }
+  if (
+    manifest.governance &&
+    (!sameAddress(manifest.governance.safe, governanceSafe) ||
+      !sameAddress(manifest.governance.timelock, timelockAddress))
+  ) {
+    throw new Error("Candidate governance addresses do not match the reviewed handoff inputs.");
   }
 
   const [signer] = await hre.ethers.getSigners();
@@ -180,6 +200,7 @@ async function main() {
   ]);
   const plan = {
     createdAt: new Date().toISOString(),
+    chainId: Number(network.chainId),
     candidateManifest: candidatePath,
     governanceSafe,
     treasurySafe,

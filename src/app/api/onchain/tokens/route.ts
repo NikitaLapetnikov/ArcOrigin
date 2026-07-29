@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return NextResponse.json({
       error: isTokenIndexRpcError(error)
-        ? "Arc Testnet RPC is temporarily rate-limited. Retry in a moment."
-        : "Factory launch data could not be indexed from Arc Testnet.",
+        ? "Arc RPC is temporarily rate-limited. Retry in a moment."
+        : "Factory launch data could not be indexed from the selected Arc network.",
     }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

@@ -1,7 +1,12 @@
 import "server-only";
 
 import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector, type Address, type Hash } from "viem";
-import { ARC_TESTNET_ACTIVE_FACTORY, ARC_TESTNET_FACTORY_INDEXES } from "@/lib/chains";
+import {
+  ARCORIGIN_NETWORK,
+  ARCORIGIN_PROTOCOL_VERSION,
+  ARC_ACTIVE_FACTORY,
+  ARC_ACTIVE_FACTORY_INDEXES,
+} from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
@@ -17,8 +22,8 @@ const MIN_REFRESH_INTERVAL_MS = 10_000;
 const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const MAX_TOKEN_CACHES = 50;
 const RPC_REQUEST_GAP_MS = 220;
-const ACTIVE_FACTORY_INDEXES = ARC_TESTNET_FACTORY_INDEXES.filter(
-  (factory) => factory.address.toLowerCase() === ARC_TESTNET_ACTIVE_FACTORY.toLowerCase(),
+const ACTIVE_FACTORY_INDEXES = ARC_ACTIVE_FACTORY_INDEXES.filter(
+  (factory) => factory.address.toLowerCase() === ARC_ACTIVE_FACTORY.toLowerCase(),
 );
 
 export type FactoryLaunch = {
@@ -74,7 +79,11 @@ type HolderState = {
   tokenCaches: Map<string, HolderCacheEntry>;
 };
 
-const publicClient = createArcPublicClient(process.env.ARC_TESTNET_RPC_URL);
+const publicClient = createArcPublicClient(
+  ARCORIGIN_NETWORK === "mainnet"
+    ? process.env.ARC_MAINNET_RPC_URL
+    : process.env.ARC_TESTNET_RPC_URL,
+);
 
 declare global {
   var __arcOriginHolderState: HolderState | undefined;
@@ -394,7 +403,7 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
 }
 
 function getTokenCache(tokenAddress: Address) {
-  const key = tokenAddress.toLowerCase();
+  const key = `${ARCORIGIN_NETWORK}:${tokenAddress.toLowerCase()}`;
   const existing = state.tokenCaches.get(key);
   if (existing) return existing;
   if (state.tokenCaches.size >= MAX_TOKEN_CACHES) {
@@ -408,7 +417,8 @@ function getTokenCache(tokenAddress: Address) {
 
 export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = false, hint?: HolderLaunchHint) {
   const cache = getTokenCache(tokenAddress);
-  const persistentKey = `arcorigin:v4:holders:${tokenAddress.toLowerCase()}`;
+  const persistentKey =
+    `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:holders:${tokenAddress.toLowerCase()}`;
   if (!cache.snapshot) {
     const persisted = await readPersistentSnapshot<HolderSnapshot>(persistentKey);
     if (persisted?.indexedBlock && Array.isArray(persisted.topHolders)) {

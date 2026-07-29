@@ -37,7 +37,13 @@ async function withRpcRetry(label, operation, attempts = 5) {
 async function main() {
   const manifestPath = path.join(__dirname, "..", "deployment", "arc-testnet.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  const expectedOwner = manifest.governance?.timelock ?? manifest.deployer;
+  const expectedOwner =
+    manifest.governance?.mode === "DIRECT_SAFE_2_OF_3"
+      ? manifest.governance?.safe
+      : manifest.governance?.timelock ?? manifest.deployer;
+  if (!expectedOwner) {
+    throw new Error("Deployment manifest does not define the expected protocol owner.");
+  }
   const legacyFactories = manifest.legacyFactories ?? [];
   if (!Array.isArray(legacyFactories)) {
     throw new Error("legacyFactories must be an array when present.");

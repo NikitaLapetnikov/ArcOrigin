@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import { ExternalLink } from "lucide-react";
 import {
   ARCORIGIN_PROTOCOL_VERSION,
-  ARC_TESTNET_ACTIVE_FACTORY_BLOCK,
-  ARC_TESTNET_CONTRACTS,
+  ARC_ACTIVE_FACTORY_BLOCK,
+  ARC_ACTIVE_CONTRACTS,
+  ARC_UNISWAP_V3,
   EXPLORER_URL,
-  arcTestnet,
+  arcChain,
 } from "@/lib/chains";
 
 export const metadata: Metadata = {
@@ -48,11 +49,12 @@ const navigation = [
 
 const protocolLabel = `V${ARCORIGIN_PROTOCOL_VERSION}`;
 const isV6 = ARCORIGIN_PROTOCOL_VERSION === 6;
+const usesUniswapMigration = isV6 && ARC_UNISWAP_V3 !== null;
 const contracts = [
-  [`${protocolLabel} Factory`, ARC_TESTNET_CONTRACTS.factory, `From block ${ARC_TESTNET_ACTIVE_FACTORY_BLOCK.toLocaleString()}`],
-  ["Fee Vault", ARC_TESTNET_CONTRACTS.feeVault, "Protocol fee accounting"],
-  ["Creator Registry", ARC_TESTNET_CONTRACTS.creatorRegistry, "Factory launch records"],
-  ["USDC", ARC_TESTNET_CONTRACTS.usdc, "Quote and settlement asset"],
+  [`${protocolLabel} Factory`, ARC_ACTIVE_CONTRACTS.factory, `From block ${ARC_ACTIVE_FACTORY_BLOCK.toLocaleString()}`],
+  ["Fee Vault", ARC_ACTIVE_CONTRACTS.feeVault, "Protocol fee accounting"],
+  ["Creator Registry", ARC_ACTIVE_CONTRACTS.creatorRegistry, "Factory launch records"],
+  ["USDC", ARC_ACTIVE_CONTRACTS.usdc, "Quote and settlement asset"],
 ] as const;
 
 const events = [
@@ -61,6 +63,12 @@ const events = [
   ["TokenSold", "Curve", "Seller, token input, USDC output, and fee."],
   ["FeeSplit", "Curve", "Creator and protocol portions of each trading fee."],
   ["CurveGraduated", "Curve", "Real USDC raised and tokens sold at graduation."],
+  ...(isV6
+    ? [["DexMigrationCompleted", "Curve", "Verified migration adapter, pool, and locked LP position."] as const]
+    : []),
+  ...(usesUniswapMigration
+    ? [["Swap", "Uniswap V3 pool", "Canonical post-migration trades and execution price."] as const]
+    : []),
   ["Transfer", "Token", "Canonical source for balances and holder distribution."],
 ] as const;
 
@@ -78,7 +86,7 @@ export default function DocsPage() {
             Protocol mechanics, launch parameters, trading flows, and integration reference.
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs font-medium text-slate-500">
-            <span className="inline-flex items-center gap-2 text-slate-300"><span className="size-1.5 rounded-full bg-cyan" />Arc Testnet</span>
+            <span className="inline-flex items-center gap-2 text-slate-300"><span className="size-1.5 rounded-full bg-cyan" />{arcChain.name}</span>
             <span aria-hidden="true" className="text-slate-700">/</span>
             <span>Protocol {protocolLabel}</span>
           </div>
@@ -110,17 +118,17 @@ export default function DocsPage() {
           </div>)}
         </nav>
         <div className="m-3 rounded-xl border border-line bg-black/20 p-3">
-          <p className="text-xs font-medium text-white">Arc Testnet</p>
-          <p className="mt-1 font-mono text-[10px] text-slate-500">Chain ID {arcTestnet.id}</p>
+          <p className="text-xs font-medium text-white">{arcChain.name}</p>
+          <p className="mt-1 font-mono text-[10px] text-slate-500">Chain ID {arcChain.id}</p>
         </div>
       </aside>
 
       <main className="min-w-0 overflow-hidden rounded-2xl border border-line bg-panel">
         <DocSection id="overview" eyebrow="Protocol" title="Overview">
-          <p>ArcOrigin is a non-custodial token launchpad and trading terminal on Arc Testnet. Every launch creates a fixed-supply ERC-20 token and its own USDC bonding curve. Wallets interact directly with the deployed contracts.</p>
+          <p>ArcOrigin is a non-custodial token launchpad and trading terminal on {arcChain.name}. Every launch creates a fixed-supply ERC-20 token and its own USDC bonding curve. Wallets interact directly with the deployed contracts.</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <MiniCard title="Custody" value="Your wallet" body="ArcOrigin does not hold user wallets or trade balances." />
-            <MiniCard title="Settlement" value="USDC" body="Launches, trades, fees, and curve reserves settle on Arc Testnet." />
+            <MiniCard title="Settlement" value="USDC" body={`Launches, trades, fees, and curve reserves settle on ${arcChain.name}.`} />
           </div>
           <Callout title="Key facts">
             <ul className="grid gap-2.5">
@@ -131,7 +139,9 @@ export default function DocsPage() {
           </Callout>
           <Callout title={`${protocolLabel} scope`} tone="neutral">
             {isV6
-              ? "ArcOrigin V6 uses isolated per-token curves, pull-based creator fee claims, transaction deadlines, and narrowly scoped emergency controls. DEX migration remains disabled."
+              ? usesUniswapMigration
+                ? "ArcOrigin V6 uses isolated per-token curves, pull-based creator fee claims, transaction deadlines, and narrowly scoped emergency controls. Graduated markets can use the deployment's immutable, verified Uniswap V3 migration path."
+                : "ArcOrigin V6 uses isolated per-token curves, pull-based creator fee claims, transaction deadlines, and narrowly scoped emergency controls. This deployment keeps graduated trading inside each curve."
               : "ArcOrigin V5 has market buys and sells on a dedicated curve plus a disabled-by-default DEX migration adapter. It does not currently provide limit orders, chat, or community takeovers."}
           </Callout>
         </DocSection>
@@ -156,7 +166,12 @@ export default function DocsPage() {
         </DocSection>
 
         <DocSection id="trading" eyebrow="Execution" title="Trading">
-          <p>Each token trades only against USDC in its dedicated curve. Buy and sell quotes are read from the contract before the wallet transaction is submitted.</p>
+          <p>
+            Each token trades against USDC. Before migration, quotes and trades use its dedicated curve.
+            {usesUniswapMigration
+              ? " After a verified migration, the interface automatically uses the canonical Arc Uniswap V3 pool."
+              : ""}
+          </p>
           <DefinitionList items={[
             ["You receive", "The current contract quote after the 1% trading fee."],
             ["Minimum received", "The lowest output accepted onchain after applying your slippage setting."],
@@ -185,18 +200,25 @@ x · y          = constant before each trade`}</CodeBlock>
         </DocSection>
 
         <DocSection id="graduation" eyebrow="Lifecycle" title="Graduation">
-          <p>Graduation occurs when the curve reaches 10,000 real USDC. There is no external DEX migration. Trading continues in the same curve contract.</p>
+          <p>
+            Graduation occurs when the curve reaches 10,000 real USDC. It first creates permanent, two-sided liquidity inside the curve.
+            {usesUniswapMigration
+              ? " If that market's snapshotted migration path is enabled, a later verified transaction can move those reserves into its canonical Arc Uniswap V3 pool."
+              : " Trading then continues in the same curve contract."}
+          </p>
           <StepList items={[
             ["Threshold", "The final pre-graduation buy is capped so net real reserves cannot exceed 10,000 USDC."],
             ["Rebalance", "Virtual USDC is removed and the remaining token reserve is resized at the same spot price."],
             ["Lock", "Surplus curve inventory is sent irreversibly to the dead address."],
-            ["Continue", "Real USDC and price-matched tokens remain in the curve as two-sided liquidity."],
+            ["Continue", usesUniswapMigration
+              ? "The internal AMM remains active unless a verified migration atomically creates and permanently locks the canonical Uniswap V3 position."
+              : "Real USDC and price-matched tokens remain in the curve as two-sided liquidity."],
           ]} />
           <Callout title="What graduation does not mean" tone="neutral">
             Graduation is a mechanical liquidity milestone—not an endorsement, safety rating, or guarantee of future volume.
           </Callout>
           <Callout title="DEX migration readiness" tone="neutral">
-            Every {protocolLabel} curve snapshots its migration configuration at launch. Arc Testnet currently retains the permanent internal AMM, so existing markets continue trading in their curve contracts.
+            Every {protocolLabel} curve snapshots its migration configuration at launch. A migration can use only that immutable adapter, locker, and verifier tuple. Any failed verification reverts atomically, leaves reserves in the curve, and preserves internal trading.
           </Callout>
         </DocSection>
 
@@ -215,7 +237,9 @@ x · y          = constant before each trade`}</CodeBlock>
           </div>
           <p className="text-sm text-slate-500">
             {isV6
-              ? "The creator share accrues outside trading reserves and is claimed by the creator from their profile. The protocol share and launch fee enter the Fee Vault. An optional developer buy pays the standard trading fee."
+              ? usesUniswapMigration
+                ? "Curve fees accrue 70% to the creator and 30% to the protocol. After migration, the permanent 1% Uniswap V3 position is collected permissionlessly and its fees are split by the immutable locker at the same 70/30 ratio."
+                : "The creator share accrues outside trading reserves and is claimed by the creator from their profile. The protocol share and launch fee enter the Fee Vault. An optional developer buy pays the standard trading fee."
               : "The creator share is sent directly during each trade; there is no separate claim action. The protocol share and launch fee enter the Fee Vault. An optional developer buy pays the standard trading fee."}
           </p>
           <Callout title="Configuration" tone="neutral">
@@ -225,12 +249,12 @@ x · y          = constant before each trade`}</CodeBlock>
 
         <DocSection id="network" eyebrow="Integration" title="Network">
           <DefinitionList items={[
-            ["Network", "Arc Testnet"],
-            ["Chain ID", String(arcTestnet.id)],
+            ["Network", arcChain.name],
+            ["Chain ID", String(arcChain.id)],
             ["Quote asset", "USDC"],
-            ["Public RPC", arcTestnet.rpcUrls.default.http[0]],
+            ["Public RPC", arcChain.rpcUrls.default.http[0]],
             ["Explorer", EXPLORER_URL],
-            [`${protocolLabel} start block`, ARC_TESTNET_ACTIVE_FACTORY_BLOCK.toLocaleString()],
+            [`${protocolLabel} start block`, ARC_ACTIVE_FACTORY_BLOCK.toLocaleString()],
           ]} mono />
         </DocSection>
 
@@ -266,8 +290,15 @@ x · y          = constant before each trade`}</CodeBlock>
           <DefinitionList items={[
             ["Discovery", `Read TokenLaunched from the ${protocolLabel} Factory beginning at the published start block.`],
             ["Token ↔ curve", "Read getTokenInfo(token) on the Factory."],
-            ["Buy quote", "Call quoteBuy(usdcAmount) on the token curve."],
-            ["Sell quote", "Call quoteSell(tokenAmount) on the token curve."],
+            ["Venue", usesUniswapMigration
+              ? "Read isMigrated() and migratedPool() on the curve; verify the pool against the official V3 Factory."
+              : "The configured deployment executes trades on the token curve."],
+            ["Buy quote", usesUniswapMigration
+              ? "Use quoteBuy(usdcAmount) before migration, or QuoterV2 exactInputSingle after migration."
+              : "Call quoteBuy(usdcAmount) on the token curve."],
+            ["Sell quote", usesUniswapMigration
+              ? "Use quoteSell(tokenAmount) before migration, or QuoterV2 exactInputSingle after migration."
+              : "Call quoteSell(tokenAmount) on the token curve."],
             ["USDC reserve", "Read realLiquidity(); do not include virtual USDC."],
             ["Graduation", "Read isGraduated() and getCurveProgress()."],
             ["Holders", "Replay ERC-20 Transfer events and reconcile balances."],
@@ -306,7 +337,7 @@ x · y          = constant before each trade`}</CodeBlock>
         <DocSection id="governance" eyebrow="Administration" title="Governance">
           <p>{isV6
             ? "V6 administration is transparent onchain, with a published 2-of-3 Safe and 48-hour Timelock governance path."
-            : "The current Arc Testnet deployment still uses one deployment wallet for Factory, Registry, and Fee Vault administration. This is disclosed testnet centralization and is not the intended mainnet configuration."}</p>
+            : `The current ${arcChain.name} deployment still uses one deployment wallet for Factory, Registry, and Fee Vault administration. This ownership layout must not be used for public mainnet activation.`}</p>
           <StepList items={[
             ["Governance Safe", "Three independent signers with a 2-of-3 confirmation threshold."],
             ["Timelock", "The Safe schedules exact owner operations with a minimum 48-hour delay."],
@@ -327,7 +358,7 @@ x · y          = constant before each trade`}</CodeBlock>
         </DocSection>
 
         <DocSection id="risks" eyebrow="Read before trading" title="Risks">
-          <p>ArcOrigin is live on Arc Testnet. User-created tokens can be volatile, illiquid, duplicated, or lose all value.</p>
+          <p>ArcOrigin is deployed on {arcChain.name}. User-created tokens can be volatile, illiquid, duplicated, or lose all value.</p>
           <Callout title="Before signing" tone="warn">
             <ul className="grid gap-2.5">
               <li>Verify the token and curve contract addresses.</li>
@@ -360,7 +391,9 @@ x · y          = constant before each trade`}</CodeBlock>
 
         <DocSection id="faq" eyebrow="Reference" title="FAQ" last>
           <FaqItem question="Where does a token migrate after graduation?">
-            Current Arc Testnet curves migrate nowhere. {protocolLabel} removes the virtual reserve, locks surplus inventory, and continues inside the same curve. Future mainnet curves may snapshot an audited Uniswap or Aerodrome adapter at launch.
+            {usesUniswapMigration
+              ? "Only to the canonical 1% Arc Uniswap V3 pool verified by the immutable adapter and verifier. The full-range LP NFT is held permanently by the no-admin ArcOrigin locker."
+              : `This ${arcChain.name} deployment does not configure an external migration path. ${protocolLabel} removes the virtual reserve, locks surplus inventory, and continues inside the same curve.`}
           </FaqItem>
           <FaqItem question="Who receives the 10 USDC launch fee?">
             The Fee Vault receives it. The configured vault recipient can withdraw protocol funds; token creators cannot withdraw the launch fee.
@@ -372,7 +405,7 @@ x · y          = constant before each trade`}</CodeBlock>
             Candles summarize confirmed historical trades. A quote reads the current curve state and can change with every newly confirmed trade.
           </FaqItem>
           <FaqItem question="Is ArcOrigin audited?">
-            An internal engineering review is published, but {protocolLabel} has not completed an independent smart-contract audit and should be treated as testnet software.
+            Internal engineering review is not a substitute for an independent smart-contract audit. Verify the active deployment, governance, and published release evidence before interacting.
           </FaqItem>
         </DocSection>
       </main>

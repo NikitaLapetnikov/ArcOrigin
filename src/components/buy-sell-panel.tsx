@@ -18,16 +18,34 @@ import {
   useWalletClient,
   useWriteContract,
 } from "wagmi";
-import { ARC_TESTNET_CONTRACTS, arcTestnet, usesV6Transactions } from "@/lib/chains";
+import {
+  ARC_ACTIVE_CONTRACTS,
+  ARC_UNISWAP_V3,
+  arcChain,
+  usesV6Transactions,
+} from "@/lib/chains";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
-import { bondingCurveAbi, erc20Abi } from "@/lib/contracts";
+import {
+  bondingCurveAbi,
+  erc20Abi,
+  uniswapV3PoolAbi,
+  uniswapV3RouterAbi,
+} from "@/lib/contracts";
 import type { TokenData } from "@/lib/types";
 import { tickerLabel } from "@/lib/utils";
 import { ArcscanLink, Badge, Button } from "./ui";
 
 type Side = "Buy" | "Sell";
 type Priority = "Low" | "Medium" | "High";
-type LiveQuote = { input: bigint; output: bigint; fee: bigint; minimumOutput: bigint };
+type LiveQuote = {
+  input: bigint;
+  output: bigint;
+  fee: bigint;
+  minimumOutput: bigint;
+  venue: "curve" | "uniswap-v3";
+  spender: Address;
+  pool?: Address;
+};
 type TransactionStatus = "idle" | "quoting" | "preparing" | "approving" | "trading";
 type WalletBalances = { usdc: bigint; token: bigint };
 type TransactionFeeOverrides = {
@@ -126,7 +144,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   const balanceRequestRef = useRef(0);
   const quoteRequestRef = useRef(0);
   const { address, isConnected, chainId } = useAccount();
-  const publicClient = usePublicClient({ chainId: arcTestnet.id });
+  const publicClient = usePublicClient({ chainId: arcChain.id });
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
@@ -142,14 +160,14 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     && slippage <= MAX_SLIPPAGE_PERCENT;
   const refreshBalances = useCallback(async () => {
     const requestId = ++balanceRequestRef.current;
-    if (!address || chainId !== arcTestnet.id) {
+    if (!address || chainId !== arcChain.id) {
       setBalances(null);
       setBalanceLoading(false);
       setBalanceError(false);
       return;
     }
     const account = address;
-    const walletReadClient = walletClient?.chain.id === arcTestnet.id
+    const walletReadClient = walletClient?.chain.id === arcChain.id
       ? walletClient.extend(publicActions) as unknown as PublicClient
       : null;
     const clients = [walletReadClient, publicClient].filter((client): client is PublicClient => Boolean(client));
@@ -171,9 +189,9 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
             lastError = error;
           }
         }
-        throw lastError ?? new Error("No Arc Testnet balance client is available.");
+        throw lastError ?? new Error(`No ${arcChain.name} balance client is available.`);
       }
-      const usdc = await readBalance(ARC_TESTNET_CONTRACTS.usdc);
+      const usdc = await readBalance(ARC_ACTIVE_CONTRACTS.usdc);
       await wait(180);
       const tokenBalance = await readBalance(token.address as Address);
       if (balanceRequestRef.current === requestId) setBalances({ usdc, token: tokenBalance });
@@ -212,12 +230,12 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
 
   async function getClient() {
     if (!isConnected || !address) throw new Error("Connect a wallet before requesting an onchain quote.");
-    if (chainId !== arcTestnet.id) {
-      await switchChainAsync({ chainId: arcTestnet.id });
-      throw new Error("Arc Testnet is now selected. Request the quote again.");
+    if (chainId !== arcChain.id) {
+      await switchChainAsync({ chainId: arcChain.id });
+      throw new Error(`${arcChain.name} is now selected. Request the quote again.`);
     }
     const client = walletClient?.extend(publicActions) ?? publicClient;
-    if (!client) throw new Error("No Arc Testnet client is available.");
+    if (!client) throw new Error(`No ${arcChain.name} client is available.`);
     return client;
   }
 
@@ -230,8 +248,26 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       `/api/onchain/quote?token=${encodeURIComponent(token.address)}&curve=${encodeURIComponent(curveAddress)}&side=${side}&amount=${input.toString()}`,
       { cache: "no-store", signal: AbortSignal.timeout(10_000) },
     );
-    const result = await response.json() as { output?: string; fee?: string; error?: string };
-    if (!response.ok || !result.output || result.fee === undefined) {
+    const result = await response.json() as {
+      output?: string;
+      fee?: string;
+      venue?: "curve" | "uniswap-v3";
+      spender?: string;
+      pool?: string;
+      error?: string;
+    };
+    if (
+      !response.ok ||
+      !result.output ||
+      result.fee === undefined ||
+      !result.venue ||
+      !result.spender ||
+      !/^0x[0-9a-fA-F]{40}$/.test(result.spender) ||
+      (result.venue === "uniswap-v3" && (
+        !result.pool ||
+        !/^0x[0-9a-fA-F]{40}$/.test(result.pool)
+      ))
+    ) {
       throw new Error(result.error || "Unable to read an onchain quote.");
     }
     const output = BigInt(result.output);
@@ -255,6 +291,9 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       output,
       fee,
       minimumOutput: output * (10_000n - slippageBps) / 10_000n,
+      venue: result.venue,
+      spender: result.spender as Address,
+      pool: result.pool as Address | undefined,
     };
   }, [
     amount,
@@ -315,12 +354,12 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       const client = await getClient();
       const quote = await readQuote();
       setStatus("preparing");
-      const approvalToken = (side === "Buy" ? ARC_TESTNET_CONTRACTS.usdc : token.address) as Address;
+      const approvalToken = (side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token.address) as Address;
       const allowance = await withRpcRetry(() => client.readContract({
         address: approvalToken,
         abi: erc20Abi,
         functionName: "allowance",
-        args: [address, curveAddress],
+        args: [address, quote.spender],
       }));
       if (allowance < quote.input) {
         setStatus("approving");
@@ -329,7 +368,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
           address: approvalToken,
           abi: erc20Abi,
           functionName: "approve",
-          args: [curveAddress, quote.input],
+          args: [quote.spender, quote.input],
           ...approvalFeeOverrides,
         });
         const approvalReceipt = await withRpcRetry(() => client.waitForTransactionReceipt({ hash: approvalHash }));
@@ -340,8 +379,31 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       const tradeFeeOverrides = await estimatePriorityFees(client as PublicClient, priority);
       const deadline = BigInt(Math.floor(Date.now() / 1_000) + 20 * 60);
       const v6Transaction = usesV6Transactions(token.factoryAddress);
-      const tradeHash = side === "Buy"
-        ? await writeContractAsync(v6Transaction ? {
+      let tradeHash: Hash;
+      if (quote.venue === "uniswap-v3") {
+        if (!ARC_UNISWAP_V3 || !quote.pool) {
+          throw new Error("The verified Uniswap route is unavailable.");
+        }
+        tradeHash = await writeContractAsync({
+          address: ARC_UNISWAP_V3.router,
+          abi: uniswapV3RouterAbi,
+          functionName: "exactInputSingle",
+          args: [{
+            tokenIn: approvalToken,
+            tokenOut: (side === "Buy"
+              ? token.address
+              : ARC_ACTIVE_CONTRACTS.usdc) as Address,
+            fee: ARC_UNISWAP_V3.fee,
+            recipient: address,
+            amountIn: quote.input,
+            amountOutMinimum: quote.minimumOutput,
+            sqrtPriceLimitX96: 0n,
+          }],
+          ...tradeFeeOverrides,
+        });
+      } else {
+        tradeHash = side === "Buy"
+          ? await writeContractAsync(v6Transaction ? {
             address: curveAddress,
             abi: bondingCurveAbi,
             functionName: "buy",
@@ -367,6 +429,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
             args: [quote.input, quote.minimumOutput],
             ...tradeFeeOverrides,
           });
+      }
       setTransactionHash(tradeHash);
       const receipt = await withRpcRetry(() => client.waitForTransactionReceipt({ hash: tradeHash }));
       if (receipt.status !== "success") throw new Error(`${side} transaction reverted onchain.`);
@@ -377,9 +440,32 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
         fee: bigint;
       } | null = null;
       for (const log of receipt.logs) {
-        if (log.address.toLowerCase() !== curveAddress.toLowerCase()) continue;
+        const expectedEmitter = quote.venue === "uniswap-v3"
+          ? quote.pool
+          : curveAddress;
+        if (!expectedEmitter || log.address.toLowerCase() !== expectedEmitter.toLowerCase()) {
+          continue;
+        }
         try {
-          if (side === "Buy") {
+          if (quote.venue === "uniswap-v3") {
+            const event = decodeEventLog({
+              abi: uniswapV3PoolAbi,
+              eventName: "Swap",
+              data: log.data,
+              topics: log.topics,
+            });
+            const tokenIs0 =
+              token.address.toLowerCase() <
+              ARC_ACTIVE_CONTRACTS.usdc.toLowerCase();
+            const tokenDelta = tokenIs0 ? event.args.amount0 : event.args.amount1;
+            const usdcDelta = tokenIs0 ? event.args.amount1 : event.args.amount0;
+            confirmedTrade = {
+              wallet: address,
+              usdc: usdcDelta < 0n ? -usdcDelta : usdcDelta,
+              tokens: tokenDelta < 0n ? -tokenDelta : tokenDelta,
+              fee: quote.fee,
+            };
+          } else if (side === "Buy") {
             const event = decodeEventLog({
               abi: bondingCurveAbi,
               eventName: "TokenBought",
@@ -423,7 +509,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
         // The confirmed block number remains authoritative if timestamp lookup is rate-limited.
       }
       setTransactionHash(tradeHash);
-      setNotice(`${side} confirmed on Arc Testnet.`);
+      setNotice(`${side} confirmed on ${arcChain.name}.`);
       setNoticeIsError(false);
       window.dispatchEvent(new CustomEvent("arcforge:trade-confirmed", {
         detail: {
@@ -449,7 +535,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
   }
 
   const actionLabel = status === "quoting"
-    ? "Reading curve…"
+    ? "Reading quote…"
     : status === "preparing"
       ? "Preparing transaction…"
       : status === "approving"
@@ -462,8 +548,8 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
 
   const balanceLabel = !address
     ? "Connect wallet"
-    : chainId !== arcTestnet.id
-      ? "Switch to Arc Testnet"
+    : chainId !== arcChain.id
+      ? `Switch to ${arcChain.name}`
       : balanceLoading
         ? "Reading balance…"
         : activeBalance === undefined

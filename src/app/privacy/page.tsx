@@ -21,7 +21,7 @@ const sections: LegalSection[] = [
   },
   {
     title: "Public blockchain and IPFS",
-    content: <><p>Arc Testnet and IPFS are public systems. Wallet addresses, transactions, token metadata, and uploaded images may remain public indefinitely and can be copied by independent services.</p><p>ArcOrigin cannot edit, reverse, hide, or delete records confirmed on a public blockchain or content retained by distributed storage providers.</p></>,
+    content: <><p>Arc networks and IPFS are public systems. Wallet addresses, transactions, token metadata, and uploaded images may remain public indefinitely and can be copied by independent services.</p><p>ArcOrigin cannot edit, reverse, hide, or delete records confirmed on a public blockchain or content retained by distributed storage providers.</p></>,
   },
   {
     title: "Service providers",

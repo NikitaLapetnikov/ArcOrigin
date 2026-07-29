@@ -16,9 +16,9 @@ import type SafeAppsSDK from "@safe-global/safe-apps-sdk";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import {
   ARCORIGIN_PROTOCOL_VERSION,
-  ARC_TESTNET_CONTRACTS,
+  ARC_ACTIVE_CONTRACTS,
   EXPLORER_URL,
-  arcTestnet,
+  arcChain,
 } from "@/lib/chains";
 import {
   DEFAULT_GRADUATION_THRESHOLD,
@@ -182,7 +182,7 @@ export function LaunchForm() {
   const previewUrl = useRef("");
   const launchLockRef = useRef(false);
   const { address, isConnected, chainId, connector } = useAccount();
-  const publicClient = usePublicClient({ chainId: arcTestnet.id });
+  const publicClient = usePublicClient({ chainId: arcChain.id });
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
@@ -202,17 +202,17 @@ export function LaunchForm() {
     let cancelled = false;
     void Promise.all([
       withRpcRetry(() => publicClient.readContract({
-        address: ARC_TESTNET_CONTRACTS.factory,
+        address: ARC_ACTIVE_CONTRACTS.factory,
         abi: factoryAbi,
         functionName: "launchFee",
       }), 2),
       withRpcRetry(() => publicClient.readContract({
-        address: ARC_TESTNET_CONTRACTS.factory,
+        address: ARC_ACTIVE_CONTRACTS.factory,
         abi: factoryAbi,
         functionName: "buyFeeBps",
       }), 2),
       withRpcRetry(() => publicClient.readContract({
-        address: ARC_TESTNET_CONTRACTS.factory,
+        address: ARC_ACTIVE_CONTRACTS.factory,
         abi: factoryAbi,
         functionName: "sellFeeBps",
       }), 2),
@@ -355,7 +355,7 @@ export function LaunchForm() {
       return;
     }
     if (!publicClient && !walletClient) {
-      setError("Arc Testnet RPC is unavailable. Try again in a moment.");
+      setError(`${arcChain.name} RPC is unavailable. Try again in a moment.`);
       return;
     }
 
@@ -364,20 +364,20 @@ export function LaunchForm() {
     setError("");
     setStatus("checking");
     try {
-      if (chainId !== arcTestnet.id) {
-        await switchChainAsync({ chainId: arcTestnet.id });
-        throw new Error("Arc Testnet is now selected. Review and launch again.");
+      if (chainId !== arcChain.id) {
+        await switchChainAsync({ chainId: arcChain.id });
+        throw new Error(`${arcChain.name} is now selected. Review and launch again.`);
       }
       const transactionClient = walletClient?.extend(publicActions) ?? publicClient;
-      if (!transactionClient) throw new Error("No Arc Testnet client is available.");
+      if (!transactionClient) throw new Error(`No ${arcChain.name} client is available.`);
       const balance = await withRpcRetry(() => transactionClient.readContract({
-        address: ARC_TESTNET_CONTRACTS.usdc,
+        address: ARC_ACTIVE_CONTRACTS.usdc,
         abi: erc20Abi,
         functionName: "balanceOf",
         args: [address],
       }));
       const currentLaunchFee = await withRpcRetry(() => transactionClient.readContract({
-        address: ARC_TESTNET_CONTRACTS.factory,
+        address: ARC_ACTIVE_CONTRACTS.factory,
         abi: factoryAbi,
         functionName: "launchFee",
       }));
@@ -395,10 +395,10 @@ export function LaunchForm() {
 
       const metadata = await ensureMetadata(address);
       const allowance = await withRpcRetry(() => transactionClient.readContract({
-        address: ARC_TESTNET_CONTRACTS.usdc,
+        address: ARC_ACTIVE_CONTRACTS.usdc,
         abi: erc20Abi,
         functionName: "allowance",
-        args: [address, ARC_TESTNET_CONTRACTS.factory],
+        args: [address, ARC_ACTIVE_CONTRACTS.factory],
       }));
       const launchParameters = {
           name: form.name.trim(),
@@ -414,17 +414,17 @@ export function LaunchForm() {
         const transactions = [];
         if (allowance < currentLaunchFee) {
           transactions.push({
-            to: ARC_TESTNET_CONTRACTS.usdc,
+            to: ARC_ACTIVE_CONTRACTS.usdc,
             value: "0",
             data: encodeFunctionData({
               abi: erc20Abi,
               functionName: "approve",
-              args: [ARC_TESTNET_CONTRACTS.factory, currentLaunchFee],
+              args: [ARC_ACTIVE_CONTRACTS.factory, currentLaunchFee],
             }),
           });
         }
         transactions.push({
-          to: ARC_TESTNET_CONTRACTS.factory,
+          to: ARC_ACTIVE_CONTRACTS.factory,
           value: "0",
           data: encodeFunctionData({
             abi: factoryAbi,
@@ -439,17 +439,17 @@ export function LaunchForm() {
         if (allowance < currentLaunchFee) {
           setStatus("approving");
           const approvalHash = await writeContractAsync({
-            address: ARC_TESTNET_CONTRACTS.usdc,
+            address: ARC_ACTIVE_CONTRACTS.usdc,
             abi: erc20Abi,
             functionName: "approve",
-            args: [ARC_TESTNET_CONTRACTS.factory, currentLaunchFee],
+            args: [ARC_ACTIVE_CONTRACTS.factory, currentLaunchFee],
           });
           const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: approvalHash }));
           if (approvalReceipt.status !== "success") throw new Error("USDC approval reverted onchain.");
         }
         setStatus("launching");
         launchHash = await writeContractAsync({
-          address: ARC_TESTNET_CONTRACTS.factory,
+          address: ARC_ACTIVE_CONTRACTS.factory,
           abi: factoryAbi,
           functionName: "launchToken",
           args: [launchParameters],
@@ -460,7 +460,7 @@ export function LaunchForm() {
 
       let launched: LaunchResult | null = null;
       for (const log of receipt.logs) {
-        if (log.address.toLowerCase() !== ARC_TESTNET_CONTRACTS.factory.toLowerCase()) continue;
+        if (log.address.toLowerCase() !== ARC_ACTIVE_CONTRACTS.factory.toLowerCase()) continue;
         try {
           const event = decodeEventLog({ abi: factoryAbi, eventName: "TokenLaunched", data: log.data, topics: log.topics });
           launched = { token: event.args.token, curve: event.args.curve, hash: launchHash, metadataURI: metadata.metadataURI, metadataURL: metadata.gatewayURL };
@@ -473,7 +473,7 @@ export function LaunchForm() {
       if (developerBuy > 0n) {
         try {
           const curveAllowance = await withRpcRetry(() => transactionClient.readContract({
-            address: ARC_TESTNET_CONTRACTS.usdc,
+            address: ARC_ACTIVE_CONTRACTS.usdc,
             abi: erc20Abi,
             functionName: "allowance",
             args: [address, launched!.curve],
@@ -481,7 +481,7 @@ export function LaunchForm() {
           if (curveAllowance < developerBuy) {
             setStatus("initial_buy_approving");
             const approvalHash = await writeContractAsync({
-              address: ARC_TESTNET_CONTRACTS.usdc,
+              address: ARC_ACTIVE_CONTRACTS.usdc,
               abi: erc20Abi,
               functionName: "approve",
               args: [launched.curve, developerBuy],
@@ -523,7 +523,10 @@ export function LaunchForm() {
         }
       }
       setResult(launched);
-      window.localStorage.setItem("arcorigin:5042002:last-launch-confirmed-at", String(Date.now()));
+      window.localStorage.setItem(
+        `arcorigin:${arcChain.id}:last-launch-confirmed-at`,
+        String(Date.now()),
+      );
       window.dispatchEvent(new CustomEvent("arcforge:launch-confirmed", {
         detail: { tokenAddress: launched.token, curveAddress: launched.curve, transactionHash: launchHash },
       }));
@@ -553,7 +556,7 @@ export function LaunchForm() {
       <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-cyan/10 text-cyan"><Rocket /></div>
       <p className="eyebrow mt-6">Onchain launch confirmed</p>
       <h2 className="mt-3 text-3xl font-semibold text-white">{form.name} · {tickerLabel(form.ticker.toUpperCase())}</h2>
-      <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">Your token metadata is pinned to public IPFS and the fixed-supply token with its USDC curve is deployed on Arc Testnet.</p>
+      <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">Your token metadata is pinned to public IPFS and the fixed-supply token with its USDC curve is deployed on {arcChain.name}.</p>
       <dl className="mx-auto mt-6 grid max-w-lg gap-3 rounded-xl border border-line bg-black/25 p-4 text-left text-xs">
         <ResultRow label="Token" address={result.token} />
         <ResultRow label="Bonding curve" address={result.curve} />
@@ -662,7 +665,7 @@ export function LaunchForm() {
             <Row label="Trading fee" value={tradingFeeLabel} />
             <Row label="Graduation" value={`${formatDisplayNumber(DEFAULT_GRADUATION_THRESHOLD)} USDC`} />
             <Row label="Developer buy" value={`${formatDisplayNumber(developerBuyAmount)} USDC`} />
-            <Row label="Network" value="Arc Testnet" />
+            <Row label="Network" value={arcChain.name} />
           </dl>
         </div>
       </div>

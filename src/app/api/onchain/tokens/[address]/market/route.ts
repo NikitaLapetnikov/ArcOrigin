@@ -27,8 +27,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
     });
     return NextResponse.json({
       error: isMarketRpcError(error)
-        ? "Arc Testnet RPC is temporarily rate-limited. Retry in a moment."
-        : "Market data could not be indexed from Arc Testnet.",
+        ? "Arc RPC is temporarily rate-limited. Retry in a moment."
+        : "Market data could not be indexed from the selected Arc network.",
     }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Copy, Download, Image as ImageIcon, X } from "lucide-react";
 import { useAccount } from "wagmi";
+import { arcChain } from "@/lib/chains";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import type { TokenData } from "@/lib/types";
 import { money, shortAddress, tickerLabel } from "@/lib/utils";
@@ -164,7 +165,7 @@ function drawShareCard(
   context.fillText("ARCORIGIN", 84, 93);
   context.fillStyle = "#84919f";
   context.font = "500 17px ui-monospace, monospace";
-  context.fillText("ARC TESTNET · VERIFIED ONCHAIN", 84, 123);
+  context.fillText(`${arcChain.name.toUpperCase()} · VERIFIED ONCHAIN`, 84, 123);
 
   drawTokenAvatar(context, token, tokenImage, accent, accentRgb);
 
@@ -288,7 +289,7 @@ export function PnlShareCard({ token, snapshot }: { token: TokenData; snapshot: 
             <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.08)_1px,transparent_1px)] [background-size:32px_32px]" />
             <div className="relative flex h-full flex-col">
               <div className="flex items-start justify-between">
-                <div><p className="font-mono text-[10px] font-bold tracking-[.2em] text-cyan sm:text-sm">ARCORIGIN</p><p className="mt-1 font-mono text-[7px] text-slate-500 sm:text-[9px]">ARC TESTNET · VERIFIED ONCHAIN</p></div>
+                <div><p className="font-mono text-[10px] font-bold tracking-[.2em] text-cyan sm:text-sm">ARCORIGIN</p><p className="mt-1 font-mono text-[7px] text-slate-500 sm:text-[9px]">{arcChain.name.toUpperCase()} · VERIFIED ONCHAIN</p></div>
                 <p className="font-mono text-[8px] text-slate-500 sm:text-[10px]">{address ? shortAddress(address) : "SINCE LAUNCH"}</p>
               </div>
               <div className="mt-auto">
