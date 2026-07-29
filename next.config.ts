@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 
 const isDevelopment = process.env.NODE_ENV === "development";
+const arcConnectSources = [
+  "https://rpc.drpc.testnet.arc.network",
+  "https://rpc.blockdaemon.testnet.arc.network",
+  "https://rpc.quicknode.testnet.arc.network",
+  "https://rpc.testnet.arc.network",
+  "https://testnet.arcscan.app",
+  "https://rpc.blockdaemon.mainnet.arc.io",
+  "https://arc-mainnet.cloud.blockscout.com",
+];
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -11,7 +20,7 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://ipfs.io https://gateway.pinata.cloud",
   "font-src 'self' data:",
-  `connect-src 'self' https://rpc.drpc.testnet.arc.network https://rpc.blockdaemon.testnet.arc.network https://rpc.quicknode.testnet.arc.network https://rpc.testnet.arc.network https://testnet.arcscan.app https://ipfs.io https://gateway.pinata.cloud${isDevelopment ? " ws:" : ""}`,
+  `connect-src 'self' ${arcConnectSources.join(" ")} https://ipfs.io https://gateway.pinata.cloud${isDevelopment ? " ws:" : ""}`,
   "worker-src 'self' blob:",
   ...(!isDevelopment ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
