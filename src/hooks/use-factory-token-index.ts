@@ -253,7 +253,12 @@ async function loadFactoryTokens(
   includeMarketData: boolean,
   forceRefresh: boolean,
   onIndexLoaded?: (tokens: TokenData[], stale: boolean) => void,
-  onMarketLoaded?: (tokens: TokenData[], marketDataError: unknown, stale: boolean) => void,
+  onMarketLoaded?: (
+    tokens: TokenData[],
+    marketDataError: unknown,
+    stale: boolean,
+    failedMarketAddresses: ReadonlySet<string>,
+  ) => void,
 ) {
   const indexPath = `/api/onchain/tokens${forceRefresh ? "?refresh=1" : ""}`;
   let indexResult: { snapshot: TokenIndexSnapshot; stale: boolean };
@@ -280,10 +285,18 @@ async function loadFactoryTokens(
       };
     }
   }
-  if (!includeMarketData) return { tokens: indexedTokens, marketDataError: null, stale: indexResult.stale };
+  if (!includeMarketData) {
+    return {
+      tokens: indexedTokens,
+      marketDataError: null,
+      stale: indexResult.stale,
+      failedMarketAddresses: new Set<string>(),
+    };
+  }
   onIndexLoaded?.(indexedTokens, indexResult.stale);
 
   let marketDataError: unknown;
+  const failedMarketAddresses = new Set<string>();
   const marketTokens = await mapWithConcurrency(indexedTokens, 2, async (base) => {
     const refreshQuery = forceRefresh ? "?refresh=1" : "";
     try {
@@ -295,12 +308,13 @@ async function loadFactoryTokens(
         return applySnapshot(base, snapshot);
       } catch (fallbackError) {
         marketDataError ??= fallbackError ?? loadError;
+        failedMarketAddresses.add(base.address.toLowerCase());
         return base;
       }
     }
   });
-  onMarketLoaded?.(marketTokens, marketDataError, indexResult.stale);
-  return { tokens: marketTokens, marketDataError, stale: indexResult.stale };
+  onMarketLoaded?.(marketTokens, marketDataError, indexResult.stale, failedMarketAddresses);
+  return { tokens: marketTokens, marketDataError, stale: indexResult.stale, failedMarketAddresses };
 }
 
 export function useFactoryTokenIndex({ includeMarketData = true, allowCache = true }: { includeMarketData?: boolean; allowCache?: boolean } = {}) {
@@ -341,25 +355,30 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
           setIsPartial(false);
           setIsCached(stale);
         },
-        (marketTokens, marketDataError, stale) => {
+        (marketTokens, marketDataError, stale, failedMarketAddresses) => {
           if (!isCurrentRequest()) return;
-          setTokens((current) => mergePendingTrades(marketTokens.map((token) => marketDataError
-            ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
-            : token)));
+          setTokens((current) => mergePendingTrades(marketTokens.map((token) => (
+            failedMarketAddresses.has(token.address.toLowerCase())
+              ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
+              : token
+          ))));
           setIsPartial(Boolean(marketDataError));
           setIsCached(stale);
           setLoading(false);
         },
       );
       if (!isCurrentRequest()) return;
-      setTokens((current) => mergePendingTrades(result.tokens.map((token) => result.marketDataError
-        ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
-        : token)));
+      setTokens((current) => {
+        const next = mergePendingTrades(result.tokens.map((token) => (
+          result.failedMarketAddresses.has(token.address.toLowerCase())
+            ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
+            : token
+        )));
+        if (allowCache) writeCachedIndex(next);
+        return next;
+      });
       setIsPartial(Boolean(result.marketDataError));
       setIsCached(result.stale);
-      if (allowCache && !result.marketDataError) {
-        setCachedAt(writeCachedIndex(mergePendingTrades(result.tokens)));
-      }
       if (result.marketDataError) {
         setError("Live market refresh is delayed. Confirm trade amounts with the onchain quote.");
       } else if (result.stale) {
