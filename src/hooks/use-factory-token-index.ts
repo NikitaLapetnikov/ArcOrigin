@@ -156,7 +156,7 @@ function readCachedIndex(): CachedIndex | null {
     const raw = window.localStorage.getItem(TOKEN_INDEX_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedIndex>;
-    if (typeof parsed.savedAt !== "number" || Date.now() - parsed.savedAt > TOKEN_INDEX_CACHE_TTL) return null;
+    if (typeof parsed.savedAt !== "number" || !Number.isFinite(parsed.savedAt) || parsed.savedAt <= 0) return null;
     if (!Array.isArray(parsed.tokens) || parsed.tokens.length > 100 || !parsed.tokens.every(isCachedToken)) return null;
     const tokens = mergePendingTrades(currentV4Tokens(parsed.tokens));
     return { savedAt: parsed.savedAt, tokens };
@@ -330,10 +330,14 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         forceRefresh,
         (indexedTokens, stale) => {
           if (!isCurrentRequest()) return;
-          setTokens((current) => mergePendingTrades(indexedTokens.map((token) => preserveMarketValues(
-            token,
-            current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()),
-          ))));
+          setTokens((current) => {
+            const next = mergePendingTrades(indexedTokens.map((token) => preserveMarketValues(
+              token,
+              current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()),
+            )));
+            if (allowCache) writeCachedIndex(next);
+            return next;
+          });
           setIsPartial(false);
           setIsCached(stale);
         },
@@ -353,7 +357,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         : token)));
       setIsPartial(Boolean(result.marketDataError));
       setIsCached(result.stale);
-      if (allowCache && includeMarketData && !result.marketDataError) {
+      if (allowCache && !result.marketDataError) {
         setCachedAt(writeCachedIndex(mergePendingTrades(result.tokens)));
       }
       if (result.marketDataError) {
@@ -385,7 +389,9 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         setIsPartial(false);
         setCachedAt(cached.savedAt);
         const lastConfirmedLaunchAt = Number(window.localStorage.getItem(LAST_CONFIRMED_LAUNCH_KEY) ?? 0);
-        forceInitialRefresh = cached.tokens.length === 0 || lastConfirmedLaunchAt > cached.savedAt;
+        forceInitialRefresh = cached.tokens.length === 0
+          || Date.now() - cached.savedAt > TOKEN_INDEX_CACHE_TTL
+          || lastConfirmedLaunchAt > cached.savedAt;
       }
     }
     void refresh(forceInitialRefresh);

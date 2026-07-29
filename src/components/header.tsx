@@ -29,6 +29,7 @@ const nav = [
 
 function WalletButton() {
   const [mounted, setMounted] = useState(false);
+  const [restoreTimedOut, setRestoreTimedOut] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -38,10 +39,11 @@ function WalletButton() {
   const { reconnectAsync, isPending: isReconnectPending } = useReconnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
+  const restoringWallet = (accountStatus === "reconnecting" || isReconnectPending) && !restoreTimedOut;
   const connectionPending = isPending
-    || isReconnectPending
+    || (isReconnectPending && !restoreTimedOut)
     || accountStatus === "connecting"
-    || accountStatus === "reconnecting";
+    || (accountStatus === "reconnecting" && !restoreTimedOut);
   const visibleError = connectionError || (
     error && !(error instanceof ConnectorAlreadyConnectedError)
       ? error.message.split("\n")[0]
@@ -52,6 +54,14 @@ function WalletButton() {
   );
 
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (accountStatus !== "reconnecting" && !isReconnectPending) {
+      setRestoreTimedOut(false);
+      return;
+    }
+    const timeout = window.setTimeout(() => setRestoreTimedOut(true), 2_500);
+    return () => window.clearTimeout(timeout);
+  }, [accountStatus, isReconnectPending]);
   useEffect(() => {
     if (!selectorOpen && !accountOpen) return;
     const close = (event: KeyboardEvent) => {
@@ -71,10 +81,10 @@ function WalletButton() {
   }, [isConnected]);
 
   if (!mounted) {
-    return <Button variant="secondary" disabled><Wallet className="size-4" />Restoring wallet…</Button>;
+    return <Button variant="secondary" disabled><Wallet className="size-4" />Connect wallet</Button>;
   }
 
-  if (!isConnected && connectionPending) {
+  if (!isConnected && restoringWallet) {
     return <Button variant="secondary" disabled><Wallet className="size-4" />Restoring wallet…</Button>;
   }
 
