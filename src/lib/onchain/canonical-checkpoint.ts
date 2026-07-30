@@ -35,6 +35,27 @@ export async function createCanonicalCheckpoint(
   };
 }
 
+export async function upgradeLegacyCanonicalCheckpoint<
+  T extends { indexedBlock?: unknown; indexedBlockHash?: unknown },
+>(
+  snapshot: T | null | undefined,
+  readBlock: BlockReader,
+): Promise<T | null> {
+  if (
+    !snapshot
+    || typeof snapshot.indexedBlock !== "string"
+    || snapshot.indexedBlockHash !== undefined
+  ) return null;
+  const blockNumber = parseCheckpointBlock(snapshot.indexedBlock);
+  if (blockNumber === null) return null;
+  try {
+    const checkpoint = await createCanonicalCheckpoint(blockNumber, readBlock);
+    return { ...snapshot, indexedBlockHash: checkpoint.indexedBlockHash };
+  } catch {
+    return null;
+  }
+}
+
 export async function getCanonicalCheckpointStatus(
   checkpoint: Partial<CanonicalCheckpoint> | null | undefined,
   readBlock: BlockReader,

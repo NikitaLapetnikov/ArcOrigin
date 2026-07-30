@@ -9,6 +9,7 @@ import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import {
   createCanonicalCheckpoint,
   getCanonicalCheckpointStatus,
+  upgradeLegacyCanonicalCheckpoint,
 } from "@/lib/onchain/canonical-checkpoint";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshotForToken } from "@/lib/onchain/token-index-snapshot";
@@ -539,7 +540,12 @@ export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = fa
   const persistentKey =
     `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:market:${tokenAddress.toLowerCase()}`;
   if (!cache.snapshot) {
-    const persisted = await readPersistentSnapshot<MarketSnapshot>(persistentKey);
+    let persisted = await readPersistentSnapshot<MarketSnapshot>(persistentKey);
+    const upgraded = await upgradeLegacyCanonicalCheckpoint(persisted, readCanonicalBlock);
+    if (upgraded) {
+      persisted = upgraded;
+      void writePersistentSnapshot(persistentKey, upgraded);
+    }
     const checkpointStatus = persisted
       ? await getCanonicalCheckpointStatus(persisted, readCanonicalBlock)
       : "invalid";

@@ -15,6 +15,11 @@ trusts the persisted snapshot. A changed hash marks the snapshot as orphaned;
 the cache is discarded and the full confirmed state is rebuilt. Temporary RPC
 unavailability does not delete the last snapshot.
 
+Snapshots written before block hashes were introduced are upgraded in place by
+reading the canonical hash for their existing checkpoint. This preserves the
+last confirmed dataset and avoids an unnecessary full-history RPC scan during
+deployments.
+
 Event identity includes contract address, transaction hash, log index, and
 event name. Overlapping backfills are idempotent. If an overlapping batch
 contains a different block hash, the reconciler rolls back the fork block and

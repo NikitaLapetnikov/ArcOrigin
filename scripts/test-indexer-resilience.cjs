@@ -38,6 +38,7 @@ const { reconcileIndexedEvents } = loadTypeScriptModule("src/lib/indexer/reconci
 const {
   createCanonicalCheckpoint,
   getCanonicalCheckpointStatus,
+  upgradeLegacyCanonicalCheckpoint,
 } = loadTypeScriptModule("src/lib/onchain/canonical-checkpoint.ts");
 
 const address = "0x1111111111111111111111111111111111111111";
@@ -116,5 +117,25 @@ test("checkpoint distinguishes canonical, orphaned, invalid and unavailable stat
       throw new Error("RPC unavailable");
     }),
     "unavailable",
+  );
+});
+
+test("legacy snapshots gain a canonical hash without a full index rebuild", async () => {
+  const canonicalHash = `0x${"c".repeat(64)}`;
+  const snapshot = { indexedBlock: "42", generatedAt: "2026-07-30T00:00:00.000Z" };
+  const upgraded = await upgradeLegacyCanonicalCheckpoint(
+    snapshot,
+    async (blockNumber) => {
+      assert.equal(blockNumber, 42n);
+      return { hash: canonicalHash };
+    },
+  );
+  assert.deepEqual(upgraded, { ...snapshot, indexedBlockHash: canonicalHash });
+  assert.equal(
+    await upgradeLegacyCanonicalCheckpoint(
+      { ...snapshot, indexedBlockHash: canonicalHash },
+      async () => ({ hash: canonicalHash }),
+    ),
+    null,
   );
 });

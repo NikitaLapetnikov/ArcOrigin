@@ -11,6 +11,7 @@ import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import {
   createCanonicalCheckpoint,
   getCanonicalCheckpointStatus,
+  upgradeLegacyCanonicalCheckpoint,
 } from "@/lib/onchain/canonical-checkpoint";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
 import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
@@ -292,7 +293,12 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
 
 export async function getTokenIndexSnapshot(forceRefresh = false) {
   if (!state.snapshot) {
-    const persisted = await readPersistentSnapshot<TokenIndexSnapshot>(PERSISTENT_CACHE_KEY);
+    let persisted = await readPersistentSnapshot<TokenIndexSnapshot>(PERSISTENT_CACHE_KEY);
+    const upgraded = await upgradeLegacyCanonicalCheckpoint(persisted, readCanonicalBlock);
+    if (upgraded) {
+      persisted = upgraded;
+      void writePersistentSnapshot(PERSISTENT_CACHE_KEY, upgraded);
+    }
     const checkpointStatus = persisted
       ? await getCanonicalCheckpointStatus(persisted, readCanonicalBlock)
       : "invalid";
@@ -378,8 +384,16 @@ export function isTokenIndexRpcError(error: unknown) {
 }
 
 export async function getTokenIndexCacheStatus() {
-  const snapshot = state.snapshot
+  let snapshot = state.snapshot
     ?? await readPersistentSnapshot<TokenIndexSnapshot>(PERSISTENT_CACHE_KEY);
+  const upgraded = await upgradeLegacyCanonicalCheckpoint(snapshot, readCanonicalBlock);
+  if (upgraded) {
+    snapshot = upgraded;
+    state.snapshot = upgraded;
+    state.cachedAt = Date.parse(upgraded.generatedAt) || 0;
+    state.canonicalCheckedAt = Date.now();
+    void writePersistentSnapshot(PERSISTENT_CACHE_KEY, upgraded);
+  }
   if (!snapshot) {
     return {
       available: false,

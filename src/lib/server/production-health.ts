@@ -60,7 +60,7 @@ async function loadProductionHealth() {
     : process.env.TESTNET_EXPECT_LAUNCHES_PAUSED === "true";
   const expectedMigrationPaused = ARCORIGIN_NETWORK === "mainnet"
     ? process.env.MAINNET_EXPECT_MIGRATIONS_PAUSED !== "false"
-    : process.env.TESTNET_EXPECT_MIGRATIONS_PAUSED === "true";
+    : process.env.TESTNET_EXPECT_MIGRATIONS_PAUSED !== "false";
   const owner = expectedOwner();
   const errors: string[] = [];
   const warnings: string[] = [];

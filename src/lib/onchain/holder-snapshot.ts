@@ -12,6 +12,7 @@ import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import {
   createCanonicalCheckpoint,
   getCanonicalCheckpointStatus,
+  upgradeLegacyCanonicalCheckpoint,
 } from "@/lib/onchain/canonical-checkpoint";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 
@@ -456,7 +457,12 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
   const persistentKey =
     `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:holders:${tokenAddress.toLowerCase()}`;
   if (!cache.snapshot) {
-    const persisted = await readPersistentSnapshot<HolderSnapshot>(persistentKey);
+    let persisted = await readPersistentSnapshot<HolderSnapshot>(persistentKey);
+    const upgraded = await upgradeLegacyCanonicalCheckpoint(persisted, readCanonicalBlock);
+    if (upgraded) {
+      persisted = upgraded;
+      void writePersistentSnapshot(persistentKey, upgraded);
+    }
     const checkpointStatus = persisted
       ? await getCanonicalCheckpointStatus(persisted, readCanonicalBlock)
       : "invalid";
