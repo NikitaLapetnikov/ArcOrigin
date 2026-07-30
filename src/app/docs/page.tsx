@@ -6,6 +6,7 @@ import {
   ARC_ACTIVE_FACTORY_BLOCK,
   ARC_ACTIVE_CONTRACTS,
   ARC_MAINNET_DEPLOYMENT,
+  ARC_MAINNET_ORIGIN_POLICY,
   ARC_UNISWAP_V3,
   EXPLORER_URL,
   arcChain,
@@ -26,6 +27,7 @@ const navigation = [
       ["Bonding curve", "curve"],
       ["Graduation", "graduation"],
       ["Fees", "fees"],
+      ...(ARCORIGIN_NETWORK === "mainnet" ? [["ORIGIN buybacks", "origin"] as const] : []),
     ],
   },
   {
@@ -63,6 +65,9 @@ const contracts = [
         ["Migration Adapter", ARC_MAINNET_DEPLOYMENT.migrationAdapter, "Canonical Uniswap V3 migration"],
         ["Liquidity Locker", ARC_MAINNET_DEPLOYMENT.liquidityLocker, "Permanent LP position custody"],
         ["Migration Verifier", ARC_MAINNET_DEPLOYMENT.migrationVerifier, "Pool and lock verification"],
+        ["ORIGIN token", ARC_MAINNET_DEPLOYMENT.originToken, "Canonical protocol token"],
+        ["ORIGIN curve", ARC_MAINNET_DEPLOYMENT.originCurve, "Active pre-migration venue"],
+        ["Buyback Controller", ARC_MAINNET_DEPLOYMENT.buybackController, "80 / 20 revenue policy"],
         ["Governance Safe", ARC_MAINNET_DEPLOYMENT.governanceSafe, "Direct 2-of-3 owner"],
       ] as const
     : []),
@@ -79,6 +84,12 @@ const events = [
     : []),
   ...(usesUniswapMigration
     ? [["Swap", "Uniswap V3 pool", "Canonical post-migration trades and execution price."] as const]
+    : []),
+  ...(ARCORIGIN_NETWORK === "mainnet"
+    ? [
+        ["RevenueAllocated", "Buyback Controller", "USDC assigned to buybacks and operations."],
+        ["BuybackExecuted", "Buyback Controller", "USDC spent and ORIGIN sent to the burn address."],
+      ] as const
     : []),
   ["Transfer", "Token", "Canonical source for balances and holder distribution."],
 ] as const;
@@ -258,6 +269,47 @@ x · y          = constant before each trade`}</CodeBlock>
           </Callout>
         </DocSection>
 
+        {ARCORIGIN_NETWORK === "mainnet" && <DocSection id="origin" eyebrow="Protocol token" title="ORIGIN buybacks">
+          <p>
+            ORIGIN is the canonical ArcOrigin protocol token. Its mainnet buyback controller is
+            active and governed by the published 2-of-3 Safe.
+          </p>
+          <DefinitionList items={[
+            ["ORIGIN token", ARC_MAINNET_DEPLOYMENT.originToken],
+            ["ORIGIN curve", ARC_MAINNET_DEPLOYMENT.originCurve],
+            ["Buyback controller", ARC_MAINNET_DEPLOYMENT.buybackController],
+            ["Buyback allocation", `${ARC_MAINNET_ORIGIN_POLICY.buybackShareBps / 100}% of allocated protocol revenue`],
+            ["Operations allocation", `${ARC_MAINNET_ORIGIN_POLICY.operationsShareBps / 100}% of allocated protocol revenue`],
+            ["Maximum execution", `${ARC_MAINNET_ORIGIN_POLICY.maxChunkUsdc} USDC`],
+            ["Minimum interval", `${ARC_MAINNET_ORIGIN_POLICY.executionIntervalSeconds / 3_600} hour`],
+            ["Maximum slippage", `${ARC_MAINNET_ORIGIN_POLICY.maxSlippageBps / 100}%`],
+            ["Destination", ARC_MAINNET_ORIGIN_POLICY.burnAddress],
+          ]} mono />
+          <StepList items={[
+            ["Withdraw", "The 2-of-3 Safe approves a Fee Vault USDC withdrawal to the controller."],
+            ["Allocate", "Anyone can apply the immutable 80% buyback / 20% operations split."],
+            ["Execute", "An authorized executor buys no more than 25 USDC of ORIGIN per hourly slice."],
+            ["Burn", "All purchased ORIGIN is sent directly to the canonical burn address."],
+          ]} />
+          <Callout title="Current execution venue" tone="neutral">
+            Buybacks execute only against the canonical ORIGIN V6 curve. If the curve migrates,
+            execution stops safely. A separately reviewed Uniswap adapter and Safe activation are
+            required before post-migration buybacks can resume.
+          </Callout>
+          <Callout title="No guaranteed schedule or return" tone="neutral">
+            The policy applies only to revenue withdrawn from the Fee Vault. It does not promise
+            periodic purchases, price appreciation, liquidity, volume, or investment returns.
+          </Callout>
+          <a
+            href="https://github.com/NikitaLapetnikov/ArcOrigin/blob/main/docs/ORIGIN_TOKENOMICS_AND_BUYBACK.md"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex w-fit items-center gap-2 text-sm font-medium text-cyan hover:underline"
+          >
+            Read the complete onchain policy <ExternalLink className="size-4" />
+          </a>
+        </DocSection>}
+
         <DocSection id="network" eyebrow="Integration" title="Network">
           <DefinitionList items={[
             ["Network", arcChain.name],
@@ -357,7 +409,9 @@ x · y          = constant before each trade`}</CodeBlock>
               ? "Factory, Creator Registry, and Fee Vault are directly controlled by the 2-of-3 Safe."
               : "Testnet ownership is separate from mainnet governance."],
             ["Emergency controls", "The guardian can pause new launches and migrations, but cannot resume them, seize reserves, or block sells."],
-            ["Treasury", "Protocol withdrawals always go to the configured Safe recipient."],
+            ["Treasury", ARCORIGIN_NETWORK === "mainnet"
+              ? "The Safe approves Fee Vault withdrawals, which can only go to the active ORIGIN revenue controller."
+              : "Protocol withdrawals always go to the configured recipient."],
           ]} />
           <Callout title="What administration can change" tone="neutral">
             Factory changes affect only future curves. Existing token supply, fees, reserves, and migration configuration are immutable snapshots. Existing tokens and curves have no owner withdrawal, mint, blacklist, upgrade, or pause control.

@@ -18,6 +18,9 @@ ArcOrigin V6 mainnet is active. The canonical public deployment record is
 | Migration adapter | `0xc3EF95C4afDe66537acC40011ED5c6e505126a21` |
 | Liquidity locker | `0xC41DA72afE97f8fbCA9722f893519cF2972cFb0e` |
 | Migration verifier | `0xAA949a795CB1bCc15E4c1AA2DC18a548b9f483c9` |
+| ORIGIN token | `0xB65Fd34cc428492DdF000A2Ae100Dbfea62E4802` |
+| ORIGIN curve | `0x18708Bd06e264E8147065159C90460be4b5B5312` |
+| ORIGIN buyback controller | `0x43ED0F9CD330FE8F093f2a0CE2FA05A155e7f746` |
 | Governance/Treasury Safe | `0xa6eA2380F98700AD5CA8B9F74dC8861269513779` |
 | Canonical USDC | `0x3600000000000000000000000000000000000000` |
 
@@ -31,6 +34,12 @@ Activation was deliberately split into two Safe operations:
 Post-execution verification confirmed both receipts with `status=1`,
 `launchesPaused=false`, `migrationPaused=false`, and configuration hash
 `0x014dab2eb4a6c624beb2d50c873a2792683519bede450c548023758913a0b640`.
+
+The Safe activated the ORIGIN controller on 2026-07-30 in transaction
+`0x1e97a067b2382b2fc345c852538208d52d46471ccdd750e00b0d44bba282ccf0`.
+The active policy sends 80% of withdrawn protocol revenue to bounded ORIGIN
+curve buybacks and 20% to operations. See
+[`ORIGIN_TOKENOMICS_AND_BUYBACK.md`](./ORIGIN_TOKENOMICS_AND_BUYBACK.md).
 
 ## Release architecture
 

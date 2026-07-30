@@ -1,12 +1,16 @@
 # ArcOrigin security review
 
-Last reviewed: 2026-07-28
+Last reviewed: 2026-07-30
 
 Scope: Solidity contracts, deployment scripts, wallet transaction flows, metadata/IPFS APIs, RPC/indexing, caches, and production web headers.
 
 ## Status and limitations
 
-ArcOrigin is a testnet product. This document records an internal engineering review, not an independent audit, certification, bug bounty result, or mainnet approval. Deployed V4 and V5 contracts are immutable: application fixes in this repository do not change their bytecode. Contract-level changes require a new deployment and activation plan.
+ArcOrigin V6 is active on Arc mainnet and remains separately deployed on Arc
+Testnet. This document records an internal engineering review, not an
+independent audit, certification, or bug bounty result. Deployed contracts are
+immutable: application fixes in this repository do not change their bytecode.
+Contract-level changes require a new deployment and governance activation plan.
 
 Review work included manual source analysis, economic-invariant analysis, contract compilation/tests, TypeScript and ESLint checks, production build verification, and dependency auditing. It did not include formal verification, a professional third-party audit, or exhaustive adversarial testing.
 
@@ -37,22 +41,32 @@ The Solidity suite currently covers fixed supply, allocation and metadata bounds
 
 ## Administrative access review
 
-The active Arc Testnet V6 deployment is in a temporary governance transition. Factory, CreatorRegistry, and FeeVault ownership still resolve to the deployment EOA `0x2807…9A42`, while the FeeVault recipient and emergency guardian resolve to the reviewed 2-of-3 Safe. The Timelock is pending owner of all three governed contracts and the exact acceptance batch is scheduled, but its 48-hour delay has not expired. This temporary single-key administration is a high-severity mainnet blocker.
+The active Arc mainnet V6 Factory, CreatorRegistry, and FeeVault are owned
+directly by the reviewed 2-of-3 Governance Safe
+`0xa6eA2380F98700AD5CA8B9F74dC8861269513779`. Factory launches and the
+snapshotted Uniswap migration route are active. The deployed historical
+Timelock is not in the current ownership path.
+
+The ORIGIN buyback controller is also owned and guarded by that Safe. Its
+executor can choose timing within bounded limits but cannot redirect funds or
+recover ORIGIN/USDC. The Safe can revoke the executor or pause the controller.
+FeeVault withdrawals remain explicit Safe actions.
 
 Administrative reach is bounded:
 
 - Factory changes apply only to future curves because each curve snapshots its fees, economics, launch protection, and migration configuration at deployment.
 - CreatorRegistry ownership can select the Factory allowed to record new launches.
-- FeeVault ownership can rotate the recipient; both owner and recipient may trigger withdrawal, but funds always go to the current recipient.
+- FeeVault ownership can rotate the recipient; only its owner may trigger a V6 withdrawal, and funds always go to the current recipient.
 - Existing V5 curves and launched tokens have no owner, upgrade, pause, mint, blacklist, or reserve-withdraw path.
 
-The repository now includes a reviewed governance preparation path: an exact 2-of-3 Safe is the sole proposer/canceller of a self-administered OpenZeppelin timelock with a minimum 48-hour delay; protocol ownership moves to the timelock; a 2-of-3 Treasury Safe becomes the FeeVault recipient. Deployment, dry-run handoff, exact-address execution, role verification, and operation-calldata scripts fail closed on an invalid Safe policy or role layout.
-
-The Safe signers and threshold have been verified, the Timelock roles have been verified, and the V6 ownership-acceptance batch has been scheduled. No V6 ownership has transferred yet; final execution and post-handoff verification remain required. See [`docs/MAINNET_GOVERNANCE_RUNBOOK.md`](./docs/MAINNET_GOVERNANCE_RUNBOOK.md).
+Deployment, direct-Safe handoff, exact-address verification, and operation-calldata
+scripts fail closed on invalid Safe policy or role layout. The canonical addresses
+and activation transactions are in
+[`deployment/arc-mainnet.json`](./deployment/arc-mainnet.json).
 
 ## V6 remediation deployment
 
-The active Arc Testnet V6 stack remediates the main contract findings from this review:
+The active Arc mainnet and testnet V6 stacks remediate the main contract findings from this review:
 
 - graduation always activates the internal permanent AMM and never calls an external adapter;
 - DEX migration is a separate, optional transaction and cannot block the final buy;
@@ -66,7 +80,11 @@ The active Arc Testnet V6 stack remediates the main contract findings from this 
 - a narrowly scoped guardian may stop only new launches and migrations;
 - transaction deadlines and exact-transfer checks are enforced.
 
-V6 has 13 dedicated adversarial/property-oriented tests in addition to the existing suite. It is deployed and active only on Arc Testnet; it is not independently audited or approved for mainnet. The full design and release gate are documented in [`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md).
+V6 has dedicated adversarial/property-oriented tests in addition to the existing
+suite and is active on Arc mainnet and Arc Testnet. The full design and release
+record are documented in
+[`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md) and
+[`audit/internal-v6-2026-07-30`](./audit/internal-v6-2026-07-30/README.md).
 
 ## V5 changes
 
@@ -74,7 +92,10 @@ V5 narrows the Factory to a canonical one-billion supply and zero free creator a
 
 The external migration boundary is deliberately disabled on Arc Testnet. A curve configured without an adapter retains the permanent internal AMM behavior. A curve configured with an adapter requires graduation to atomically transfer every remaining token and real-USDC reserve; a zero pool address or any residual curve balance reverts the entire migration. Trading on a successfully migrated curve is permanently disabled.
 
-This boundary does not make an unknown adapter safe. A production Uniswap or Aerodrome adapter and its LP fee locker remain separate mainnet deliverables requiring official Arc deployment addresses, fork tests, source verification, and an independent audit. Adapter configuration is snapshotted at launch and cannot be retrofitted onto an existing curve.
+This boundary does not make an unknown adapter safe. Arc mainnet uses the
+published ArcOrigin Uniswap V3 adapter, verifier, and immutable LP locker bound
+to the official Arc Uniswap deployment. Adapter configuration is snapshotted at
+launch and cannot be retrofitted onto an existing curve.
 
 ## Contract observations
 
@@ -85,13 +106,13 @@ This boundary does not make an unknown adapter safe. A production Uniswap or Aer
 - The last pre-graduation buy is capped. Graduation removes virtual liquidity without a modeled spot-price discontinuity and irreversibly sends surplus tokens to the dead-address lock.
 - The curve has no liquidity-withdrawal function.
 - Factory fee changes affect newly created curves; existing curve fee parameters are immutable.
-- FeeVault withdrawals are callable only by its owner or current fee recipient, and assets are always sent to the current fee recipient.
+- V6 FeeVault withdrawals are callable only by its owner, and assets are always sent to the current fee recipient.
 
 ### Residual findings
 
 | Severity for mainnet | Finding | Impact / required action |
 | --- | --- | --- |
-| High | Active V6 Factory, Registry, and FeeVault administration temporarily depend on one EOA during the scheduled handoff. | Execute and independently verify the prepared 2-of-3 Safe + 48-hour Timelock handoff before mainnet. |
+| Resolved on mainnet | Protocol administration temporarily depended on one deployment EOA. | Factory, Registry, FeeVault, and the ORIGIN controller are now controlled by the reviewed 2-of-3 Safe. |
 | Resolved in active V6 | Trading fees push the creator share directly during every V5 trade. | V6 accrues creator fees and lets the creator claim to a chosen recipient. Deployed V5 bytecode is unchanged. |
 | Resolved in active V6 | `FeeVault.collectFee` is permissionless in the deployed V5 Vault. | V6 authorizes collectors and verifies exact received balances. Deployed V5 bytecode is unchanged. |
 | Resolved in V5 | The V4 Factory permits non-canonical supply and creator allocation values within broad bounds. | V5 enforces 1B supply and zero free creator allocation onchain. |
@@ -105,18 +126,18 @@ This boundary does not make an unknown adapter safe. A production Uniswap or Aer
 - Current upload limits and refresh throttles are application-process controls. A public mainnet deployment also needs edge rate limiting, abuse monitoring, and a durable distributed challenge/rate-limit store.
 - The Content Security Policy still permits inline scripts/styles required by the current Next.js setup. A nonce-based CSP is recommended before a high-value production launch.
 - `pnpm audit --prod --audit-level high` reported no known production dependency vulnerabilities on the review date. The full audit reported high-severity advisories only in the Hardhat/ESLint development toolchain; these tools are not shipped in the production runtime. Upgrade the development stack when compatible releases remove those transitive advisories.
-- Confirmed logs are sufficient for the current testnet volume, but mainnet needs a durable, reorg-aware indexer and monitoring rather than process-local caches plus public explorer/RPC fallbacks.
+- Confirmed logs, cache reconciliation, and production health checks reduce stale-state failures. A durable, independently operated reorg-aware indexer remains preferable to process-local caches plus public explorer/RPC fallbacks as volume grows.
 
-## Mainnet blockers
+## Remaining production assurance work
 
 1. Independent Solidity audit and remediation review by a qualified third party.
 2. Reproducible builds and verified source code for every deployed contract.
-3. Deploy, exercise, and independently verify the prepared 2-of-3 multisig/timelock administration; complete signer rotation and incident-response drills.
-4. Deploy and independently review V6 authorized fee collection, pull-based creator fees, migration boundary, and emergency controls.
-5. Property/fuzz testing with a dedicated framework and formal or symbolic analysis of curve/graduation invariants.
-6. Redundant authenticated RPC, a durable reorg-aware indexer, edge rate limiting, alerting, and backups.
-7. Legal and compliance review for the intended jurisdictions and mainnet asset flows.
-8. An audited DEX-specific migration adapter and LP fee locker tested against the exact official Arc deployment.
+3. Periodic Safe signer rotation and incident-response exercises.
+4. Additional property/fuzz testing and formal or symbolic analysis of curve/graduation invariants.
+5. Redundant authenticated RPC, durable reorg-aware indexing, edge rate limiting, alerting, and backups.
+6. Legal and compliance review for the intended jurisdictions and mainnet asset flows.
+7. Independent review of the exact DEX migration adapter and immutable LP locker against the official Arc Uniswap deployment.
+8. A separately reviewed post-migration ORIGIN buyback adapter before DEX buybacks are enabled.
 
 Useful baseline references are the [Solidity security considerations](https://docs.soliditylang.org/en/latest/security-considerations.html) and [OpenZeppelin access-control guidance](https://docs.openzeppelin.com/contracts/5.x/access-control).
 

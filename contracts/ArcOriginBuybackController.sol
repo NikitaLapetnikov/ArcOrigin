@@ -10,9 +10,9 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IArcOriginBuybackCurve} from "./interfaces/IArcOriginBuybackCurve.sol";
 
-/// @notice Routes 80% of allocated protocol revenue into bounded AORG buybacks
+/// @notice Routes 80% of allocated protocol revenue into bounded protocol-token buybacks
 ///         and sends the remaining 20% to the operations Safe.
-/// @dev AORG is deliberately sent to the canonical burn address because the
+/// @dev Bought tokens are deliberately sent to the canonical burn address because the
 ///      fixed-supply launch token has no privileged burn or supply-control hook.
 contract ArcOriginBuybackController is Ownable2Step, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -71,6 +71,7 @@ contract ArcOriginBuybackController is Ownable2Step, Pausable, ReentrancyGuard {
     error InvalidDeadline();
     error InvalidMinimumOutput();
     error QuoteUnavailable();
+    error TradingMigrated();
     error UnsupportedAssetBehavior();
     error CoreAssetRecoveryDisabled();
     error AccountingInvariantBroken();
@@ -107,8 +108,7 @@ contract ArcOriginBuybackController is Ownable2Step, Pausable, ReentrancyGuard {
         IArcOriginBuybackCurve configuredCurve = IArcOriginBuybackCurve(curve_);
         if (
             configuredCurve.token() != protocolToken_ ||
-            configuredCurve.usdc() != usdc_ ||
-            configuredCurve.migrationConfigurationHash() != bytes32(0)
+            configuredCurve.usdc() != usdc_
         ) revert InvalidConfiguration();
 
         uint256 permittedChunk = Math.mulDiv(
@@ -162,7 +162,7 @@ contract ArcOriginBuybackController is Ownable2Step, Pausable, ReentrancyGuard {
         emit RevenueAllocated(revenue, buybackAmount, operationsAmount);
     }
 
-    /// @notice Executes one TWAP slice and permanently sends the received AORG
+    /// @notice Executes one TWAP slice and permanently sends the received protocol token
     ///         to the burn address. The authorized executor cannot redirect it.
     function executeBuyback(
         uint256 usdcAmount,
@@ -170,6 +170,7 @@ contract ArcOriginBuybackController is Ownable2Step, Pausable, ReentrancyGuard {
         uint256 deadline
     ) external whenNotPaused nonReentrant returns (uint256 tokensBurned) {
         if (msg.sender != owner() && !isExecutor[msg.sender]) revert Unauthorized();
+        if (curve.isMigrated()) revert TradingMigrated();
         if (usdcAmount == 0) revert ZeroAmount();
         if (usdcAmount > pendingBuybackUsdc) revert InsufficientPendingBuyback();
         if (usdcAmount > maxChunkUsdc) revert ChunkLimitExceeded();
@@ -272,7 +273,7 @@ contract ArcOriginBuybackController is Ownable2Step, Pausable, ReentrancyGuard {
         _unpause();
     }
 
-    /// @notice Only unrelated tokens can be recovered. AORG is always burned and
+    /// @notice Only unrelated tokens can be recovered. The protocol token is always burned and
     ///         USDC is always routed through the immutable revenue split.
     function recoverNonCoreToken(
         address asset,

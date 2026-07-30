@@ -10,7 +10,11 @@ import { Button, Panel, TokenIcon, WarningBox } from "@/components/ui";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
-import { EXPLORER_URL } from "@/lib/chains";
+import {
+  ARC_MAINNET_ORIGIN_POLICY,
+  EXPLORER_URL,
+  isOfficialOriginToken,
+} from "@/lib/chains";
 import { number, shortAddress, tickerLabel, utcDateTime } from "@/lib/utils";
 
 export function IndexedTokenDetail({ address }: { address: string }) {
@@ -45,6 +49,7 @@ export function IndexedTokenDetail({ address }: { address: string }) {
   }
 
   const holderCount = holderSnapshot?.holders ?? token.holders;
+  const isOfficialOrigin = isOfficialOriginToken(token.address);
   const heroStats = [
     ["Holders", holderCount > 0 ? number(holderCount) : "—"],
     ["Creator holding", `${(holderSnapshot?.creatorPercent ?? token.creatorAllocationPercent ?? 0).toFixed(2)}%`],
@@ -63,6 +68,7 @@ export function IndexedTokenDetail({ address }: { address: string }) {
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
               <h1 className="min-w-0 truncate pb-0.5 text-[27px] font-semibold leading-[1.15] tracking-[-.04em] text-white sm:text-[30px]">{token.name}</h1>
               <span className="shrink-0 text-sm font-medium text-slate-400">{tickerLabel(token.ticker)}</span>
+              {isOfficialOrigin && <span className="inline-flex h-7 items-center rounded-full border border-cyan/35 bg-cyan/10 px-3 text-[11px] font-semibold uppercase tracking-[.08em] text-cyan">Official</span>}
             </div>
             <button
               type="button"
@@ -89,6 +95,13 @@ export function IndexedTokenDetail({ address }: { address: string }) {
         </dl>
         <div className="flex items-center gap-2 xl:justify-end">
           <WatchlistButton address={token.address} />
+          {isOfficialOrigin && <Link
+            href="/docs#origin"
+            title={`Protocol revenue policy: ${ARC_MAINNET_ORIGIN_POLICY.buybackShareBps / 100}% buyback`}
+            className="inline-flex h-10 items-center rounded-full border border-cyan/25 bg-cyan/10 px-4 text-sm font-medium text-cyan transition hover:bg-cyan/15"
+          >
+            Buyback active
+          </Link>}
           <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-full bg-white/[.045] px-4 text-sm text-slate-200 transition hover:bg-white/[.08] hover:text-white">Arcscan <ExternalLink className="size-4" /></a>
         </div>
       </div>

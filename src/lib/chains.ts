@@ -62,8 +62,30 @@ export const ARC_MAINNET_DEPLOYMENT = {
   migrationAdapter: "0xc3EF95C4afDe66537acC40011ED5c6e505126a21" as Address,
   liquidityLocker: "0xC41DA72afE97f8fbCA9722f893519cF2972cFb0e" as Address,
   migrationVerifier: "0xAA949a795CB1bCc15E4c1AA2DC18a548b9f483c9" as Address,
+  originToken: "0xB65Fd34cc428492DdF000A2Ae100Dbfea62E4802" as Address,
+  originCurve: "0x18708Bd06e264E8147065159C90460be4b5B5312" as Address,
+  buybackController: "0x43ED0F9CD330FE8F093f2a0CE2FA05A155e7f746" as Address,
   governanceSafe: "0xa6eA2380F98700AD5CA8B9F74dC8861269513779" as Address,
 } as const;
+
+export const ARC_MAINNET_ORIGIN_POLICY = {
+  symbol: "ORIGIN",
+  buybackShareBps: 8_000,
+  operationsShareBps: 2_000,
+  maxChunkUsdc: 25,
+  executionIntervalSeconds: 3_600,
+  maxSlippageBps: 300,
+  burnAddress: "0x000000000000000000000000000000000000dEaD" as Address,
+  activationTransaction:
+    "0x1e97a067b2382b2fc345c852538208d52d46471ccdd750e00b0d44bba282ccf0",
+} as const;
+
+export function isOfficialOriginToken(address: string) {
+  return (
+    ARCORIGIN_NETWORK === "mainnet" &&
+    address.toLowerCase() === ARC_MAINNET_DEPLOYMENT.originToken.toLowerCase()
+  );
+}
 
 export const ARC_TESTNET_FIRST_LAUNCH_BLOCK = 53_061_367n;
 export const ARC_TESTNET_V2_FACTORY_BLOCK = 53_112_263n;

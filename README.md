@@ -11,7 +11,7 @@ ArcOrigin is a USDC-native token launch and discovery layer for Arc. This reposi
 - Canonical Arc USDC: `0x3600000000000000000000000000000000000000`.
 
 The production interface does not insert simulated token listings or trading
-activity. The internal review and unresolved mainnet blockers are documented in
+activity. The internal review and remaining production risks are documented in
 [`SECURITY.md`](./SECURITY.md). The repeatable 2026-07-30 V6 review evidence,
 invariants, Slither triage, deployed bytecode identity, and mainnet activation
 procedure are collected in
@@ -60,7 +60,12 @@ V6 adds authorized FeeVault collectors, pull-based creator fee claims, transacti
 
 The ArcOrigin launch flow uses zero free creator allocation, a 10 USDC launch fee, and 1% buy/sell fees. Creators can acquire tokens only through an optional paid developer buy capped at 5% of supply. V6 accrues 70% of each trading fee for creator claims and sends 30% to the protocol FeeVault. Current launches use a 2,500 virtual-USDC reserve and graduate after raising 10,000 real USDC. V6 adds a three-block launch-protection window and fail-safe DEX migration. Mainnet launches snapshot the activated, verified Arc Uniswap V3 adapter/locker/verifier tuple; testnet graduation continues in the permanent internal AMM.
 
-The proposed AORG protocol-token policy routes 80% of allocated protocol revenue through bounded TWAP buybacks and 20% to operations. Bought AORG is sent directly to the burn address. The controller, tests, deployment preflight, and Safe launch sequence are documented in [`docs/AORG_TOKENOMICS_AND_BUYBACK.md`](./docs/AORG_TOKENOMICS_AND_BUYBACK.md). No token or controller is canonical until the Safe launch and governance configuration are complete.
+The canonical ORIGIN token is `0xB65Fd34cc428492DdF000A2Ae100Dbfea62E4802`.
+Its active mainnet controller routes 80% of allocated protocol revenue through
+bounded curve buybacks and 20% to operations; purchased ORIGIN is sent directly
+to the burn address. The deployed addresses, execution limits, manual Safe
+withdrawal step, and post-migration behavior are documented in
+[`docs/ORIGIN_TOKENOMICS_AND_BUYBACK.md`](./docs/ORIGIN_TOKENOMICS_AND_BUYBACK.md).
 
 Launch metadata uses an immutable `ipfs://` CID stored by the token contract. The upload endpoint validates and optimizes images, requires a one-time wallet signature bound to the exact metadata payload, rate-limits uploads by wallet and client, and never exposes the storage credential to the browser.
 

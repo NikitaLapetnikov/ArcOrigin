@@ -116,7 +116,7 @@ async function fundAndAllocate(platform, amount = 100n * USDC) {
   await controller.connect(funder).allocateRevenue();
 }
 
-describe("ArcOrigin AORG buyback controller", function () {
+describe("ArcOrigin protocol-token buyback controller", function () {
   it("immutably allocates protocol revenue 80/20 and lets anyone settle new revenue", async function () {
     const platform = await deployProtocolToken();
     const { funder, operations, usdc, controller } = platform;
@@ -303,7 +303,7 @@ describe("ArcOrigin AORG buyback controller", function () {
     expect(await controller.owner()).to.equal(stranger.address);
   });
 
-  it("burns unsolicited AORG instead of allowing governance to recover it", async function () {
+  it("burns unsolicited protocol tokens instead of allowing governance to recover them", async function () {
     const platform = await deployProtocolToken();
     const { creator, funder, usdc, token, curve, controller } = platform;
     const amount = 5n * USDC;
@@ -321,7 +321,7 @@ describe("ArcOrigin AORG buyback controller", function () {
     expect(await controller.totalTokensBurned()).to.equal(donation);
   });
 
-  it("rejects a mismatched or migration-enabled curve at deployment", async function () {
+  it("rejects mismatched assets and unsafe execution configuration at deployment", async function () {
     const platform = await deployProtocolToken();
     const {
       owner,
@@ -363,5 +363,45 @@ describe("ArcOrigin AORG buyback controller", function () {
         MAX_SLIPPAGE_BPS,
       ),
     ).to.be.revertedWithCustomError(Controller, "InvalidConfiguration");
+  });
+
+  it("accepts a migration-enabled curve but permanently blocks curve buys after migration", async function () {
+    const [owner, operations, executor, guardian, funder] = await ethers.getSigners();
+    const Token = await ethers.getContractFactory("MockUSDC");
+    const protocolToken = await Token.deploy();
+    const usdc = await Token.deploy();
+    const Curve = await ethers.getContractFactory("MockArcOriginBuybackCurve");
+    const curve = await Curve.deploy(
+      await protocolToken.getAddress(),
+      await usdc.getAddress(),
+      VIRTUAL_RESERVE,
+    );
+    await protocolToken.mint(await curve.getAddress(), 1_000_000n * USDC);
+
+    const Controller = await ethers.getContractFactory("ArcOriginBuybackController");
+    const controller = await Controller.deploy(
+      owner.address,
+      guardian.address,
+      operations.address,
+      executor.address,
+      await usdc.getAddress(),
+      await protocolToken.getAddress(),
+      await curve.getAddress(),
+      MAX_CHUNK,
+      EXECUTION_INTERVAL,
+      MAX_SLIPPAGE_BPS,
+    );
+    await usdc.mint(funder.address, 100n * USDC);
+    await usdc.connect(funder).transfer(await controller.getAddress(), 100n * USDC);
+    await controller.allocateRevenue();
+    await curve.setMigrated(true);
+
+    await expect(
+      controller.connect(executor).executeBuyback(
+        MAX_CHUNK,
+        MAX_CHUNK,
+        await futureDeadline(),
+      ),
+    ).to.be.revertedWithCustomError(controller, "TradingMigrated");
   });
 });

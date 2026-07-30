@@ -26,5 +26,31 @@
   "activationBlocks": {
     "migrations": 12906770,
     "launches": 12908781
+  },
+  "officialToken": {
+    "name": "ArcOrigin",
+    "symbol": "ORIGIN",
+    "token": "0xB65Fd34cc428492DdF000A2Ae100Dbfea62E4802",
+    "curve": "0x18708Bd06e264E8147065159C90460be4b5B5312"
+  },
+  "buyback": {
+    "status": "ACTIVE",
+    "controller": "0x43ED0F9CD330FE8F093f2a0CE2FA05A155e7f746",
+    "feeRecipient": "0x43ED0F9CD330FE8F093f2a0CE2FA05A155e7f746",
+    "executor": "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
+    "operationsRecipient": "0xa6eA2380F98700AD5CA8B9F74dC8861269513779",
+    "buybackShareBps": 8000,
+    "operationsShareBps": 2000,
+    "maxChunkUsdc": 25,
+    "executionIntervalSeconds": 3600,
+    "maxSlippageBps": 300,
+    "burnAddress": "0x000000000000000000000000000000000000dEaD",
+    "executionVenue": "ORIGIN_V6_CURVE_UNTIL_MIGRATION",
+    "deploymentTransaction": "0x18a76b0978f5ccac113753eeb337ef716144653ad4e986d1bce45e56f7dc76fa",
+    "activationSafeTxHash": "0xabd96a22cdcab74e6a7d47d1ca572fe22f302b3beba64d45877217a89a6e5c63",
+    "activationTransaction": "0x1e97a067b2382b2fc345c852538208d52d46471ccdd750e00b0d44bba282ccf0",
+    "activatedAt": "2026-07-30T02:38:10Z",
+    "sourceVerified": true,
+    "sourceUrl": "https://arc-mainnet.cloud.blockscout.com/address/0x43ED0F9CD330FE8F093f2a0CE2FA05A155e7f746#code"
   }
 }
