@@ -60,7 +60,7 @@ export function IndexedTokenDetail({ address }: { address: string }) {
 
   return <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-4">
     <div className="mb-4 rounded-[28px] border border-line/70 bg-panel px-4 py-5 shadow-[0_22px_60px_rgba(0,0,0,.12)] sm:px-6 sm:py-6">
-      <div className="grid min-w-0 gap-7 xl:grid-cols-[minmax(500px,1.15fr)_minmax(460px,.85fr)_auto] xl:items-center">
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(390px,1.08fr)_minmax(340px,.92fr)_auto] xl:items-center">
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <Link href="/tokens" aria-label="Back to markets" className="grid size-10 shrink-0 place-items-center rounded-full text-slate-400 transition hover:bg-white/[.05] hover:text-white"><ArrowLeft className="size-5"/></Link>
           <TokenIcon label={token.icon} image={token.image} className="size-[92px] shrink-0 rounded-[24px] border-0 text-xl shadow-[0_16px_38px_rgba(0,0,0,.28)] sm:size-[104px]" />
@@ -93,16 +93,16 @@ export function IndexedTokenDetail({ address }: { address: string }) {
             <dd className="mt-1.5 truncate text-[16px] font-semibold text-slate-100" title={value}>{value}</dd>
           </div>)}
         </dl>
-        <div className="flex items-center gap-2 xl:justify-end">
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
           <WatchlistButton address={token.address} />
           {isOfficialOrigin && <Link
             href="/docs#origin"
             title={`Protocol revenue policy: ${ARC_MAINNET_ORIGIN_POLICY.buybackShareBps / 100}% buyback`}
-            className="inline-flex h-10 items-center rounded-full border border-cyan/25 bg-cyan/10 px-4 text-sm font-medium text-cyan transition hover:bg-cyan/15"
+            className="inline-flex h-10 items-center whitespace-nowrap rounded-full border border-cyan/25 bg-cyan/10 px-4 text-sm font-medium text-cyan transition hover:bg-cyan/15"
           >
             Buyback active
           </Link>}
-          <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-full bg-white/[.045] px-4 text-sm text-slate-200 transition hover:bg-white/[.08] hover:text-white">Arcscan <ExternalLink className="size-4" /></a>
+          <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-full bg-white/[.045] px-4 text-sm text-slate-200 transition hover:bg-white/[.08] hover:text-white">Arcscan <ExternalLink className="size-4" /></a>
         </div>
       </div>
     </div>
