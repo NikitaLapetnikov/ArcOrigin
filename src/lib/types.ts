@@ -32,6 +32,17 @@ export type Trade = {
   price: number;
   txHash: string;
 };
+export type LatestBuyRecord = {
+  tokenAddress: string;
+  trade: Trade;
+};
+export type LatestBuysSnapshot = {
+  buys: LatestBuyRecord[];
+  tokenAddresses: string[];
+  indexedBlock: string;
+  indexedBlockHash: `0x${string}`;
+  generatedAt: string;
+};
 export type CreatorProfile = {
   address: string;
   reputation: number;

@@ -6,11 +6,13 @@ import { LatestBuys, LatestBuysLoading, MarketDiscovery } from "@/components/mar
 import { readWatchlist } from "@/components/watchlist-button";
 import { Button, EmptyState, WarningBox } from "@/components/ui";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
+import { useLatestBuys } from "@/hooks/use-latest-buys";
 
 export function TokenScreener({ watchlistOnly = false }: { watchlistOnly?: boolean }) {
   const [query, setQuery] = useState("");
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const { tokens: indexedTokens, loading, error, refresh, marketDataReady } = useFactoryTokenIndex();
+  const latestBuys = useLatestBuys();
   useEffect(() => {
     if (!watchlistOnly) return;
     const sync = () => setWatchlist(readWatchlist());
@@ -52,9 +54,9 @@ export function TokenScreener({ watchlistOnly = false }: { watchlistOnly?: boole
     {!loading && watchlistOnly && availableTokens.length === 0
       ? <EmptyState title="No saved tokens yet" body="Use the star on any token page to add it here." />
       : <>
-        {!watchlistOnly && (marketDataReady
-          ? <LatestBuys tokens={tokens} limit={10} />
-          : loading
+        {!watchlistOnly && (latestBuys.ready || marketDataReady
+          ? <LatestBuys tokens={tokens} records={latestBuys.ready ? latestBuys.buys : undefined} limit={10} />
+          : latestBuys.loading || loading
             ? <LatestBuysLoading />
             : null)}
         <MarketDiscovery tokens={tokens}/>

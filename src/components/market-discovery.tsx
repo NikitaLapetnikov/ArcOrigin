@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { readWatchlist } from "@/components/watchlist-button";
 import { calculateMomentumScore } from "@/lib/scoring";
-import type { TokenData, Trade } from "@/lib/types";
+import type { LatestBuyRecord, TokenData, Trade } from "@/lib/types";
 import { money, number, tickerLabel, utcDateTime } from "@/lib/utils";
 import { TokenIcon } from "@/components/ui";
 
@@ -122,16 +122,43 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
   </section>;
 }
 
-export function LatestBuys({ tokens, limit = 10 }: { tokens: TokenData[]; limit?: number }) {
+export function LatestBuys({
+  tokens,
+  records,
+  limit = 10,
+}: {
+  tokens: TokenData[];
+  records?: LatestBuyRecord[];
+  limit?: number;
+}) {
   const [showMore, setShowMore] = useState(false);
-  const allLatestBuys = useMemo(() => tokens.flatMap((token) => token.recentTrades
-    .filter((trade) => trade.type === "Buy")
-    .map((trade, index): BuyItem => ({
-      token,
-      trade,
-      order: tradeOrder(token, trade, index),
-    })))
-    .sort((left, right) => right.order - left.order), [tokens]);
+  const allLatestBuys = useMemo(() => {
+    const tokensByAddress = new Map(tokens.map((token) => [token.address.toLowerCase(), token]));
+    const buysByHash = new Map<string, BuyItem>();
+    for (const record of records ?? []) {
+      const token = tokensByAddress.get(record.tokenAddress.toLowerCase());
+      if (!token) continue;
+      buysByHash.set(record.trade.txHash.toLowerCase(), {
+        token,
+        trade: record.trade,
+        order: tradeOrder(token, record.trade, 0),
+      });
+    }
+    for (const token of tokens) {
+      token.recentTrades.forEach((trade, index) => {
+        if (trade.type !== "Buy") return;
+        const key = trade.txHash.toLowerCase();
+        if (!buysByHash.has(key)) {
+          buysByHash.set(key, {
+            token,
+            trade,
+            order: tradeOrder(token, trade, index),
+          });
+        }
+      });
+    }
+    return [...buysByHash.values()].sort((left, right) => right.order - left.order);
+  }, [records, tokens]);
   const visibleLimit = showMore ? 25 : limit;
   const latestBuys = allLatestBuys.slice(0, visibleLimit);
 
