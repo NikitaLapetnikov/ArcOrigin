@@ -144,42 +144,40 @@ function loadLaunchLogs(address: Address, fromBlock: bigint, toBlock: bigint) {
   }));
 }
 
-async function loadFactoryLaunches(indexedBlock: bigint, forceRefresh: boolean) {
-  if (!forceRefresh) {
-    try {
-      const logGroups = await Promise.all(ACTIVE_FACTORY_INDEXES.map((factory) => getArcscanLogs({
-        address: factory.address,
-        fromBlock: factory.fromBlock,
-        toBlock: indexedBlock,
-        topic0: toEventSelector(tokenLaunchedEvent),
-      })));
-      const launches = new Map<string, FactoryLaunch>();
-      for (const [factoryIndex, logs] of logGroups.entries()) {
-        for (const log of logs) {
-          const decoded = decodeEventLog({
-            abi: [tokenLaunchedEvent],
-            data: log.data,
-            topics: log.topics,
-          });
-          const token = decoded.args.token;
-          launches.set(token.toLowerCase(), {
-            factory: ACTIVE_FACTORY_INDEXES[factoryIndex].address,
-            token,
-            curve: decoded.args.curve,
-            creator: decoded.args.creator,
-            name: decoded.args.name,
-            symbol: decoded.args.symbol,
-            launchBlock: log.blockNumber,
-            launchedAt: log.timestamp,
-            transactionHash: log.transactionHash,
-          });
-          state.factoryBlockTimestamps.set(log.blockNumber.toString(), log.timestamp);
-        }
+async function loadFactoryLaunches(indexedBlock: bigint) {
+  try {
+    const logGroups = await Promise.all(ACTIVE_FACTORY_INDEXES.map((factory) => getArcscanLogs({
+      address: factory.address,
+      fromBlock: factory.fromBlock,
+      toBlock: indexedBlock,
+      topic0: toEventSelector(tokenLaunchedEvent),
+    })));
+    const launches = new Map<string, FactoryLaunch>();
+    for (const [factoryIndex, logs] of logGroups.entries()) {
+      for (const log of logs) {
+        const decoded = decodeEventLog({
+          abi: [tokenLaunchedEvent],
+          data: log.data,
+          topics: log.topics,
+        });
+        const token = decoded.args.token;
+        launches.set(token.toLowerCase(), {
+          factory: ACTIVE_FACTORY_INDEXES[factoryIndex].address,
+          token,
+          curve: decoded.args.curve,
+          creator: decoded.args.creator,
+          name: decoded.args.name,
+          symbol: decoded.args.symbol,
+          launchBlock: log.blockNumber,
+          launchedAt: log.timestamp,
+          transactionHash: log.transactionHash,
+        });
+        state.factoryBlockTimestamps.set(log.blockNumber.toString(), log.timestamp);
       }
-      return launches;
-    } catch {
-      // The public explorer is an optimization only; verified RPC logs remain the fallback.
     }
+    return launches;
+  } catch {
+    // The public explorer is an optimization only; verified RPC logs remain the fallback.
   }
 
   const launches = new Map<string, FactoryLaunch>();
@@ -223,7 +221,7 @@ async function getFactoryLaunches(indexedBlock: bigint, forceRefresh: boolean) {
     return state.factoryLaunches;
   }
   if (!state.factoryPending) {
-    state.factoryPending = loadFactoryLaunches(indexedBlock, forceRefresh)
+    state.factoryPending = loadFactoryLaunches(indexedBlock)
       .then((launches) => {
         if (launches.size === 0 && state.factoryLaunches.size > 0) {
           throw new Error("Factory launch source returned an unexpected empty snapshot.");
@@ -509,6 +507,9 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
       });
   }
 
+  if (cache.snapshot && !forceRefresh) {
+    return { snapshot: cache.snapshot, stale: true };
+  }
   try {
     const snapshot = await cache.pending;
     return { snapshot, stale: false };

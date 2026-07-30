@@ -591,6 +591,9 @@ export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = fa
         cache.pending = null;
       });
   }
+  if (cache.snapshot && !forceRefresh) {
+    return { snapshot: cache.snapshot, stale: true };
+  }
   try {
     const snapshot = await cache.pending;
     return { snapshot, stale: false };

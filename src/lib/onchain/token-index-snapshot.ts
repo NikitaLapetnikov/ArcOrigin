@@ -352,6 +352,9 @@ export async function getTokenIndexSnapshot(forceRefresh = false) {
         state.pending = null;
       });
   }
+  if (state.snapshot && !forceRefresh) {
+    return { snapshot: state.snapshot, stale: true };
+  }
   try {
     const snapshot = await waitForSnapshot(state.pending);
     return { snapshot, stale: false };
