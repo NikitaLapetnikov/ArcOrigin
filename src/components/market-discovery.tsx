@@ -177,6 +177,22 @@ export function LatestBuys({ tokens, limit = 10 }: { tokens: TokenData[]; limit?
   </section>;
 }
 
+export function LatestBuysLoading() {
+  return <section className="panel mb-4 overflow-hidden" aria-labelledby="latest-buys-loading-title" aria-busy="true">
+    <div className="border-b border-line px-4 py-3.5">
+      <h2 id="latest-buys-loading-title" className="text-base font-semibold tracking-[-.025em] text-white">Latest buys</h2>
+      <p className="mt-0.5 text-xs font-medium text-slate-500">Loading confirmed purchases…</p>
+    </div>
+    <div className="grid grid-cols-2 gap-3 p-3 lg:grid-cols-5">
+      {Array.from({ length: 5 }, (_, index) => <div key={index} className="animate-pulse rounded-2xl border border-line bg-black/10 p-3">
+        <div className="aspect-square rounded-xl bg-white/[.035]" />
+        <div className="mt-3 h-4 w-2/3 rounded bg-white/[.04]" />
+        <div className="mt-2 h-3 w-1/2 rounded bg-white/[.03]" />
+      </div>)}
+    </div>
+  </section>;
+}
+
 function TokenMarketCard({ token, rank }: { token: TokenData; rank?: number }) {
   return <Link
     href={`/tokens/${token.address}`}

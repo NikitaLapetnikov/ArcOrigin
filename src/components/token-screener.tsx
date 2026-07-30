@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import { LatestBuys, MarketDiscovery } from "@/components/market-discovery";
+import { LatestBuys, LatestBuysLoading, MarketDiscovery } from "@/components/market-discovery";
 import { readWatchlist } from "@/components/watchlist-button";
 import { Button, EmptyState, WarningBox } from "@/components/ui";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
@@ -10,7 +10,7 @@ import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 export function TokenScreener({ watchlistOnly = false }: { watchlistOnly?: boolean }) {
   const [query, setQuery] = useState("");
   const [watchlist, setWatchlist] = useState<string[]>([]);
-  const { tokens: indexedTokens, loading, error, refresh } = useFactoryTokenIndex();
+  const { tokens: indexedTokens, loading, error, refresh, marketDataReady } = useFactoryTokenIndex();
   useEffect(() => {
     if (!watchlistOnly) return;
     const sync = () => setWatchlist(readWatchlist());
@@ -52,7 +52,9 @@ export function TokenScreener({ watchlistOnly = false }: { watchlistOnly?: boole
     {!loading && watchlistOnly && availableTokens.length === 0
       ? <EmptyState title="No saved tokens yet" body="Use the star on any token page to add it here." />
       : <>
-        {!watchlistOnly && <LatestBuys tokens={tokens} limit={10} />}
+        {!watchlistOnly && (!marketDataReady
+          ? <LatestBuysLoading />
+          : <LatestBuys tokens={tokens} limit={10} />)}
         <MarketDiscovery tokens={tokens}/>
       </>}
   </div>;

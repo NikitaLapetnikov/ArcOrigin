@@ -25,7 +25,7 @@ const liveBuyEvent = parseAbiItem(
 );
 const liveTradeClient = createArcPublicClient(undefined, 6_000);
 
-type CachedIndex = { savedAt: number; tokens: TokenData[] };
+type CachedIndex = { savedAt: number; marketDataComplete: true; tokens: TokenData[] };
 type TokenIndexSnapshot = { tokens: TokenData[]; indexedBlock: string; generatedAt: string };
 type ConfirmedTrade = {
   tokenAddress: string;
@@ -158,9 +158,10 @@ function readCachedIndex(): CachedIndex | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedIndex>;
     if (typeof parsed.savedAt !== "number" || !Number.isFinite(parsed.savedAt) || parsed.savedAt <= 0) return null;
+    if (parsed.marketDataComplete !== true) return null;
     if (!Array.isArray(parsed.tokens) || parsed.tokens.length > 100 || !parsed.tokens.every(isCachedToken)) return null;
     const tokens = mergePendingTrades(currentV4Tokens(parsed.tokens));
-    return { savedAt: parsed.savedAt, tokens };
+    return { savedAt: parsed.savedAt, marketDataComplete: true, tokens };
   } catch {
     return null;
   }
@@ -168,7 +169,11 @@ function readCachedIndex(): CachedIndex | null {
 
 function writeCachedIndex(tokens: TokenData[]) {
   try {
-    const snapshot: CachedIndex = { savedAt: Date.now(), tokens: currentV4Tokens(tokens) };
+    const snapshot: CachedIndex = {
+      savedAt: Date.now(),
+      marketDataComplete: true,
+      tokens: currentV4Tokens(tokens),
+    };
     window.localStorage.setItem(TOKEN_INDEX_CACHE_KEY, JSON.stringify(snapshot));
     return snapshot.savedAt;
   } catch {
@@ -324,6 +329,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
   const [error, setError] = useState("");
   const [isCached, setIsCached] = useState(false);
   const [isPartial, setIsPartial] = useState(false);
+  const [marketDataReady, setMarketDataReady] = useState(false);
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const refreshRequestRef = useRef(0);
   const staleRevalidationAttemptRef = useRef(0);
@@ -347,12 +353,10 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         (indexedTokens, stale) => {
           if (!isCurrentRequest()) return;
           setTokens((current) => {
-            const next = mergePendingTrades(indexedTokens.map((token) => preserveMarketValues(
+            return mergePendingTrades(indexedTokens.map((token) => preserveMarketValues(
               token,
               current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()),
             )));
-            if (allowCache) writeCachedIndex(next);
-            return next;
           });
           setIsPartial(false);
           setIsCached(stale);
@@ -376,11 +380,14 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
             ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
             : token
         )));
-        if (allowCache) writeCachedIndex(next);
+        if (allowCache && !result.marketDataError) {
+          writeCachedIndex(next);
+        }
         return next;
       });
       setIsPartial(Boolean(result.marketDataError));
       setIsCached(result.stale);
+      if (!result.marketDataError) setMarketDataReady(true);
       if (result.marketDataError) {
         setError("Live market refresh is delayed. Confirm trade amounts with the onchain quote.");
       }
@@ -406,6 +413,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         setTokens(cached.tokens);
         setIsCached(true);
         setIsPartial(false);
+        setMarketDataReady(true);
         setCachedAt(cached.savedAt);
         const lastConfirmedLaunchAt = Number(window.localStorage.getItem(LAST_CONFIRMED_LAUNCH_KEY) ?? 0);
         forceInitialRefresh = cached.tokens.length === 0
@@ -438,7 +446,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       if (includeMarketData) {
         setTokens((current) => {
           const next = current.map((token) => mergeConfirmedTrade(token, detail));
-          if (allowCache) setCachedAt(writeCachedIndex(next));
+          if (allowCache && readCachedIndex()) setCachedAt(writeCachedIndex(next));
           return next;
         });
         for (const delay of [1_500, 5_000, 12_000]) {
@@ -517,5 +525,5 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
     return unwatch;
   }, [includeMarketData, liveCurveKey]);
 
-  return { tokens, loading, error, refresh, isCached, isPartial, cachedAt };
+  return { tokens, loading, error, refresh, isCached, isPartial, marketDataReady, cachedAt };
 }

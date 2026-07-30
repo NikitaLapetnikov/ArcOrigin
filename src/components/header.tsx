@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { ArrowRightLeft, ChevronDown, Copy, LogOut, Menu, UserRound, Wallet, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ConnectorAlreadyConnectedError,
@@ -27,23 +27,29 @@ const nav = [
   ["Docs", "/docs"],
 ] as const;
 
+const WALLET_CONNECTION_TIMEOUT_MS = 15_000;
+
 function WalletButton() {
   const [mounted, setMounted] = useState(false);
   const [restoreTimedOut, setRestoreTimedOut] = useState(false);
+  const [connectTimedOut, setConnectTimedOut] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [connectionError, setConnectionError] = useState("");
+  const connectionAttemptRef = useRef(0);
   const { address, isConnected, chainId, status: accountStatus } = useAccount();
   const { connectors, connectAsync, isPending, error, reset: resetConnect } = useConnect();
   const { reconnectAsync, isPending: isReconnectPending } = useReconnect();
   const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
-  const restoringWallet = (accountStatus === "reconnecting" || isReconnectPending) && !restoreTimedOut;
-  const connectionPending = isPending
-    || (isReconnectPending && !restoreTimedOut)
-    || accountStatus === "connecting"
-    || (accountStatus === "reconnecting" && !restoreTimedOut);
+  const automaticRestorePending = accountStatus === "reconnecting"
+    || isReconnectPending
+    || (accountStatus === "connecting" && !isPending);
+  const restoringWallet = automaticRestorePending && !restoreTimedOut;
+  const manualConnectionPending = (isPending || (accountStatus === "connecting" && !automaticRestorePending))
+    && !connectTimedOut;
+  const connectionPending = manualConnectionPending || restoringWallet;
   const visibleError = connectionError || (
     error && !(error instanceof ConnectorAlreadyConnectedError)
       ? error.message.split("\n")[0]
@@ -58,13 +64,27 @@ function WalletButton() {
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
-    if (accountStatus !== "reconnecting" && !isReconnectPending) {
+    if (!automaticRestorePending) {
       setRestoreTimedOut(false);
       return;
     }
     const timeout = window.setTimeout(() => setRestoreTimedOut(true), 2_500);
     return () => window.clearTimeout(timeout);
-  }, [accountStatus, isReconnectPending]);
+  }, [automaticRestorePending]);
+  useEffect(() => {
+    if (!isPending && accountStatus !== "connecting") {
+      setConnectTimedOut(false);
+      return;
+    }
+    if (automaticRestorePending) return;
+    const timeout = window.setTimeout(() => {
+      connectionAttemptRef.current += 1;
+      setConnectTimedOut(true);
+      setConnectionError("Wallet connection timed out. Unlock your wallet and try again.");
+      resetConnect();
+    }, WALLET_CONNECTION_TIMEOUT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [accountStatus, automaticRestorePending, isPending, resetConnect]);
   useEffect(() => {
     if (!selectorOpen && !accountOpen) return;
     const close = (event: KeyboardEvent) => {
@@ -136,12 +156,17 @@ function WalletButton() {
   </div>;
 
   async function connectWallet(connector: Connector) {
+    const attempt = ++connectionAttemptRef.current;
     setConnectionError("");
+    setConnectTimedOut(false);
     resetConnect();
     try {
       await connectAsync({ connector });
+      if (attempt !== connectionAttemptRef.current) return;
       setSelectorOpen(false);
     } catch (connectError) {
+      if (attempt !== connectionAttemptRef.current) return;
+      resetConnect();
       if (
         connectError instanceof ConnectorAlreadyConnectedError
         || (connectError instanceof Error && /already connected/i.test(connectError.message))
@@ -150,11 +175,12 @@ function WalletButton() {
         // account state has hydrated. Reconcile that session instead of asking
         // the wallet to connect a second time.
         setSelectorOpen(false);
-        resetConnect();
         try {
           await reconnectAsync({ connectors: [connector] });
+          if (attempt !== connectionAttemptRef.current) return;
         } catch {
-          setConnectionError("Could not restore the wallet session. Reload the page and try again.");
+          if (attempt !== connectionAttemptRef.current) return;
+          setConnectionError("Could not restore the wallet session. Unlock your wallet and try again.");
         }
         return;
       }
@@ -170,7 +196,9 @@ function WalletButton() {
     <Button
       title={visibleError || undefined}
       onClick={() => {
+        connectionAttemptRef.current += 1;
         setConnectionError("");
+        setConnectTimedOut(false);
         resetConnect();
         setSelectorOpen(true);
       }}
