@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { ChevronDown, Copy, LogOut, Menu, Radio, UserRound, Wallet, X } from "lucide-react";
+import { ArrowRightLeft, ChevronDown, Copy, LogOut, Menu, UserRound, Wallet, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -17,7 +17,7 @@ import {
 } from "wagmi";
 import { ARCORIGIN_NETWORK, arcChain } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
-import { Badge, Button } from "./ui";
+import { Button } from "./ui";
 import { ThemeToggle } from "./theme-toggle";
 
 const nav = [
@@ -272,33 +272,27 @@ export function Header() {
 
 function NetworkLink({ mobile = false }: { mobile?: boolean }) {
   const otherNetwork = ARCORIGIN_NETWORK === "mainnet" ? "testnet" : "mainnet";
-  const destination = (
+  const configuredDestination = (
     otherNetwork === "mainnet"
       ? process.env.NEXT_PUBLIC_MAINNET_APP_URL
       : process.env.NEXT_PUBLIC_TESTNET_APP_URL
   )?.trim();
-  const label = ARCORIGIN_NETWORK === "mainnet" ? "Arc Mainnet" : "Arc Testnet";
-  const content = <>
-    <Radio className="size-3.5 text-cyan" />
-    {label}
-    {destination && <ChevronDown className="size-3.5 text-slate-500" />}
-  </>;
+  const destination = configuredDestination || (
+    otherNetwork === "mainnet"
+      ? "https://arcorigin.xyz"
+      : "https://testnet.arcorigin.xyz"
+  );
+  const label = otherNetwork === "mainnet" ? "Switch to Mainnet" : "Switch to Testnet";
 
-  if (!destination) {
-    return <Badge
-      tone="cyan"
-      className={cn(
-        "h-10 gap-2 rounded-[10px] px-3 text-[11px] normal-case tracking-[-.01em]",
-        mobile ? "inline-flex" : "hidden xl:inline-flex",
-      )}
-    >{content}</Badge>;
-  }
   return <a
     href={destination}
-    title={`Open Arc ${otherNetwork}`}
+    title={`Switch to Arc ${otherNetwork}`}
     className={cn(
-      "h-10 items-center gap-2 rounded-[10px] border border-cyan/25 bg-cyan/[.055] px-3 text-[11px] font-semibold text-cyan transition hover:border-cyan/45 hover:bg-cyan/[.09]",
-      mobile ? "inline-flex" : "hidden xl:inline-flex",
+      "h-10 items-center gap-2 rounded-[10px] border border-cyan/25 bg-cyan/[.055] px-3 text-xs font-semibold text-cyan transition hover:border-cyan/45 hover:bg-cyan/[.09]",
+      mobile ? "inline-flex" : "hidden md:inline-flex",
     )}
-  >{content}</a>;
+  >
+    <ArrowRightLeft className="size-3.5" />
+    {label}
+  </a>;
 }
