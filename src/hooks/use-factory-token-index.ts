@@ -19,6 +19,7 @@ const PENDING_TRADES_KEY = `arcorigin:${arcChain.id}:confirmed-trades`;
 const TOKEN_INDEX_CACHE_TTL = 6 * 60 * 60 * 1_000;
 const PENDING_TRADE_TTL = 24 * 60 * 60 * 1_000;
 const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
+const MARKET_REQUEST_CONCURRENCY = 4;
 const TRADE_FEED_LIMIT = 500;
 const liveBuyEvent = parseAbiItem(
   "event TokenBought(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 fee)",
@@ -303,7 +304,7 @@ async function loadFactoryTokens(
 
   let marketDataError: unknown;
   const failedMarketAddresses = new Set<string>();
-  const marketTokens = await mapWithConcurrency(indexedTokens, 2, async (base) => {
+  const marketTokens = await mapWithConcurrency(indexedTokens, MARKET_REQUEST_CONCURRENCY, async (base) => {
     const refreshQuery = forceRefresh ? "?refresh=1" : "";
     try {
       const marketResult = await loadServerSnapshot<MarketSnapshot>(`/api/onchain/tokens/${base.address}/market${refreshQuery}`);

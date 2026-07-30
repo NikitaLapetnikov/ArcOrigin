@@ -27,7 +27,7 @@ const nav = [
   ["Docs", "/docs"],
 ] as const;
 
-const WALLET_CONNECTION_TIMEOUT_MS = 15_000;
+const WALLET_CONNECTION_TIMEOUT_MS = 10_000;
 
 function WalletButton() {
   const [mounted, setMounted] = useState(false);
@@ -204,7 +204,7 @@ function WalletButton() {
       }}
       disabled={connectionPending}
     >
-      <Wallet className="size-4" />{connectionPending ? "Connecting" : "Connect wallet"}
+      <Wallet className="size-4" />{manualConnectionPending ? "Confirm in wallet…" : "Connect wallet"}
     </Button>
     {visibleError && <span className="hidden max-w-44 text-[10px] leading-4 text-rose-300 xl:block">{visibleError}</span>}
     {selectorOpen && createPortal(<div

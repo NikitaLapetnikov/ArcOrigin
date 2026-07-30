@@ -52,9 +52,11 @@ export function TokenScreener({ watchlistOnly = false }: { watchlistOnly?: boole
     {!loading && watchlistOnly && availableTokens.length === 0
       ? <EmptyState title="No saved tokens yet" body="Use the star on any token page to add it here." />
       : <>
-        {!watchlistOnly && (!marketDataReady
-          ? <LatestBuysLoading />
-          : <LatestBuys tokens={tokens} limit={10} />)}
+        {!watchlistOnly && (marketDataReady
+          ? <LatestBuys tokens={tokens} limit={10} />
+          : loading
+            ? <LatestBuysLoading />
+            : null)}
         <MarketDiscovery tokens={tokens}/>
       </>}
   </div>;
