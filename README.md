@@ -10,7 +10,13 @@ ArcOrigin is a USDC-native token launch and discovery layer for Arc. This reposi
 - Arc mainnet: chain ID `5042`; public RPC/explorer and Uniswap V3 runtime hashes are pinned and checked by `pnpm network:verify:arc-mainnet`. The ArcOrigin production candidate is deployed and Safe-owned but is not activated.
 - Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcOrigin deployment addresses are recorded in `deployment/arc-testnet.json`.
 
-The production interface does not insert simulated token listings or trading activity. The internal review and unresolved mainnet blockers are documented in [`SECURITY.md`](./SECURITY.md). Nothing in this repository is an independent audit claim or investment advice.
+The production interface does not insert simulated token listings or trading
+activity. The internal review and unresolved mainnet blockers are documented in
+[`SECURITY.md`](./SECURITY.md). The repeatable 2026-07-30 V6 review evidence,
+invariants, Slither triage, deployed bytecode identity, and mainnet activation
+procedure are collected in
+[`audit/internal-v6-2026-07-30`](./audit/internal-v6-2026-07-30/README.md).
+Nothing in this repository is an independent audit claim or investment advice.
 
 ## Local development
 
