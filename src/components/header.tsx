@@ -279,8 +279,8 @@ function NetworkLink({ mobile = false }: { mobile?: boolean }) {
   )?.trim();
   const destination = configuredDestination || (
     otherNetwork === "mainnet"
-      ? "https://arcorigin.xyz"
-      : "https://testnet.arcorigin.xyz"
+      ? "https://mainnet.arcorigin.xyz"
+      : "https://arcorigin.xyz"
   );
   const label = otherNetwork === "mainnet" ? "Switch to Mainnet" : "Switch to Testnet";
 

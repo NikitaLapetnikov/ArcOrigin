@@ -71,7 +71,7 @@ pnpm monitor:production
 Recommended production variables:
 
 ```dotenv
-PRODUCTION_HEALTH_URL=https://arcorigin.xyz/api/health
+PRODUCTION_HEALTH_URL=https://mainnet.arcorigin.xyz/api/health
 INDEXER_MAX_BLOCK_LAG=300
 ALERT_WEBHOOK_URL=https://...
 ALERT_WEBHOOK_FORMAT=slack

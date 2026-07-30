@@ -47,8 +47,8 @@ Use two isolated deployments of the same commit:
 
 | Environment | Suggested URL | Build selector | Chain |
 | --- | --- | --- | --- |
-| Mainnet | `https://arcorigin.xyz` | `NEXT_PUBLIC_ARC_NETWORK=mainnet` | Arc `5042` |
-| Testnet | `https://testnet.arcorigin.xyz` | `NEXT_PUBLIC_ARC_NETWORK=testnet` | Arc Testnet `5042002` |
+| Mainnet | `https://mainnet.arcorigin.xyz` | `NEXT_PUBLIC_ARC_NETWORK=mainnet` | Arc `5042` |
+| Testnet (default) | `https://arcorigin.xyz` | `NEXT_PUBLIC_ARC_NETWORK=testnet` | Arc Testnet `5042002` |
 
 Do not make one running service change its chain at runtime. Separate services
 give each network its own contract addresses, RPC pool, Redis/cache namespace,
@@ -338,20 +338,20 @@ The command exits non-zero until every gate is true.
 
 ## Phase 7 — deploy the two web environments
 
-First preserve the existing testnet:
+Keep testnet as the default public environment:
 
-1. create `testnet.arcorigin.xyz`;
+1. point `arcorigin.xyz` to the testnet service;
 2. deploy the current service with `NEXT_PUBLIC_ARC_NETWORK=testnet`;
 3. confirm launches/trades/cache/history still use chain `5042002`;
-4. set `NEXT_PUBLIC_MAINNET_APP_URL=https://arcorigin.xyz`.
+4. set `NEXT_PUBLIC_MAINNET_APP_URL=https://mainnet.arcorigin.xyz`.
 
 Then create a separate mainnet service from the exact same commit:
 
 ```dotenv
 NEXT_PUBLIC_ARC_NETWORK=mainnet
 NEXT_PUBLIC_PROTOCOL_VERSION=6
-NEXT_PUBLIC_TESTNET_APP_URL=https://testnet.arcorigin.xyz
-NEXT_PUBLIC_MAINNET_APP_URL=https://arcorigin.xyz
+NEXT_PUBLIC_TESTNET_APP_URL=https://arcorigin.xyz
+NEXT_PUBLIC_MAINNET_APP_URL=https://mainnet.arcorigin.xyz
 NEXT_PUBLIC_MAINNET_FACTORY_ADDRESS=0x2dAED890c8920428e0215583aaC98332447a8170
 NEXT_PUBLIC_MAINNET_FACTORY_FROM_BLOCK=12881762
 NEXT_PUBLIC_MAINNET_FEE_VAULT_ADDRESS=0x07287313ee649efcF22EAEE4361cd6c512219B61
