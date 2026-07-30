@@ -40,6 +40,15 @@ const {
   getCanonicalCheckpointStatus,
   upgradeLegacyCanonicalCheckpoint,
 } = loadTypeScriptModule("src/lib/onchain/canonical-checkpoint.ts");
+const {
+  hasCompleteFactoryLaunchSet,
+} = loadTypeScriptModule("src/lib/onchain/factory-index-validation.ts");
+const {
+  snapshotRevalidationDelay,
+} = loadTypeScriptModule("src/lib/onchain/snapshot-revalidation.ts");
+const {
+  snapshotCacheControl,
+} = loadTypeScriptModule("src/lib/onchain/snapshot-http-cache.ts");
 
 const address = "0x1111111111111111111111111111111111111111";
 
@@ -138,4 +147,31 @@ test("legacy snapshots gain a canonical hash without a full index rebuild", asyn
     ),
     null,
   );
+});
+
+test("explorer launch sets are accepted only when they match the Factory count", () => {
+  assert.equal(hasCompleteFactoryLaunchSet(3, 3n), true);
+  assert.equal(hasCompleteFactoryLaunchSet(2, 3n), false);
+  assert.equal(hasCompleteFactoryLaunchSet(0, 1n), false);
+  assert.equal(hasCompleteFactoryLaunchSet(0, 0n), true);
+  assert.equal(hasCompleteFactoryLaunchSet(-1, 0n), false);
+  assert.equal(
+    hasCompleteFactoryLaunchSet(1, BigInt(Number.MAX_SAFE_INTEGER) + 1n),
+    false,
+  );
+});
+
+test("stale snapshots revalidate quickly and settle on a bounded retry interval", () => {
+  assert.equal(snapshotRevalidationDelay(-1), 1_500);
+  assert.equal(snapshotRevalidationDelay(0), 1_500);
+  assert.equal(snapshotRevalidationDelay(1), 3_000);
+  assert.equal(snapshotRevalidationDelay(4), 30_000);
+  assert.equal(snapshotRevalidationDelay(100), 30_000);
+});
+
+test("stale and forced snapshots cannot be retained by an HTTP cache", () => {
+  const freshPolicy = "public, max-age=15";
+  assert.equal(snapshotCacheControl({ forceRefresh: false, stale: false, freshPolicy }), freshPolicy);
+  assert.equal(snapshotCacheControl({ forceRefresh: false, stale: true, freshPolicy }), "no-store");
+  assert.equal(snapshotCacheControl({ forceRefresh: true, stale: false, freshPolicy }), "no-store");
 });

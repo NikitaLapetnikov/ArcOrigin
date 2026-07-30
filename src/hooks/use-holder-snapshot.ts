@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { arcChain, factoryForLaunchBlock } from "@/lib/chains";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
+import { snapshotRevalidationDelay } from "@/lib/onchain/snapshot-revalidation";
 import type { TokenData } from "@/lib/types";
 
 const STORAGE_PREFIX = `arcorigin:${arcChain.id}:holders:`;
 const STORAGE_TTL_MS = 24 * 60 * 60 * 1_000;
 const REQUEST_TIMEOUT_MS = 10_000;
-const pendingRequests = new Map<string, Promise<HolderSnapshot>>();
+type HolderSnapshotResult = { snapshot: HolderSnapshot; stale: boolean };
+const pendingRequests = new Map<string, Promise<HolderSnapshotResult>>();
 const HOLDER_REFRESH_DELAYS_MS = [1_500, 5_000, 12_000] as const;
 
 type CachedHolderSnapshot = {
@@ -133,9 +135,9 @@ async function requestSnapshot(token: TokenData, forceRefresh: boolean) {
     cache: forceRefresh ? "no-store" : "default",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   }).then(async (response) => {
-    const payload = await response.json() as { snapshot?: HolderSnapshot; error?: string };
+    const payload = await response.json() as { snapshot?: HolderSnapshot; stale?: boolean; error?: string };
     if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Holder analytics are temporarily unavailable.");
-    return payload.snapshot;
+    return { snapshot: payload.snapshot, stale: Boolean(payload.stale) };
   }).finally(() => pendingRequests.delete(key));
   pendingRequests.set(key, request);
   return request;
@@ -147,7 +149,9 @@ export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = fa
   const [savedAt, setSavedAt] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [stale, setStale] = useState(false);
   const refreshRequestRef = useRef(0);
+  const staleRevalidationAttemptRef = useRef(0);
 
   const refresh = useCallback(async (forceRefresh = false) => {
     if (!token || !address) return;
@@ -155,13 +159,15 @@ export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = fa
     setLoading(true);
     setError("");
     try {
-      const next = await requestSnapshot(token, forceRefresh);
+      const result = await requestSnapshot(token, forceRefresh);
       if (refreshRequestRef.current !== requestId) return;
-      const cached = writeCached(address, next);
-      setSnapshot(next);
+      const cached = writeCached(address, result.snapshot);
+      setSnapshot(result.snapshot);
       setSavedAt(cached.savedAt);
+      setStale(result.stale);
     } catch (refreshError) {
       if (refreshRequestRef.current !== requestId) return;
+      setStale(true);
       setError(refreshError instanceof Error ? refreshError.message : "Holder analytics are temporarily unavailable.");
     } finally {
       if (refreshRequestRef.current === requestId) setLoading(false);
@@ -169,9 +175,24 @@ export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = fa
   }, [address, token]);
 
   useEffect(() => {
+    if (!stale) {
+      staleRevalidationAttemptRef.current = 0;
+      return;
+    }
+    if (loading) return;
+    const attempt = staleRevalidationAttemptRef.current;
+    const timer = window.setTimeout(() => {
+      staleRevalidationAttemptRef.current = attempt + 1;
+      void refresh(false);
+    }, snapshotRevalidationDelay(attempt));
+    return () => window.clearTimeout(timer);
+  }, [loading, refresh, stale]);
+
+  useEffect(() => {
     if (!address) {
       setSnapshot(null);
       setSavedAt(0);
+      setStale(false);
       return;
     }
     const cached = readCached(address);
@@ -182,6 +203,7 @@ export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = fa
       setSnapshot(null);
       setSavedAt(0);
     }
+    setStale(false);
     if (autoRefresh) void refresh(false);
     const handleUpdate = (event: Event) => {
       const detail = (event as CustomEvent<{ address?: string; cached?: CachedHolderSnapshot }>).detail;
@@ -229,5 +251,5 @@ export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = fa
     };
   }, [address, refresh, token]);
 
-  return { snapshot, savedAt, loading, error, refresh };
+  return { snapshot, savedAt, loading, error, stale, refresh };
 }

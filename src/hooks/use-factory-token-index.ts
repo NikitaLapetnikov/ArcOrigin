@@ -8,6 +8,7 @@ import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
 import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
+import { snapshotRevalidationDelay } from "@/lib/onchain/snapshot-revalidation";
 import { getVerifiedBootstrapTokens } from "@/lib/onchain/verified-bootstrap-tokens";
 import type { TokenData, Trade } from "@/lib/types";
 
@@ -325,6 +326,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
   const [isPartial, setIsPartial] = useState(false);
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const refreshRequestRef = useRef(0);
+  const staleRevalidationAttemptRef = useRef(0);
   const liveCurveKey = includeMarketData
     ? tokens
       .filter((token): token is TokenData & { curveAddress: string } => isAddress(token.curveAddress))
@@ -381,8 +383,6 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       setIsCached(result.stale);
       if (result.marketDataError) {
         setError("Live market refresh is delayed. Confirm trade amounts with the onchain quote.");
-      } else if (result.stale) {
-        setError(`Showing the latest confirmed Factory snapshot while ${arcChain.name} RPC recovers.`);
       }
     } catch (loadError) {
       if (!isCurrentRequest()) return;
@@ -463,6 +463,20 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       reconciliationTimers.forEach(clearTimeout);
     };
   }, [allowCache, includeMarketData, refresh]);
+
+  useEffect(() => {
+    if (!isCached) {
+      staleRevalidationAttemptRef.current = 0;
+      return;
+    }
+    if (loading) return;
+    const attempt = staleRevalidationAttemptRef.current;
+    const timer = window.setTimeout(() => {
+      staleRevalidationAttemptRef.current = attempt + 1;
+      void refresh(false);
+    }, snapshotRevalidationDelay(attempt));
+    return () => window.clearTimeout(timer);
+  }, [isCached, loading, refresh]);
 
   useEffect(() => {
     if (!includeMarketData || !liveCurveKey) return;

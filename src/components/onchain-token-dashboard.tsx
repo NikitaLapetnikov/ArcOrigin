@@ -11,6 +11,7 @@ import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import { EXPLORER_URL, arcChain } from "@/lib/chains";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
+import { snapshotRevalidationDelay } from "@/lib/onchain/snapshot-revalidation";
 import type { TokenData, Trade } from "@/lib/types";
 import { money, number, tickerLabel } from "@/lib/utils";
 
@@ -63,6 +64,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
   const [stale, setStale] = useState(false);
   const pendingTradeHashes = useRef(new Set<string>());
   const refreshRequestRef = useRef(0);
+  const staleRevalidationAttemptRef = useRef(0);
   const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
 
   const applyRefreshedSnapshot = useCallback((next: OnchainTokenSnapshot) => {
@@ -91,7 +93,6 @@ export function useOnchainTokenSnapshot(token: TokenData) {
         if (!isCurrentRequest()) return;
         applyRefreshedSnapshot(payload.snapshot);
         setStale(Boolean(payload.stale));
-        if (payload.stale) setError(`Showing the latest confirmed market snapshot while ${arcChain.name} RPC recovers.`);
       } catch {
         const fallback = await loadIndexedMarketSnapshot(token);
         if (!isCurrentRequest()) return;
@@ -107,6 +108,20 @@ export function useOnchainTokenSnapshot(token: TokenData) {
       if (isCurrentRequest()) setLoading(false);
     }
   }, [applyRefreshedSnapshot, token]);
+
+  useEffect(() => {
+    if (!stale) {
+      staleRevalidationAttemptRef.current = 0;
+      return;
+    }
+    if (loading) return;
+    const attempt = staleRevalidationAttemptRef.current;
+    const timer = window.setTimeout(() => {
+      staleRevalidationAttemptRef.current = attempt + 1;
+      void refresh(false);
+    }, snapshotRevalidationDelay(attempt));
+    return () => window.clearTimeout(timer);
+  }, [loading, refresh, stale]);
 
   useEffect(() => {
     void refresh();

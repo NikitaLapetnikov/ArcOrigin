@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAddress, isAddress } from "viem";
 import { FactoryTokenNotFoundError, getHolderSnapshot, isHolderRpcError, type HolderLaunchHint } from "@/lib/onchain/holder-snapshot";
+import { snapshotCacheControl } from "@/lib/onchain/snapshot-http-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,7 +29,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
       : undefined;
     const result = await getHolderSnapshot(getAddress(address), forceRefresh, hint);
     return NextResponse.json(result, {
-      headers: { "Cache-Control": forceRefresh ? "no-store" : "public, max-age=30, s-maxage=60, stale-while-revalidate=600" },
+      headers: {
+        "Cache-Control": snapshotCacheControl({
+          forceRefresh,
+          stale: result.stale,
+          freshPolicy: "public, max-age=30, s-maxage=60, stale-while-revalidate=600",
+        }),
+      },
     });
   } catch (error) {
     if (error instanceof FactoryTokenNotFoundError) {

@@ -14,6 +14,7 @@ import {
   getCanonicalCheckpointStatus,
   upgradeLegacyCanonicalCheckpoint,
 } from "@/lib/onchain/canonical-checkpoint";
+import { hasCompleteFactoryLaunchSet } from "@/lib/onchain/factory-index-validation";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
@@ -30,6 +31,13 @@ const RPC_REQUEST_GAP_MS = 220;
 const ACTIVE_FACTORY_INDEXES = ARC_ACTIVE_FACTORY_INDEXES.filter(
   (factory) => factory.address.toLowerCase() === ARC_ACTIVE_FACTORY.toLowerCase(),
 );
+const factoryLaunchCountAbi = [{
+  type: "function",
+  name: "getLaunchedTokenCount",
+  stateMutability: "view",
+  inputs: [],
+  outputs: [{ type: "uint256" }],
+}] as const;
 
 export type FactoryLaunch = {
   factory: Address;
@@ -175,7 +183,17 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
         state.factoryBlockTimestamps.set(log.blockNumber.toString(), log.timestamp);
       }
     }
-    return launches;
+    if (ARCORIGIN_PROTOCOL_VERSION !== 6) {
+      if (launches.size > 0) return launches;
+    } else if (ACTIVE_FACTORY_INDEXES.length === 1) {
+      const expectedLaunches = await withRpcRetry(() => publicClient.readContract({
+        address: ACTIVE_FACTORY_INDEXES[0].address,
+        abi: factoryLaunchCountAbi,
+        functionName: "getLaunchedTokenCount",
+        blockNumber: indexedBlock,
+      }), 2);
+      if (hasCompleteFactoryLaunchSet(launches.size, expectedLaunches)) return launches;
+    }
   } catch {
     // The public explorer is an optimization only; verified RPC logs remain the fallback.
   }
@@ -508,6 +526,9 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
   }
 
   if (cache.snapshot && !forceRefresh) {
+    // The caller receives the last confirmed snapshot immediately while this
+    // refresh finishes in the background. Always observe a failed refresh.
+    void cache.pending?.catch(() => undefined);
     return { snapshot: cache.snapshot, stale: true };
   }
   try {

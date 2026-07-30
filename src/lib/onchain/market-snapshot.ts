@@ -592,6 +592,9 @@ export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = fa
       });
   }
   if (cache.snapshot && !forceRefresh) {
+    // The caller receives the last confirmed snapshot immediately while this
+    // refresh finishes in the background. Always observe a failed refresh.
+    void cache.pending?.catch(() => undefined);
     return { snapshot: cache.snapshot, stale: true };
   }
   try {

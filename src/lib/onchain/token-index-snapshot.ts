@@ -353,6 +353,10 @@ export async function getTokenIndexSnapshot(forceRefresh = false) {
       });
   }
   if (state.snapshot && !forceRefresh) {
+    // The stale response is intentional, but the refresh continues after the
+    // request returns. Observe failures so a provider outage cannot surface as
+    // an unhandled rejection in the server process.
+    void state.pending?.catch(() => undefined);
     return { snapshot: state.snapshot, stale: true };
   }
   try {
