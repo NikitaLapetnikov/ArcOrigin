@@ -4,11 +4,11 @@ ArcOrigin is a USDC-native token launch and discovery layer for Arc. This reposi
 
 ## Current status
 
-- Frontend: real Arc Testnet approval, launch, trade, chart, holder, and fee flows backed by confirmed onchain data.
-- Contracts: V6 is active on Arc Testnet after bytecode verification and onchain launch/trade/claim exercises. The Arc mainnet V6 candidate is deployed, remains paused, and is owned directly by the reviewed 2-of-3 Governance Safe.
-- Arc Testnet: chain ID `5042002`, RPC and Arcscan configured.
-- Arc mainnet: chain ID `5042`; public RPC/explorer and Uniswap V3 runtime hashes are pinned and checked by `pnpm network:verify:arc-mainnet`. The ArcOrigin production candidate is deployed and Safe-owned but is not activated.
-- Official Arc Testnet USDC: `0x3600000000000000000000000000000000000000`; ArcOrigin deployment addresses are recorded in `deployment/arc-testnet.json`.
+- Frontend: Arc mainnet is the production environment; launches, trades, charts, holders, creator claims, and fees use confirmed onchain data.
+- Contracts: V6 is active on Arc mainnet and Arc Testnet. Mainnet Factory, FeeVault, and CreatorRegistry are owned directly by the reviewed 2-of-3 Governance Safe.
+- Arc mainnet: chain ID `5042`; Factory launches and the verified Uniswap V3 migration route are active. Canonical addresses and activation transactions are recorded in [`deployment/arc-mainnet.json`](./deployment/arc-mainnet.json).
+- Arc Testnet: chain ID `5042002`; the isolated testnet deployment remains available for development and does not share contracts or cached state with mainnet.
+- Canonical Arc USDC: `0x3600000000000000000000000000000000000000`.
 
 The production interface does not insert simulated token listings or trading
 activity. The internal review and unresolved mainnet blockers are documented in
@@ -40,14 +40,14 @@ pnpm build
 ```
 
 Select the target web environment at build time with
-`NEXT_PUBLIC_ARC_NETWORK=testnet|mainnet`. Mainnet requires its own reviewed
-RPC, explorer, contracts, deployment block, and cache. The header links to the
-other independently deployed environment; it does not mix two chains inside
-one index.
+`NEXT_PUBLIC_ARC_NETWORK=mainnet|testnet`. The production default in
+`.env.example` is mainnet. Testnet remains an explicit, separate build and
+must use its own contracts, deployment block, Redis/cache namespace, and URL.
+The header links between deployments; one running index never mixes chains.
 
 ## Contracts
 
-The deployed Arc Testnet contracts retain their original `ArcForge*` Solidity names. The ArcOrigin product rebrand does not alter deployed bytecode, ABIs, or token identity.
+The deployed contracts retain their original `ArcForge*` Solidity names. The ArcOrigin product rebrand does not alter deployed bytecode, ABIs, or token identity.
 
 - `ArcForgeToken`: fixed supply, immutable creator/factory, immutable launch metadata, no owner controls.
 - `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection. Current V4 curves split trading fees onchain and graduate into a permanent real-reserve AMM without a spot-price jump, so both buys and sells continue.
@@ -58,7 +58,7 @@ The deployed Arc Testnet contracts retain their original `ArcForge*` Solidity na
 
 V6 adds authorized FeeVault collectors, pull-based creator fee claims, transaction deadlines, exact-transfer accounting, bounded pagination, two-step governance ownership, a pause-only emergency guardian, and graduation that cannot be blocked by optional DEX migration. See [`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md).
 
-The ArcOrigin launch flow uses zero free creator allocation, a 10 USDC launch fee, and 1% buy/sell fees. Creators can acquire tokens only through an optional paid developer buy capped at 5% of supply. V6 accrues 70% of each trading fee for creator claims and sends 30% to the protocol FeeVault. Current launches use a 2,500 virtual-USDC reserve and graduate after raising 10,000 real USDC. V6 adds a three-block launch-protection window and optional fail-safe DEX migration. Migration is disabled on Arc Testnet until an official Uniswap or Aerodrome deployment and audited adapter are available; without an adapter, graduation keeps permanent two-sided liquidity in the curve.
+The ArcOrigin launch flow uses zero free creator allocation, a 10 USDC launch fee, and 1% buy/sell fees. Creators can acquire tokens only through an optional paid developer buy capped at 5% of supply. V6 accrues 70% of each trading fee for creator claims and sends 30% to the protocol FeeVault. Current launches use a 2,500 virtual-USDC reserve and graduate after raising 10,000 real USDC. V6 adds a three-block launch-protection window and fail-safe DEX migration. Mainnet launches snapshot the activated, verified Arc Uniswap V3 adapter/locker/verifier tuple; testnet graduation continues in the permanent internal AMM.
 
 The proposed AORG protocol-token policy routes 80% of allocated protocol revenue through bounded TWAP buybacks and 20% to operations. Bought AORG is sent directly to the burn address. The controller, tests, deployment preflight, and Safe launch sequence are documented in [`docs/AORG_TOKENOMICS_AND_BUYBACK.md`](./docs/AORG_TOKENOMICS_AND_BUYBACK.md). No token or controller is canonical until the Safe launch and governance configuration are complete.
 
@@ -102,12 +102,11 @@ pnpm verify:arc-mainnet:v6
 pnpm deploy:migration:arc-mainnet:v6
 ```
 
-Do not activate the mainnet UI or accept public launches after these commands.
-The migration deployment command creates the immutable V3 Adapter, permanent
-LP-NFT Locker, and independent Verifier without changing Factory state.
-Runtime code-hash checks, source verification, the direct 2-of-3 Safe ownership handoff,
-fork exercises, monitoring, and the final readiness gate must complete before
-governance configures or enables it. The exact dual-environment and release procedure is in
+These deployment commands create a paused candidate. The canonical deployment
+has since completed runtime code-hash checks, source publication, direct 2-of-3
+Safe ownership handoff, migration configuration, and separate Safe activation
+transactions for migrations and launches. The exact addresses, transaction
+hashes, dual-environment procedure, and rollback steps are in
 [`docs/ARC_MAINNET_RELEASE_RUNBOOK.md`](./docs/ARC_MAINNET_RELEASE_RUNBOOK.md).
 
 Factory-only upgrades use separate deployment and activation commands so the new Factory can be inspected and the multi-factory indexer deployed before `CreatorRegistry` is changed:
@@ -160,15 +159,16 @@ certbot --nginx -d arcorigin.xyz -d www.arcorigin.xyz
 
 Run package and OS upgrades deliberately rather than unattended on a production host; validate the build after upgrades and retain a rollback artifact.
 
-## Production release gates
+## Production operations
 
-1. Confirm official Arc mainnet RPC/explorer and pin runtime code hashes for the
-   Uniswap addresses published by the official SDK.
-2. Independent smart-contract audit and formal deployment review.
-3. Contract source verification on Arcscan.
-4. Durable event indexer and PostgreSQL persistence.
-5. Re-verify the completed V6 direct 2-of-3 Safe ownership handoff before activation.
-6. Durable reorg-aware indexing plus resilient transaction-state recovery.
-7. Monitoring, edge rate limiting, backups, and incident response.
+The canonical Arc mainnet deployment is active. Operators must continuously
+monitor Factory ownership and pause state, RPC/indexer lag, metadata storage,
+FeeVault balances, and migration events. Any new deployment or governance
+change still requires reproducible builds, source publication, two Safe
+confirmations, transaction simulation, and post-execution verification.
+
+The repository includes a repeatable internal engineering review. It is not an
+independent audit claim; users should evaluate the published source,
+deployment, governance, and residual risks themselves.
 
 Not financial advice. Token launches are risky.

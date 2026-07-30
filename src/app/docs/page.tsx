@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { ExternalLink } from "lucide-react";
 import {
+  ARCORIGIN_NETWORK,
   ARCORIGIN_PROTOCOL_VERSION,
   ARC_ACTIVE_FACTORY_BLOCK,
   ARC_ACTIVE_CONTRACTS,
+  ARC_MAINNET_DEPLOYMENT,
   ARC_UNISWAP_V3,
   EXPLORER_URL,
   arcChain,
@@ -55,6 +57,15 @@ const contracts = [
   ["Fee Vault", ARC_ACTIVE_CONTRACTS.feeVault, "Protocol fee accounting"],
   ["Creator Registry", ARC_ACTIVE_CONTRACTS.creatorRegistry, "Factory launch records"],
   ["USDC", ARC_ACTIVE_CONTRACTS.usdc, "Quote and settlement asset"],
+  ...(ARCORIGIN_NETWORK === "mainnet"
+    ? [
+        ["Curve Deployer", ARC_MAINNET_DEPLOYMENT.curveDeployer, "Bound permanently to Factory"],
+        ["Migration Adapter", ARC_MAINNET_DEPLOYMENT.migrationAdapter, "Canonical Uniswap V3 migration"],
+        ["Liquidity Locker", ARC_MAINNET_DEPLOYMENT.liquidityLocker, "Permanent LP position custody"],
+        ["Migration Verifier", ARC_MAINNET_DEPLOYMENT.migrationVerifier, "Pool and lock verification"],
+        ["Governance Safe", ARC_MAINNET_DEPLOYMENT.governanceSafe, "Direct 2-of-3 owner"],
+      ] as const
+    : []),
 ] as const;
 
 const events = [
@@ -336,13 +347,17 @@ x · y          = constant before each trade`}</CodeBlock>
 
         <DocSection id="governance" eyebrow="Administration" title="Governance">
           <p>{isV6
-            ? "V6 administration is transparent onchain, with a published 2-of-3 Safe and 48-hour Timelock governance path."
+            ? ARCORIGIN_NETWORK === "mainnet"
+              ? "V6 administration is transparent onchain. Factory, Fee Vault, and Creator Registry are owned directly by the published 2-of-3 Governance Safe."
+              : "V6 administration is transparent onchain and isolated from the mainnet deployment."
             : `The current ${arcChain.name} deployment still uses one deployment wallet for Factory, Registry, and Fee Vault administration. This ownership layout must not be used for public mainnet activation.`}</p>
           <StepList items={[
             ["Governance Safe", "Three independent signers with a 2-of-3 confirmation threshold."],
-            ["Timelock", "The Safe schedules exact owner operations with a minimum 48-hour delay."],
-            ["Protocol ownership", "Factory, CreatorRegistry, Fee Vault, and legacy Factories move to the self-administered timelock."],
-            ["Treasury Safe", "Protocol withdrawals go only to a verified 2-of-3 Safe recipient."],
+            ["Protocol ownership", ARCORIGIN_NETWORK === "mainnet"
+              ? "Factory, Creator Registry, and Fee Vault are directly controlled by the 2-of-3 Safe."
+              : "Testnet ownership is separate from mainnet governance."],
+            ["Emergency controls", "The guardian can pause new launches and migrations, but cannot resume them, seize reserves, or block sells."],
+            ["Treasury", "Protocol withdrawals always go to the configured Safe recipient."],
           ]} />
           <Callout title="What administration can change" tone="neutral">
             Factory changes affect only future curves. Existing token supply, fees, reserves, and migration configuration are immutable snapshots. Existing tokens and curves have no owner withdrawal, mint, blacklist, upgrade, or pause control.
@@ -370,13 +385,13 @@ x · y          = constant before each trade`}</CodeBlock>
         </DocSection>
 
         <DocSection id="security" eyebrow="Engineering review" title="Security review">
-          <p>A security and logic review was completed on 28 July 2026 across the V4–V6 contracts, wallet flows, metadata upload, indexing, caching, and production headers.</p>
+          <p>A repeatable internal security and logic review was completed on 30 July 2026 across the V6 contracts, wallet flows, metadata upload, indexing, caching, governance, and production configuration.</p>
           <Callout title="Review outcome" tone="neutral">
             <ul className="grid gap-2.5">
               <li>No direct unauthorized-withdrawal or curve reserve-drain path was found in the reviewed flows.</li>
+              <li>Mainnet runtime bytecode, ownership, migration configuration, and both activation receipts were verified against the published deployment.</li>
               <li>Trade updates now use confirmed receipt events and current contract reserves.</li>
               <li>Quote, upload, refresh, holder, profile, and RPC failover boundaries were hardened.</li>
-              <li>Production dependencies have no known high-severity advisories; remaining advisories are confined to development tooling.</li>
             </ul>
           </Callout>
           <a

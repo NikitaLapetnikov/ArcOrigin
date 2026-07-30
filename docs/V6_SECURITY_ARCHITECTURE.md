@@ -1,9 +1,10 @@
 # ArcOrigin V6 security architecture
 
-Status: active on Arc Testnet after bytecode verification and onchain exercises.
-The isolated Arc mainnet V6 candidate is deployed, owned by the reviewed 2-of-3
-Governance Safe, and remains launch-paused and migration-paused pending the
-remaining release gates.
+Status: active on Arc mainnet and Arc Testnet. The canonical mainnet V6
+deployment is owned directly by the reviewed 2-of-3 Governance Safe. Launches
+and the verified Uniswap V3 migration route were activated through separate
+2-of-3 Safe transactions and independently checked against current Factory
+state.
 
 V6 is a new, isolated contract stack. It does not modify any deployed V4 or V5
 bytecode. Arc mainnet uses direct 2-of-3 Safe ownership for Factory, FeeVault,
@@ -111,9 +112,24 @@ governed contracts. The superseded Timelock operation was cancelled. The
 post-handoff verifier requires the Safe as owner and the zero address as
 `pendingOwner` on every target.
 
-## Deployment gate
+## Canonical mainnet activation
 
-Required before activation:
+- Factory: `0x2dAED890c8920428e0215583aaC98332447a8170`
+- Governance/Treasury Safe: `0xa6eA2380F98700AD5CA8B9F74dC8861269513779`
+- Migration activation:
+  `0xe699d96ff521bed7d57e36651337558b74a63fbda0c2250c3b24006b8c1da912`
+- Launch activation:
+  `0x1244450d5ceaa0e14792bace5a879284910469c24ab42d341a06092680e28ee0`
+- Confirmed state: `launchesPaused=false`, `migrationPaused=false`
+- Migration configuration hash:
+  `0x014dab2eb4a6c624beb2d50c873a2792683519bede450c548023758913a0b640`
+
+The complete public deployment record is
+[`deployment/arc-mainnet.json`](../deployment/arc-mainnet.json).
+
+## Deployment checklist
+
+The following checklist remains mandatory for any replacement deployment:
 
 1. `pnpm contracts:compile`
 2. `pnpm contracts:test`

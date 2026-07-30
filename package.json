@@ -34,6 +34,7 @@
     "migration:operations:arc-mainnet:v6": "hardhat run scripts/build-mainnet-migration-operations.cjs --network arcMainnet --config hardhat.config.cjs",
     "activation:prepare:arc-mainnet:v6": "V6_MANIFEST=deployment/arc-mainnet-v6.local.json hardhat run scripts/prepare-v6-mainnet-activation.cjs --network arcMainnet --config hardhat.config.cjs",
     "activation:verify:arc-mainnet:v6": "V6_MANIFEST=deployment/arc-mainnet-v6.local.json hardhat run scripts/verify-v6-mainnet-activation.cjs --network arcMainnet --config hardhat.config.cjs",
+    "check:launches:arc-mainnet:v6": "V6_MANIFEST=deployment/arc-mainnet-v6.local.json hardhat run scripts/check-v6-mainnet-launches.cjs --network arcMainnet --config hardhat.config.cjs",
     "deploy:arc-testnet:aorg-buyback": "hardhat run scripts/deploy-aorg-buyback.cjs --network arcTestnet --config hardhat.config.cjs",
     "deploy:arc-testnet:v6:recover": "hardhat run scripts/recover-factory-v6.cjs --network arcTestnet --config hardhat.config.cjs",
     "verify:arc-testnet:v6": "hardhat run scripts/verify-v6-candidate.cjs --network arcTestnet --config hardhat.config.cjs",

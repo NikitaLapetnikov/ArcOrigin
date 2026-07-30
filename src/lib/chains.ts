@@ -54,6 +54,16 @@ export const ARC_MAINNET_UNISWAP_V3_QUOTER =
   "0x7dfd4f31be6814d2906bde155c3e1b146eac1468" as Address;
 export const ARC_MAINNET_UNISWAP_V3_ROUTER =
   "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77" as Address;
+export const ARC_MAINNET_DEPLOYMENT = {
+  factory: "0x2dAED890c8920428e0215583aaC98332447a8170" as Address,
+  feeVault: "0x07287313ee649efcF22EAEE4361cd6c512219B61" as Address,
+  creatorRegistry: "0xA4DbA45B199287d3163199A86B4618968d8f8424" as Address,
+  curveDeployer: "0xd7D2e4Ce4548330f52fc2F79F8524E6e32576013" as Address,
+  migrationAdapter: "0xc3EF95C4afDe66537acC40011ED5c6e505126a21" as Address,
+  liquidityLocker: "0xC41DA72afE97f8fbCA9722f893519cF2972cFb0e" as Address,
+  migrationVerifier: "0xAA949a795CB1bCc15E4c1AA2DC18a548b9f483c9" as Address,
+  governanceSafe: "0xa6eA2380F98700AD5CA8B9F74dC8861269513779" as Address,
+} as const;
 
 export const ARC_TESTNET_FIRST_LAUNCH_BLOCK = 53_061_367n;
 export const ARC_TESTNET_V2_FACTORY_BLOCK = 53_112_263n;

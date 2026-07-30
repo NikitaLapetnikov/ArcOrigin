@@ -4,6 +4,34 @@ This runbook prepares ArcOrigin for Arc mainnet without removing Arc Testnet. It
 does not authorize a mainnet deployment by itself. Every production transaction
 must still be reviewed and approved by the designated signers.
 
+## Current production deployment
+
+ArcOrigin V6 mainnet is active. The canonical public deployment record is
+[`deployment/arc-mainnet.json`](../deployment/arc-mainnet.json).
+
+| Component | Address |
+| --- | --- |
+| Factory V6 | `0x2dAED890c8920428e0215583aaC98332447a8170` |
+| FeeVault V6 | `0x07287313ee649efcF22EAEE4361cd6c512219B61` |
+| CreatorRegistry V6 | `0xA4DbA45B199287d3163199A86B4618968d8f8424` |
+| CurveDeployer V6 | `0xd7D2e4Ce4548330f52fc2F79F8524E6e32576013` |
+| Migration adapter | `0xc3EF95C4afDe66537acC40011ED5c6e505126a21` |
+| Liquidity locker | `0xC41DA72afE97f8fbCA9722f893519cF2972cFb0e` |
+| Migration verifier | `0xAA949a795CB1bCc15E4c1AA2DC18a548b9f483c9` |
+| Governance/Treasury Safe | `0xa6eA2380F98700AD5CA8B9F74dC8861269513779` |
+| Canonical USDC | `0x3600000000000000000000000000000000000000` |
+
+Activation was deliberately split into two Safe operations:
+
+- migrations:
+  `0xe699d96ff521bed7d57e36651337558b74a63fbda0c2250c3b24006b8c1da912`;
+- launches:
+  `0x1244450d5ceaa0e14792bace5a879284910469c24ab42d341a06092680e28ee0`.
+
+Post-execution verification confirmed both receipts with `status=1`,
+`launchesPaused=false`, `migrationPaused=false`, and configuration hash
+`0x014dab2eb4a6c624beb2d50c873a2792683519bede450c548023758913a0b640`.
+
 ## Release architecture
 
 Use two isolated deployments of the same commit:
@@ -315,10 +343,10 @@ NEXT_PUBLIC_ARC_NETWORK=mainnet
 NEXT_PUBLIC_PROTOCOL_VERSION=6
 NEXT_PUBLIC_TESTNET_APP_URL=https://testnet.arcorigin.xyz
 NEXT_PUBLIC_MAINNET_APP_URL=https://arcorigin.xyz
-NEXT_PUBLIC_MAINNET_FACTORY_ADDRESS=0x...
-NEXT_PUBLIC_MAINNET_FACTORY_FROM_BLOCK=...
-NEXT_PUBLIC_MAINNET_FEE_VAULT_ADDRESS=0x...
-NEXT_PUBLIC_MAINNET_CREATOR_REGISTRY_ADDRESS=0x...
+NEXT_PUBLIC_MAINNET_FACTORY_ADDRESS=0x2dAED890c8920428e0215583aaC98332447a8170
+NEXT_PUBLIC_MAINNET_FACTORY_FROM_BLOCK=12881762
+NEXT_PUBLIC_MAINNET_FEE_VAULT_ADDRESS=0x07287313ee649efcF22EAEE4361cd6c512219B61
+NEXT_PUBLIC_MAINNET_CREATOR_REGISTRY_ADDRESS=0xA4DbA45B199287d3163199A86B4618968d8f8424
 NEXT_PUBLIC_UNISWAP_V3_FACTORY=0xf0db7b58379503491d857db50ac9ece64c653918
 NEXT_PUBLIC_UNISWAP_V3_POSITION_MANAGER=0x39654a85a4c05127f5fd6ed22caec077a0fb1377
 NEXT_PUBLIC_UNISWAP_V3_QUOTER=0x7dfd4f31be6814d2906bde155c3e1b146eac1468

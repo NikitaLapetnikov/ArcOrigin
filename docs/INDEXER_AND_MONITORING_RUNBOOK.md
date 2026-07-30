@@ -53,8 +53,8 @@ Configure the expected state:
 
 ```dotenv
 MAINNET_GOVERNANCE_SAFE=0xa6eA2380F98700AD5CA8B9F74dC8861269513779
-MAINNET_EXPECT_LAUNCHES_PAUSED=true
-MAINNET_EXPECT_MIGRATIONS_PAUSED=true
+MAINNET_EXPECT_LAUNCHES_PAUSED=false
+MAINNET_EXPECT_MIGRATIONS_PAUSED=false
 ```
 
 Change an expectation only in the same reviewed release that executes the

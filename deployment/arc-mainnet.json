@@ -1,0 +1,30 @@
+{
+  "network": "arc-mainnet",
+  "chainId": 5042,
+  "contracts": {
+    "factory": "0x2dAED890c8920428e0215583aaC98332447a8170",
+    "feeVault": "0x07287313ee649efcF22EAEE4361cd6c512219B61",
+    "creatorRegistry": "0xA4DbA45B199287d3163199A86B4618968d8f8424",
+    "curveDeployer": "0xd7D2e4Ce4548330f52fc2F79F8524E6e32576013",
+    "migrationAdapter": "0xc3EF95C4afDe66537acC40011ED5c6e505126a21",
+    "liquidityLocker": "0xC41DA72afE97f8fbCA9722f893519cF2972cFb0e",
+    "migrationVerifier": "0xAA949a795CB1bCc15E4c1AA2DC18a548b9f483c9",
+    "usdc": "0x3600000000000000000000000000000000000000"
+  },
+  "governanceSafe": "0xa6eA2380F98700AD5CA8B9F74dC8861269513779",
+  "deployer": "0x2807B95E05649b7Befe74C4061f9492C5b889A42",
+  "factoryDeploymentBlock": 12881762,
+  "explorerBaseUrl": "https://arc-mainnet.cloud.blockscout.com",
+  "status": "V6_MAINNET_ACTIVE",
+  "launchesPaused": false,
+  "migrationPaused": false,
+  "migrationConfigurationHash": "0x014dab2eb4a6c624beb2d50c873a2792683519bede450c548023758913a0b640",
+  "activationTransactions": {
+    "migrations": "0xe699d96ff521bed7d57e36651337558b74a63fbda0c2250c3b24006b8c1da912",
+    "launches": "0x1244450d5ceaa0e14792bace5a879284910469c24ab42d341a06092680e28ee0"
+  },
+  "activationBlocks": {
+    "migrations": 12906770,
+    "launches": 12908781
+  }
+}
