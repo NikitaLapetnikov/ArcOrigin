@@ -49,6 +49,9 @@
     "security:audit-admin:arc-testnet": "hardhat run scripts/audit-admin-access.cjs --network arcTestnet --config hardhat.config.cjs",
     "verify:arc-testnet": "hardhat run scripts/verify-deployment.cjs --network arcTestnet --config hardhat.config.cjs",
     "smoke:metadata-upload": "node scripts/smoke-metadata-upload.mjs",
+    "test:indexer-resilience": "node --test scripts/test-indexer-resilience.cjs",
+    "test:production-health": "node --test scripts/test-production-health.cjs",
+    "monitor:production": "node scripts/monitor-production-health.cjs",
     "test": "pnpm contracts:test"
   },
   "dependencies": {

@@ -54,3 +54,20 @@ export async function writePersistentSnapshot(key: string, value: unknown, ttlSe
     return false;
   }
 }
+
+export async function getPersistentCacheStatus() {
+  if (!process.env.REDIS_URL) {
+    return { configured: false, reachable: false, latencyMs: null };
+  }
+  const startedAt = Date.now();
+  try {
+    const client = await redisClient();
+    if (!client) {
+      return { configured: true, reachable: false, latencyMs: Date.now() - startedAt };
+    }
+    await client.ping();
+    return { configured: true, reachable: true, latencyMs: Date.now() - startedAt };
+  } catch {
+    return { configured: true, reachable: false, latencyMs: Date.now() - startedAt };
+  }
+}

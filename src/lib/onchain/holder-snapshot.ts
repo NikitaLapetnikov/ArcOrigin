@@ -9,6 +9,10 @@ import {
 } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
+import {
+  createCanonicalCheckpoint,
+  getCanonicalCheckpointStatus,
+} from "@/lib/onchain/canonical-checkpoint";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
@@ -46,6 +50,7 @@ export type HolderSnapshot = {
   permanentLiquidityLockPercent: number;
   topTenExcludingCurvePercent: number;
   indexedBlock: string;
+  indexedBlockHash?: Hash;
   generatedAt: string;
 };
 
@@ -67,6 +72,7 @@ type HolderCacheEntry = {
   snapshot: HolderSnapshot | null;
   cachedAt: number;
   lastAttemptAt: number;
+  canonicalCheckedAt: number;
   pending: Promise<HolderSnapshot> | null;
 };
 
@@ -84,6 +90,10 @@ const publicClient = createArcPublicClient(
     ? process.env.ARC_MAINNET_RPC_URL
     : process.env.ARC_TESTNET_RPC_URL,
 );
+
+function readCanonicalBlock(blockNumber: bigint) {
+  return publicClient.getBlock({ blockNumber });
+}
 
 declare global {
   var __arcOriginHolderState: HolderState | undefined;
@@ -329,14 +339,26 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
   }
 
   const balances = new Map<string, bigint>();
+  const seenTransfers = new Set<string>();
+  const applyTransfer = (
+    transactionHash: Hash,
+    logIndex: number,
+    from: string,
+    to: string,
+    value: bigint,
+  ) => {
+    const identity = `${transactionHash.toLowerCase()}:${logIndex}`;
+    if (seenTransfers.has(identity)) return;
+    seenTransfers.add(identity);
+    if (from !== ZERO_ADDRESS) balances.set(from, (balances.get(from) ?? 0n) - value);
+    if (to !== ZERO_ADDRESS) balances.set(to, (balances.get(to) ?? 0n) + value);
+  };
   if (explorerLogs && explorerLogs.length > 0) {
     for (const log of explorerLogs) {
       const decoded = decodeEventLog({ abi: [transferEvent], data: log.data, topics: log.topics });
       const from = decoded.args.from.toLowerCase();
       const to = decoded.args.to.toLowerCase();
-      const value = decoded.args.value;
-      if (from !== ZERO_ADDRESS) balances.set(from, (balances.get(from) ?? 0n) - value);
-      if (to !== ZERO_ADDRESS) balances.set(to, (balances.get(to) ?? 0n) + value);
+      applyTransfer(log.transactionHash, log.logIndex, from, to, decoded.args.value);
     }
   } else {
     const logRanges: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
@@ -354,9 +376,13 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
       for (const log of logs) {
         const from = (log.args.from ?? ZERO_ADDRESS).toLowerCase();
         const to = (log.args.to ?? ZERO_ADDRESS).toLowerCase();
-        const value = log.args.value ?? 0n;
-        if (from !== ZERO_ADDRESS) balances.set(from, (balances.get(from) ?? 0n) - value);
-        if (to !== ZERO_ADDRESS) balances.set(to, (balances.get(to) ?? 0n) + value);
+        applyTransfer(
+          log.transactionHash as Hash,
+          log.logIndex ?? 0,
+          from,
+          to,
+          log.args.value ?? 0n,
+        );
       }
       await wait(RPC_REQUEST_GAP_MS);
     }
@@ -390,6 +416,7 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
           : "Holder",
     }));
 
+  const checkpoint = await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
   return {
     holders: visibleHolders.length,
     topHolders,
@@ -397,7 +424,7 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
     curvePercent: percentOf(curveBalance, totalSupply),
     permanentLiquidityLockPercent: percentOf(permanentLiquidityLockBalance, totalSupply),
     topTenExcludingCurvePercent: percentOf(topTenExcludingCurve, totalSupply),
-    indexedBlock: indexedBlock.toString(),
+    ...checkpoint,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -405,12 +432,21 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
 function getTokenCache(tokenAddress: Address) {
   const key = `${ARCORIGIN_NETWORK}:${tokenAddress.toLowerCase()}`;
   const existing = state.tokenCaches.get(key);
-  if (existing) return existing;
+  if (existing) {
+    existing.canonicalCheckedAt ??= 0;
+    return existing;
+  }
   if (state.tokenCaches.size >= MAX_TOKEN_CACHES) {
     const oldestKey = state.tokenCaches.keys().next().value as string | undefined;
     if (oldestKey) state.tokenCaches.delete(oldestKey);
   }
-  const entry: HolderCacheEntry = { snapshot: null, cachedAt: 0, lastAttemptAt: 0, pending: null };
+  const entry: HolderCacheEntry = {
+    snapshot: null,
+    cachedAt: 0,
+    lastAttemptAt: 0,
+    canonicalCheckedAt: 0,
+    pending: null,
+  };
   state.tokenCaches.set(key, entry);
   return entry;
 }
@@ -421,12 +457,28 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
     `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:holders:${tokenAddress.toLowerCase()}`;
   if (!cache.snapshot) {
     const persisted = await readPersistentSnapshot<HolderSnapshot>(persistentKey);
-    if (persisted?.indexedBlock && Array.isArray(persisted.topHolders)) {
+    const checkpointStatus = persisted
+      ? await getCanonicalCheckpointStatus(persisted, readCanonicalBlock)
+      : "invalid";
+    if (
+      persisted?.indexedBlock
+      && Array.isArray(persisted.topHolders)
+      && (checkpointStatus === "canonical" || checkpointStatus === "unavailable")
+    ) {
       cache.snapshot = persisted;
       cache.cachedAt = Date.parse(persisted.generatedAt) || 0;
+      cache.canonicalCheckedAt = Date.now();
     }
   }
   const now = Date.now();
+  if (cache.snapshot && now - cache.canonicalCheckedAt >= MIN_REFRESH_INTERVAL_MS) {
+    const checkpointStatus = await getCanonicalCheckpointStatus(cache.snapshot, readCanonicalBlock);
+    cache.canonicalCheckedAt = now;
+    if (checkpointStatus === "orphaned" || checkpointStatus === "invalid") {
+      cache.snapshot = null;
+      cache.cachedAt = 0;
+    }
+  }
   const isFresh = cache.snapshot && now - cache.cachedAt < HOLDER_CACHE_TTL_MS;
   const refreshThrottled = cache.snapshot
     && now - cache.lastAttemptAt < (forceRefresh ? FORCE_REFRESH_INTERVAL_MS : MIN_REFRESH_INTERVAL_MS);
@@ -442,6 +494,7 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
       .then((snapshot) => {
         cache.snapshot = snapshot;
         cache.cachedAt = Date.now();
+        cache.canonicalCheckedAt = Date.now();
         void writePersistentSnapshot(persistentKey, snapshot);
         return snapshot;
       })

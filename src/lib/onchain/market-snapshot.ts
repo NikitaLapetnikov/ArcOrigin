@@ -6,6 +6,10 @@ import { ARCORIGIN_NETWORK, ARCORIGIN_PROTOCOL_VERSION } from "@/lib/chains";
 import { bondingCurveAbi, uniswapV3PoolAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
+import {
+  createCanonicalCheckpoint,
+  getCanonicalCheckpointStatus,
+} from "@/lib/onchain/canonical-checkpoint";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshotForToken } from "@/lib/onchain/token-index-snapshot";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
@@ -44,6 +48,7 @@ export type MarketSnapshot = {
   chart: ChartPoint[];
   trades: Trade[];
   indexedBlock: string;
+  indexedBlockHash?: Hash;
   generatedAt: string;
 };
 
@@ -51,6 +56,7 @@ type MarketCacheEntry = {
   snapshot: MarketSnapshot | null;
   cachedAt: number;
   lastAttemptAt: number;
+  canonicalCheckedAt: number;
   pending: Promise<MarketSnapshot> | null;
 };
 
@@ -83,6 +89,10 @@ const publicClient = createArcPublicClient(
     ? process.env.ARC_MAINNET_RPC_URL
     : process.env.ARC_TESTNET_RPC_URL,
 );
+
+function readCanonicalBlock(blockNumber: bigint) {
+  return publicClient.getBlock({ blockNumber });
+}
 
 declare global {
   var __arcOriginMarketState: MarketState | undefined;
@@ -383,7 +393,14 @@ async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean):
   const targetUsdc = baseToken.targetUSDC;
   const launchPrice = virtualUsdc / initialReserve;
 
-  const validEvents = events.filter((event) => event.tokens > 0).sort((left, right) => left.blockNumber === right.blockNumber
+  const uniqueEvents = new Map<string, IndexedTrade>();
+  for (const event of events) {
+    uniqueEvents.set(
+      `${event.hash.toLowerCase()}:${event.logIndex}`,
+      event,
+    );
+  }
+  const validEvents = [...uniqueEvents.values()].filter((event) => event.tokens > 0).sort((left, right) => left.blockNumber === right.blockNumber
     ? left.logIndex - right.logIndex
     : left.blockNumber < right.blockNumber ? -1 : 1);
   let reconstructedTokenReserve = initialReserve;
@@ -474,6 +491,7 @@ async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean):
       ? priceTicks[firstTickInWindow - 1].price
       : launchPrice;
 
+  const checkpoint = await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
   return {
     price,
     priceChange: comparisonPrice > 0 ? (price / comparisonPrice - 1) * 100 : 0,
@@ -489,7 +507,7 @@ async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean):
     tokenReserve,
     chart,
     trades,
-    indexedBlock: indexedBlock.toString(),
+    ...checkpoint,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -497,12 +515,21 @@ async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean):
 function getTokenCache(tokenAddress: Address) {
   const key = `${ARCORIGIN_NETWORK}:${tokenAddress.toLowerCase()}`;
   const existing = state.tokenCaches.get(key);
-  if (existing) return existing;
+  if (existing) {
+    existing.canonicalCheckedAt ??= 0;
+    return existing;
+  }
   if (state.tokenCaches.size >= MAX_TOKEN_CACHES) {
     const oldestKey = state.tokenCaches.keys().next().value as string | undefined;
     if (oldestKey) state.tokenCaches.delete(oldestKey);
   }
-  const entry: MarketCacheEntry = { snapshot: null, cachedAt: 0, lastAttemptAt: 0, pending: null };
+  const entry: MarketCacheEntry = {
+    snapshot: null,
+    cachedAt: 0,
+    lastAttemptAt: 0,
+    canonicalCheckedAt: 0,
+    pending: null,
+  };
   state.tokenCaches.set(key, entry);
   return entry;
 }
@@ -513,12 +540,28 @@ export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = fa
     `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:market:${tokenAddress.toLowerCase()}`;
   if (!cache.snapshot) {
     const persisted = await readPersistentSnapshot<MarketSnapshot>(persistentKey);
-    if (persisted?.indexedBlock && Array.isArray(persisted.trades)) {
+    const checkpointStatus = persisted
+      ? await getCanonicalCheckpointStatus(persisted, readCanonicalBlock)
+      : "invalid";
+    if (
+      persisted?.indexedBlock
+      && Array.isArray(persisted.trades)
+      && (checkpointStatus === "canonical" || checkpointStatus === "unavailable")
+    ) {
       cache.snapshot = persisted;
       cache.cachedAt = Date.parse(persisted.generatedAt) || 0;
+      cache.canonicalCheckedAt = Date.now();
     }
   }
   const now = Date.now();
+  if (cache.snapshot && now - cache.canonicalCheckedAt >= MIN_REFRESH_INTERVAL_MS) {
+    const checkpointStatus = await getCanonicalCheckpointStatus(cache.snapshot, readCanonicalBlock);
+    cache.canonicalCheckedAt = now;
+    if (checkpointStatus === "orphaned" || checkpointStatus === "invalid") {
+      cache.snapshot = null;
+      cache.cachedAt = 0;
+    }
+  }
   const isFresh = cache.snapshot && now - cache.cachedAt < CACHE_TTL_MS;
   const refreshThrottled = cache.snapshot
     && now - cache.lastAttemptAt < (forceRefresh ? FORCE_REFRESH_INTERVAL_MS : MIN_REFRESH_INTERVAL_MS);
@@ -534,6 +577,7 @@ export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = fa
       .then((snapshot) => {
         cache.snapshot = snapshot;
         cache.cachedAt = Date.now();
+        cache.canonicalCheckedAt = Date.now();
         void writePersistentSnapshot(persistentKey, snapshot);
         return snapshot;
       })

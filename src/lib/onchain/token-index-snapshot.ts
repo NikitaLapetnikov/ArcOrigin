@@ -1,6 +1,6 @@
 import "server-only";
 
-import { formatUnits, type Address } from "viem";
+import { formatUnits, type Address, type Hash } from "viem";
 import {
   ARCORIGIN_NETWORK,
   ARCORIGIN_PROTOCOL_VERSION,
@@ -8,6 +8,10 @@ import {
   arcChain,
 } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
+import {
+  createCanonicalCheckpoint,
+  getCanonicalCheckpointStatus,
+} from "@/lib/onchain/canonical-checkpoint";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
 import { currentV4Tokens } from "@/lib/onchain/current-v4-token";
 import { getFactoryLaunchIndex, type FactoryLaunch } from "@/lib/onchain/holder-snapshot";
@@ -37,6 +41,7 @@ const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 type TokenIndexSnapshot = {
   tokens: TokenData[];
   indexedBlock: string;
+  indexedBlockHash?: Hash;
   generatedAt: string;
 };
 
@@ -46,6 +51,7 @@ type TokenIndexState = {
   lastAttemptAt: number;
   pending: Promise<TokenIndexSnapshot> | null;
   hydratedTokens: Map<string, TokenData>;
+  canonicalCheckedAt: number;
 };
 
 const publicClient = createArcPublicClient(
@@ -66,8 +72,14 @@ const state = globalThis.__arcOriginTokenIndexState ?? {
   lastAttemptAt: 0,
   pending: null,
   hydratedTokens: new Map(),
+  canonicalCheckedAt: 0,
 };
+state.canonicalCheckedAt ??= 0;
 globalThis.__arcOriginTokenIndexState = state;
+
+function readCanonicalBlock(blockNumber: bigint) {
+  return publicClient.getBlock({ blockNumber });
+}
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -240,6 +252,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
 
 async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot> {
   const { launches, indexedBlock } = await getFactoryLaunchIndex(forceRefresh);
+  const checkpoint = await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
   const activeLaunches = launches.filter(
     (launch) => launch.factory.toLowerCase() === ARC_ACTIVE_FACTORY.toLowerCase(),
   );
@@ -249,7 +262,7 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
     }
     return {
       tokens: [],
-      indexedBlock: indexedBlock.toString(),
+      ...checkpoint,
       generatedAt: new Date().toISOString(),
     };
   }
@@ -272,7 +285,7 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
   }
   return {
     tokens: currentTokens,
-    indexedBlock: indexedBlock.toString(),
+    ...checkpoint,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -280,9 +293,18 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
 export async function getTokenIndexSnapshot(forceRefresh = false) {
   if (!state.snapshot) {
     const persisted = await readPersistentSnapshot<TokenIndexSnapshot>(PERSISTENT_CACHE_KEY);
-    if (persisted?.tokens && Array.isArray(persisted.tokens) && (persisted.tokens.length > 0 || verifiedV4Tokens.length === 0)) {
+    const checkpointStatus = persisted
+      ? await getCanonicalCheckpointStatus(persisted, readCanonicalBlock)
+      : "invalid";
+    if (
+      persisted?.tokens
+      && Array.isArray(persisted.tokens)
+      && (persisted.tokens.length > 0 || verifiedV4Tokens.length === 0)
+      && (checkpointStatus === "canonical" || checkpointStatus === "unavailable")
+    ) {
       state.snapshot = persisted;
       state.cachedAt = Date.parse(persisted.generatedAt) || 0;
+      state.canonicalCheckedAt = Date.now();
     } else if (verifiedV4Tokens.length > 0) {
       state.snapshot = {
         tokens: verifiedV4Tokens,
@@ -293,6 +315,15 @@ export async function getTokenIndexSnapshot(forceRefresh = false) {
     }
   }
   const now = Date.now();
+  if (state.snapshot && now - state.canonicalCheckedAt >= MIN_REFRESH_INTERVAL_MS) {
+    const checkpointStatus = await getCanonicalCheckpointStatus(state.snapshot, readCanonicalBlock);
+    state.canonicalCheckedAt = now;
+    if (checkpointStatus === "orphaned" || checkpointStatus === "invalid") {
+      state.snapshot = null;
+      state.cachedAt = 0;
+      state.hydratedTokens.clear();
+    }
+  }
   const isFresh = state.snapshot && now - state.cachedAt < CACHE_TTL_MS;
   const refreshThrottled = state.snapshot
     && now - state.lastAttemptAt < (forceRefresh ? FORCE_REFRESH_INTERVAL_MS : MIN_REFRESH_INTERVAL_MS);
@@ -307,6 +338,7 @@ export async function getTokenIndexSnapshot(forceRefresh = false) {
       .then((snapshot) => {
         state.snapshot = snapshot;
         state.cachedAt = Date.now();
+        state.canonicalCheckedAt = Date.now();
         void writePersistentSnapshot(PERSISTENT_CACHE_KEY, snapshot);
         return snapshot;
       })
@@ -343,4 +375,29 @@ export async function getTokenIndexSnapshotForToken(tokenAddress: Address, force
 
 export function isTokenIndexRpcError(error: unknown) {
   return isRetryableRpcError(error);
+}
+
+export async function getTokenIndexCacheStatus() {
+  const snapshot = state.snapshot
+    ?? await readPersistentSnapshot<TokenIndexSnapshot>(PERSISTENT_CACHE_KEY);
+  if (!snapshot) {
+    return {
+      available: false,
+      indexedBlock: null,
+      ageSeconds: null,
+      checkpoint: "missing" as const,
+      tokenCount: 0,
+    };
+  }
+  const checkpoint = await getCanonicalCheckpointStatus(snapshot, readCanonicalBlock);
+  const generatedAt = Date.parse(snapshot.generatedAt);
+  return {
+    available: true,
+    indexedBlock: snapshot.indexedBlock,
+    ageSeconds: Number.isFinite(generatedAt)
+      ? Math.max(0, Math.floor((Date.now() - generatedAt) / 1_000))
+      : null,
+    checkpoint,
+    tokenCount: snapshot.tokens.length,
+  };
 }

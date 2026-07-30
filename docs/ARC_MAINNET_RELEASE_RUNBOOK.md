@@ -331,6 +331,17 @@ monitoring, and alert routes. Deploy it behind a private/canary hostname first.
 Verify that the header network control crosses between services rather than
 mutating the connected chain inside one cached application.
 
+The concrete checkpoint, health endpoint, monitor, alert, and incident
+procedures are documented in
+[`INDEXER_AND_MONITORING_RUNBOOK.md`](./INDEXER_AND_MONITORING_RUNBOOK.md).
+Before marking the indexer and monitoring gates complete, run:
+
+```bash
+pnpm test:indexer-resilience
+pnpm test:production-health
+pnpm monitor:production
+```
+
 ## Activation
 
 Activation is allowed only when:
