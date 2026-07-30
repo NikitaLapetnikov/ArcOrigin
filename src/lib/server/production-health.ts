@@ -42,6 +42,14 @@ const healthClient = createArcPublicClient(
   5_000,
 );
 const HEALTH_CACHE_TTL_MS = 10_000;
+const DEFAULT_INDEXER_MAX_BLOCK_LAG = 300n;
+
+function indexerMaxBlockLag() {
+  const value = process.env.INDEXER_MAX_BLOCK_LAG?.trim();
+  return value && /^\d+$/.test(value)
+    ? BigInt(value)
+    : DEFAULT_INDEXER_MAX_BLOCK_LAG;
+}
 
 function expectedOwner() {
   const value = (
@@ -139,7 +147,7 @@ async function loadProductionHealth() {
     }
     if (!indexer) warnings.push("indexer_status_unavailable");
     else if (!indexer.available) warnings.push("indexer_snapshot_missing");
-    if (blockLag !== null && blockLag > 20n) warnings.push("indexer_lagging");
+    if (blockLag !== null && blockLag > indexerMaxBlockLag()) warnings.push("indexer_lagging");
     if (!cache) warnings.push("persistent_cache_status_unavailable");
     else if (!cache.configured) warnings.push("persistent_cache_not_configured");
     else if (!cache.reachable) warnings.push("persistent_cache_unreachable");

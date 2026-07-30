@@ -72,11 +72,16 @@ Recommended production variables:
 
 ```dotenv
 PRODUCTION_HEALTH_URL=https://arcorigin.xyz/api/health
+INDEXER_MAX_BLOCK_LAG=300
 ALERT_WEBHOOK_URL=https://...
 ALERT_WEBHOOK_FORMAT=slack
 MONITOR_FAIL_ON_DEGRADED=false
 MONITOR_TIMEOUT_MS=10000
 ```
+
+`INDEXER_MAX_BLOCK_LAG` should be larger than the number of blocks normally
+produced during one index refresh interval. The default of `300` tolerates the
+30-second token-index cache on Arc while still detecting a stalled index.
 
 `ALERT_WEBHOOK_FORMAT` supports `slack`, `discord`, or `generic`. When no
 webhook is configured, failures still exit non-zero and print the unsent alert
