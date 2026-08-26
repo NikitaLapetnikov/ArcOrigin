@@ -148,6 +148,9 @@ The production VPS layout uses an unprivileged `arcorigin` user, immutable
 releases under `/opt/arcorigin/releases`, a `current` symlink, loopback-only
 Next.js and Redis ports, Caddy TLS, and a systemd health timer. Versioned service
 and proxy definitions are in `deploy/systemd`, `deploy/vps`, and `deploy/caddy`.
+The mainnet web build is isolated under `/opt/arcorigin-mainnet`, listens only
+on `127.0.0.1:3101`, and has its own service and health timer. Both deployments
+share the loopback-only Redis instance; cache keys remain network-scoped.
 
 Build a release before activation:
 
@@ -157,6 +160,7 @@ pnpm typecheck
 pnpm lint
 pnpm build
 sudo arcorigin-activate-release /opt/arcorigin/releases/<release>
+sudo arcorigin-mainnet-activate-release /opt/arcorigin-mainnet/releases/<release>
 ```
 
 Install `deploy/systemd/arcorigin.service` and the health-check units under

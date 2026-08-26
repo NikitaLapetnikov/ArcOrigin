@@ -8,7 +8,7 @@ import {
   ARC_ACTIVE_FACTORY_INDEXES,
 } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
-import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
+import { getArcscanLogs, getArcscanTransactionBlocks } from "@/lib/onchain/arcscan-logs";
 import {
   createCanonicalCheckpoint,
   getCanonicalCheckpointStatus,
@@ -28,6 +28,7 @@ const MIN_REFRESH_INTERVAL_MS = 10_000;
 const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const MAX_TOKEN_CACHES = 50;
 const RPC_REQUEST_GAP_MS = 220;
+const EXPLORER_BLOCK_BATCH_SIZE = 10;
 const ACTIVE_FACTORY_INDEXES = ARC_ACTIVE_FACTORY_INDEXES.filter(
   (factory) => factory.address.toLowerCase() === ARC_ACTIVE_FACTORY.toLowerCase(),
 );
@@ -154,12 +155,26 @@ function loadLaunchLogs(address: Address, fromBlock: bigint, toBlock: bigint) {
 
 async function loadFactoryLaunches(indexedBlock: bigint) {
   try {
-    const logGroups = await Promise.all(ACTIVE_FACTORY_INDEXES.map((factory) => getArcscanLogs({
-      address: factory.address,
-      fromBlock: factory.fromBlock,
-      toBlock: indexedBlock,
-      topic0: toEventSelector(tokenLaunchedEvent),
-    })));
+    const logGroups = await Promise.all(ACTIVE_FACTORY_INDEXES.map(async (factory) => {
+      const transactionBlocks = await getArcscanTransactionBlocks({
+        address: factory.address,
+        fromBlock: factory.fromBlock,
+        toBlock: indexedBlock,
+      });
+      const logs: Awaited<ReturnType<typeof getArcscanLogs>> = [];
+      for (let index = 0; index < transactionBlocks.length; index += EXPLORER_BLOCK_BATCH_SIZE) {
+        const blockLogs = await Promise.all(transactionBlocks
+          .slice(index, index + EXPLORER_BLOCK_BATCH_SIZE)
+          .map((blockNumber) => getArcscanLogs({
+            address: factory.address,
+            fromBlock: blockNumber,
+            toBlock: blockNumber,
+            topic0: toEventSelector(tokenLaunchedEvent),
+          })));
+        logs.push(...blockLogs.flat());
+      }
+      return logs;
+    }));
     const launches = new Map<string, FactoryLaunch>();
     for (const [factoryIndex, logs] of logGroups.entries()) {
       for (const log of logs) {

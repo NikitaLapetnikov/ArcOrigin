@@ -1,0 +1,12 @@
+[Unit]
+Description=ArcOrigin mainnet local health check and recovery
+After=arcorigin-mainnet.service
+
+[Service]
+Type=oneshot
+Environment=ARCORIGIN_HOME_URL=http://127.0.0.1:3101/
+Environment=ARCORIGIN_HEALTH_URL=http://127.0.0.1:3101/api/health
+Environment=ARCORIGIN_WARMUP_URL=http://127.0.0.1:3101/api/onchain/tokens
+Environment=ARCORIGIN_SERVICE=arcorigin-mainnet.service
+Environment=ARCORIGIN_LOGGER_TAG=arcorigin-mainnet-healthcheck
+ExecStart=/usr/local/sbin/arcorigin-healthcheck

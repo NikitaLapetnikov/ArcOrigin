@@ -3,6 +3,8 @@ import { EXPLORER_API_URL } from "@/lib/chains";
 
 const REQUEST_TIMEOUT_MS = 8_000;
 const MAX_LOGS_PER_REQUEST = 1_000;
+const ACCOUNT_TRANSACTION_PAGE_SIZE = 1_000;
+const MAX_ACCOUNT_TRANSACTION_PAGES = 100;
 
 type ArcscanLogPayload = {
   address?: unknown;
@@ -18,6 +20,14 @@ type ArcscanResponse = {
   message?: unknown;
   result?: unknown;
   status?: unknown;
+};
+
+type ArcscanTransactionPayload = {
+  blockNumber?: unknown;
+  from?: unknown;
+  hash?: unknown;
+  timeStamp?: unknown;
+  to?: unknown;
 };
 
 export type ArcscanLog = {
@@ -47,6 +57,31 @@ function parseQuantity(value: unknown) {
     throw new Error("Arcscan returned an invalid log quantity.");
   }
   return BigInt(value);
+}
+
+function parseDecimalQuantity(value: unknown) {
+  if (typeof value !== "string" || !/^(?:0x[0-9a-fA-F]+|[0-9]+)$/.test(value)) {
+    throw new Error("Arcscan returned an invalid transaction quantity.");
+  }
+  return BigInt(value);
+}
+
+async function fetchArcscan(url: URL) {
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`Arcscan request failed with HTTP ${response.status}.`);
+  return response.json() as Promise<ArcscanResponse>;
+}
+
+function isEmptyResult(payload: ArcscanResponse) {
+  return payload.status === "0"
+    && Array.isArray(payload.result)
+    && payload.result.length === 0
+    && typeof payload.message === "string"
+    && /^No (?:records|logs|transactions) found$/i.test(payload.message.trim());
 }
 
 function parseLog(value: unknown): ArcscanLog {
@@ -93,18 +128,8 @@ export async function getArcscanLogs({
   url.searchParams.set("address", address);
   if (topic0) url.searchParams.set("topic0", topic0);
 
-  const response = await fetch(url, {
-    cache: "no-store",
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`Arcscan log request failed with HTTP ${response.status}.`);
-  const payload = await response.json() as ArcscanResponse;
-  if (payload.status === "0"
-    && Array.isArray(payload.result)
-    && payload.result.length === 0
-    && typeof payload.message === "string"
-    && /^No (?:records|logs) found$/i.test(payload.message.trim())) return [];
+  const payload = await fetchArcscan(url);
+  if (isEmptyResult(payload)) return [];
   if (payload.status !== "1" || !Array.isArray(payload.result)) {
     throw new Error("Arcscan log index is temporarily unavailable.");
   }
@@ -120,4 +145,60 @@ export async function getArcscanLogs({
     throw new Error("Arcscan returned a log outside the requested filter.");
   }
   return logs;
+}
+
+export async function getArcscanTransactionBlocks({
+  address,
+  fromBlock,
+  toBlock,
+}: {
+  address: Address;
+  fromBlock: bigint;
+  toBlock: bigint;
+}) {
+  if (!EXPLORER_API_URL) {
+    throw new Error("No compatible explorer account API is configured.");
+  }
+
+  const expectedAddress = address.toLowerCase();
+  const blocks = new Set<bigint>();
+  for (let page = 1; page <= MAX_ACCOUNT_TRANSACTION_PAGES; page += 1) {
+    const url = new URL(EXPLORER_API_URL);
+    url.searchParams.set("module", "account");
+    url.searchParams.set("action", "txlist");
+    url.searchParams.set("address", address);
+    url.searchParams.set("startblock", fromBlock.toString());
+    url.searchParams.set("endblock", toBlock.toString());
+    url.searchParams.set("page", page.toString());
+    url.searchParams.set("offset", ACCOUNT_TRANSACTION_PAGE_SIZE.toString());
+    url.searchParams.set("sort", "asc");
+
+    const payload = await fetchArcscan(url);
+    if (isEmptyResult(payload)) return [...blocks];
+    if (payload.status !== "1" || !Array.isArray(payload.result)) {
+      throw new Error("Arcscan transaction index is temporarily unavailable.");
+    }
+
+    const transactions = payload.result.map((value) => {
+      if (!value || typeof value !== "object") {
+        throw new Error("Arcscan returned an invalid transaction.");
+      }
+      const transaction = value as ArcscanTransactionPayload;
+      const blockNumber = parseDecimalQuantity(transaction.blockNumber);
+      const from = typeof transaction.from === "string" ? transaction.from.toLowerCase() : null;
+      const to = typeof transaction.to === "string" ? transaction.to.toLowerCase() : null;
+      if (!isHashValue(transaction.hash)
+        || blockNumber < fromBlock
+        || blockNumber > toBlock
+        || (from !== expectedAddress && to !== expectedAddress)) {
+        throw new Error("Arcscan returned a transaction outside the requested filter.");
+      }
+      parseDecimalQuantity(transaction.timeStamp);
+      return blockNumber;
+    });
+    transactions.forEach((blockNumber) => blocks.add(blockNumber));
+
+    if (transactions.length < ACCOUNT_TRANSACTION_PAGE_SIZE) return [...blocks];
+  }
+  throw new Error("Arcscan transaction response reached its safe pagination limit.");
 }

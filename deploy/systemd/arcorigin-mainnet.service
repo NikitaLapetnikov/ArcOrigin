@@ -1,0 +1,35 @@
+[Unit]
+Description=ArcOrigin mainnet web application
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=arcorigin
+Group=arcorigin
+WorkingDirectory=/opt/arcorigin-mainnet/current
+Environment=NODE_ENV=production
+Environment=PORT=3101
+Environment=NEXT_TELEMETRY_DISABLED=1
+EnvironmentFile=/opt/arcorigin-mainnet/shared/.env.production
+ExecStart=/opt/node-v22.13.0-linux-x64/bin/node /opt/arcorigin-mainnet/current/node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3101
+Restart=always
+RestartSec=5
+TimeoutStartSec=90
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0027
+
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/opt/arcorigin-mainnet /var/lib/arcorigin
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

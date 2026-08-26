@@ -8,6 +8,7 @@ const arcConnectSources = [
   "https://rpc.testnet.arc.network",
   "https://testnet.arcscan.app",
   "https://rpc.blockdaemon.mainnet.arc.io",
+  "https://rpc.arc-scan.org",
   "https://arc-mainnet.cloud.blockscout.com",
 ];
 const contentSecurityPolicy = [
