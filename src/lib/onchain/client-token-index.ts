@@ -196,16 +196,16 @@ function createPendingToken(launch: ClientLaunch, creatorLaunches: number): Toke
 function ipfsURL(uri: string) {
   const match = uri.trim().match(/^ipfs:\/\/(?:ipfs\/)?([A-Za-z0-9]{40,120})(\/[^?#]*)?$/);
   return match && !match[2]?.split("/").includes("..")
-    ? `https://ipfs.io/ipfs/${match[1]}${match[2] ?? ""}`
+    ? `https://gateway.pinata.cloud/ipfs/${match[1]}${match[2] ?? ""}`
     : "";
 }
 
 function ipfsURLs(uri: string) {
-  const publicURL = ipfsURL(uri);
-  if (!publicURL) return [];
+  const pinataURL = ipfsURL(uri);
+  if (!pinataURL) return [];
   return [
-    publicURL.replace("https://ipfs.io/ipfs/", "https://gateway.pinata.cloud/ipfs/"),
-    publicURL,
+    pinataURL,
+    pinataURL.replace("https://gateway.pinata.cloud/ipfs/", "https://ipfs.io/ipfs/"),
   ];
 }
 

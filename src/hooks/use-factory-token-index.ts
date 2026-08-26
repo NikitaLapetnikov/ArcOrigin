@@ -66,6 +66,12 @@ function isCachedToken(value: unknown): value is TokenData {
     && Boolean(token.creatorProfile);
 }
 
+function normalizeTokenImage(token: TokenData): TokenData {
+  return token.image?.startsWith("https://ipfs.io/ipfs/")
+    ? { ...token, image: token.image.replace("https://ipfs.io/ipfs/", "https://gateway.pinata.cloud/ipfs/") }
+    : token;
+}
+
 function isConfirmedTrade(value: unknown): value is ConfirmedTrade {
   if (!value || typeof value !== "object") return false;
   const trade = value as Partial<ConfirmedTrade>;
@@ -161,7 +167,7 @@ function readCachedIndex(): CachedIndex | null {
     if (typeof parsed.savedAt !== "number" || !Number.isFinite(parsed.savedAt) || parsed.savedAt <= 0) return null;
     if (parsed.marketDataComplete !== true) return null;
     if (!Array.isArray(parsed.tokens) || parsed.tokens.length > 100 || !parsed.tokens.every(isCachedToken)) return null;
-    const tokens = mergePendingTrades(currentV4Tokens(parsed.tokens));
+    const tokens = mergePendingTrades(currentV4Tokens(parsed.tokens.map(normalizeTokenImage)));
     return { savedAt: parsed.savedAt, marketDataComplete: true, tokens };
   } catch {
     return null;
@@ -277,7 +283,7 @@ async function loadFactoryTokens(
       stale: false,
     };
   }
-  let indexedTokens = currentV4Tokens(indexResult.snapshot.tokens);
+  let indexedTokens = currentV4Tokens(indexResult.snapshot.tokens).map(normalizeTokenImage);
   if (indexedTokens.length === 0) {
     const verifiedFallback = currentV4Tokens(getVerifiedBootstrapTokens());
     if (verifiedFallback.length > 0) {

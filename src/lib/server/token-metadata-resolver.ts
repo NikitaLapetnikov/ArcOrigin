@@ -45,7 +45,7 @@ function configuredGatewayBase() {
 
 export function ipfsGatewayURL(uri: string) {
   const path = parseIpfsPath(uri);
-  return path ? `${PUBLIC_GATEWAY_URL}${path}` : "";
+  return path ? `${PINATA_GATEWAY_URL}${path}` : "";
 }
 
 function metadataGatewayURLs(uri: string) {
