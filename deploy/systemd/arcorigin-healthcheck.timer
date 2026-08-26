@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the ArcOrigin health check every minute
+
+[Timer]
+OnActiveSec=1min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=arcorigin-healthcheck.service
+
+[Install]
+WantedBy=timers.target

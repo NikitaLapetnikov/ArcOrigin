@@ -1,0 +1,35 @@
+name: Production uptime
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-uptime
+  cancel-in-progress: true
+
+jobs:
+  health:
+    name: Check arcorigin.xyz
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check out the monitored revision
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the public health endpoint
+        env:
+          PRODUCTION_HEALTH_URL: https://arcorigin.xyz/api/health
+          MONITOR_TIMEOUT_MS: "20000"
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          ALERT_WEBHOOK_FORMAT: ${{ vars.ALERT_WEBHOOK_FORMAT || 'slack' }}
+        run: node scripts/monitor-production-health.cjs

@@ -99,6 +99,19 @@ For Railway, use a separate cron service pinned to the same commit and run
 temporary invalid `PRODUCTION_HEALTH_URL`; verify receipt, then restore the real
 URL.
 
+The repository also runs `.github/workflows/production-uptime.yml` every five
+minutes. GitHub Actions marks the run failed when the custom domain is detached,
+Railway has no active deployment, or `/api/health` reports a hard failure. Add
+the repository secret `ALERT_WEBHOOK_URL` to receive the same Slack/Discord
+alert outside GitHub; set the `ALERT_WEBHOOK_FORMAT` repository variable when
+the endpoint is not Slack.
+
+`railway.json` is the source-controlled deployment policy. It makes Railway
+build with `pnpm build`, start with `pnpm start`, wait for `/api/health` before
+promoting a deployment, and restart a crashed process. Do not replace these
+checks with dashboard-only settings, which are easy to lose when a service is
+recreated.
+
 ## Incident response
 
 1. Do not clear Redis first; preserve the snapshot for investigation.
@@ -107,3 +120,8 @@ URL.
 4. If lag persists, verify the dedicated RPC and explorer fallback separately.
 5. If Factory owner or pause state differs, treat it as a governance incident.
 6. Keep launches and migrations paused until the mismatch is understood.
+7. If the domain returns Railway's `x-railway-fallback: true` response and the
+   service has no active deployment, check the workspace plan/credits before
+   changing DNS. An expired plan removes running instances; reactivate billing,
+   redeploy the GitHub source, and verify both the Railway service domain and
+   the custom domain.

@@ -144,25 +144,31 @@ V6_DIRECT_SAFE_EXECUTION_TX_HASH=0x... \
 
 ## VPS deployment
 
-On Ubuntu, install Node.js 20, nginx, Certbot, pnpm, and PM2. Clone the repository, then:
+The production VPS layout uses an unprivileged `arcorigin` user, immutable
+releases under `/opt/arcorigin/releases`, a `current` symlink, loopback-only
+Next.js and Redis ports, Caddy TLS, and a systemd health timer. Versioned service
+and proxy definitions are in `deploy/systemd`, `deploy/vps`, and `deploy/caddy`.
+
+Build a release before activation:
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm contracts:compile
-pnpm contracts:test
+pnpm typecheck
+pnpm lint
 pnpm build
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup
+sudo arcorigin-activate-release /opt/arcorigin/releases/<release>
 ```
 
-Copy `deploy/nginx.arcorigin.conf` to `/etc/nginx/sites-available/arcorigin`, symlink it into `sites-enabled`, validate with `nginx -t`, reload nginx, then request TLS:
+Install `deploy/systemd/arcorigin.service` and the health-check units under
+`/etc/systemd/system`, install the two scripts from `deploy/vps` under
+`/usr/local/sbin`, and import `deploy/caddy/arcorigin.caddy` from the active
+Caddyfile. Keep `.env.production` at `/opt/arcorigin/shared/.env.production`
+with mode `0600`; never place deployment keys in the web runtime environment.
 
-```bash
-certbot --nginx -d arcorigin.xyz -d www.arcorigin.xyz
-```
-
-Run package and OS upgrades deliberately rather than unattended on a production host; validate the build after upgrades and retain a rollback artifact.
+The activator retains the previous release and automatically rolls back when
+the new release cannot pass the local homepage and `/api/health` checks. Run
+package and OS upgrades deliberately, validate the build after upgrades, and
+retain at least one known-good release.
 
 ## Production operations
 
