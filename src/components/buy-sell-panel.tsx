@@ -28,6 +28,7 @@ import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import {
   bondingCurveAbi,
   erc20Abi,
+  factoryAbi,
   uniswapV3PoolAbi,
   uniswapV3RouterAbi,
 } from "@/lib/contracts";
@@ -45,6 +46,14 @@ type LiveQuote = {
   venue: "curve" | "uniswap-v3";
   spender: Address;
   pool?: Address;
+};
+type QuoteResponse = {
+  output?: string;
+  fee?: string;
+  venue?: "curve" | "uniswap-v3";
+  spender?: string;
+  pool?: string;
+  error?: string;
 };
 type TransactionStatus = "idle" | "quoting" | "preparing" | "approving" | "trading";
 type WalletBalances = { usdc: bigint; token: bigint };
@@ -67,7 +76,7 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
       return await operation();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const retryable = /RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|rate limit|\b429\b/i.test(message);
+      const retryable = /RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|rate limit|timeout|timed out|request took too long|network error|socket|ECONN|ENET|\b429\b|\b50[234]\b/i.test(message);
       if (!retryable || attempt === attempts) throw error;
       await wait(attempt * 750);
     }
@@ -99,6 +108,60 @@ function inputUnits(value: bigint, decimals: number) {
   const formatted = formatUnits(value, decimals);
   const trimmed = formatted.includes(".") ? formatted.replace(/\.?0+$/, "") : formatted;
   return trimmed || "0";
+}
+
+async function readCurveQuoteFallback({
+  clients,
+  tokenAddress,
+  curveAddress,
+  side,
+  input,
+}: {
+  clients: PublicClient[];
+  tokenAddress: Address;
+  curveAddress: Address;
+  side: Side;
+  input: bigint;
+}): Promise<QuoteResponse> {
+  let lastError: unknown = new Error(`No ${arcChain.name} fallback client is available.`);
+  for (const client of clients) {
+    try {
+      const tokenInfo = await withRpcRetry(() => client.readContract({
+        address: ARC_ACTIVE_CONTRACTS.factory,
+        abi: factoryAbi,
+        functionName: "getTokenInfo",
+        args: [tokenAddress],
+      }), 2);
+      if (
+        tokenInfo.token.toLowerCase() !== tokenAddress.toLowerCase()
+        || tokenInfo.curve.toLowerCase() !== curveAddress.toLowerCase()
+      ) throw new Error("The token and curve do not match the active Factory.");
+
+      const migrated = await withRpcRetry(() => client.readContract({
+        address: curveAddress,
+        abi: bondingCurveAbi,
+        functionName: "isMigrated",
+      }), 2);
+      if (migrated) {
+        throw new Error("The migrated Uniswap quote service is temporarily unavailable.");
+      }
+      const [output, fee] = await withRpcRetry(() => client.readContract({
+        address: curveAddress,
+        abi: bondingCurveAbi,
+        functionName: side === "Buy" ? "quoteBuy" : "quoteSell",
+        args: [input],
+      }), 2);
+      return {
+        output: output.toString(),
+        fee: fee.toString(),
+        venue: "curve",
+        spender: curveAddress,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 async function estimatePriorityFees(client: PublicClient, priority: Priority): Promise<TransactionFeeOverrides> {
@@ -244,20 +307,38 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
     const input = parseUnits(amount, inputDecimals);
     if (input <= 0n) throw new Error("Enter an amount greater than zero.");
-    const response = await fetch(
-      `/api/onchain/quote?token=${encodeURIComponent(token.address)}&curve=${encodeURIComponent(curveAddress)}&side=${side}&amount=${input.toString()}`,
-      { cache: "no-store", signal: AbortSignal.timeout(10_000) },
-    );
-    const result = await response.json() as {
-      output?: string;
-      fee?: string;
-      venue?: "curve" | "uniswap-v3";
-      spender?: string;
-      pool?: string;
-      error?: string;
-    };
+    let result: QuoteResponse;
+    try {
+      const response = await fetch(
+        `/api/onchain/quote?token=${encodeURIComponent(token.address)}&curve=${encodeURIComponent(curveAddress)}&side=${side}&amount=${input.toString()}`,
+        { cache: "no-store", signal: AbortSignal.timeout(10_000) },
+      );
+      result = await response.json() as QuoteResponse;
+      if (!response.ok) {
+        const error = new Error(result.error || "Unable to read an onchain quote.") as Error & { status?: number };
+        error.status = response.status;
+        throw error;
+      }
+    } catch (error) {
+      const status = typeof error === "object" && error && "status" in error
+        ? Number(error.status)
+        : null;
+      if (status !== null && status < 500) throw error;
+
+      const walletReadClient = walletClient?.chain.id === arcChain.id
+        ? walletClient.extend(publicActions) as unknown as PublicClient
+        : null;
+      const clients = [walletReadClient, publicClient]
+        .filter((client): client is PublicClient => Boolean(client));
+      result = await readCurveQuoteFallback({
+        clients,
+        tokenAddress: token.address as Address,
+        curveAddress,
+        side,
+        input,
+      });
+    }
     if (
-      !response.ok ||
       !result.output ||
       result.fee === undefined ||
       !result.venue ||
@@ -307,6 +388,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     slippageValid,
     token.status,
     token.address,
+    walletClient,
   ]);
 
   useEffect(() => {

@@ -15,9 +15,12 @@ warm_index() {
 }
 
 check_service() {
+  health_payload=""
+  # Dependency failures remain visible to monitoring, but restarting a healthy
+  # Next.js process cannot repair an upstream RPC or cache outage.
   curl --fail --silent --show-error --max-time 20 "$home_url" >/dev/null \
-    && curl --fail --silent --show-error --max-time 30 "$health_url" \
-      | grep -Eq '"status":"(ok|degraded)"'
+    && health_payload=$(curl --silent --show-error --max-time 30 "$health_url") \
+    && printf '%s' "$health_payload" | grep -Eq '"status":"(ok|degraded|error)"'
 }
 
 warm_index

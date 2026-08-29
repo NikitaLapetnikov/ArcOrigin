@@ -40,6 +40,7 @@ export async function GET(request: Request) {
   const amount = BigInt(rawAmount);
   if (amount <= 0n || amount > maxUint256) return errorResponse("Amount is outside the uint256 range.");
 
+  let stage = "validate-market";
   try {
     const normalizedToken = getAddress(token);
     const normalizedCurve = getAddress(curve);
@@ -68,25 +69,27 @@ export async function GET(request: Request) {
     if (!verifiedCurve) return errorResponse("Token and curve are not a verified ArcOrigin market.", 404);
 
     if (ARCORIGIN_NETWORK === "mainnet" && ARC_UNISWAP_V3) {
-      const [migrated, migratedPool] = await Promise.all([
-        client.readContract({
-          address: normalizedCurve,
-          abi: bondingCurveAbi,
-          functionName: "isMigrated",
-        }),
-        client.readContract({
-          address: normalizedCurve,
-          abi: bondingCurveAbi,
-          functionName: "migratedPool",
-        }),
-      ]);
+      stage = "read-migration-state";
+      const migrated = await client.readContract({
+        address: normalizedCurve,
+        abi: bondingCurveAbi,
+        functionName: "isMigrated",
+      });
       if (migrated) {
-        const canonicalPool = await client.readContract({
-          address: ARC_UNISWAP_V3.factory,
-          abi: uniswapV3FactoryAbi,
-          functionName: "getPool",
-          args: [normalizedToken, ARC_ACTIVE_CONTRACTS.usdc, ARC_UNISWAP_V3.fee],
-        });
+        stage = "verify-migrated-pool";
+        const [migratedPool, canonicalPool] = await Promise.all([
+          client.readContract({
+            address: normalizedCurve,
+            abi: bondingCurveAbi,
+            functionName: "migratedPool",
+          }),
+          client.readContract({
+            address: ARC_UNISWAP_V3.factory,
+            abi: uniswapV3FactoryAbi,
+            functionName: "getPool",
+            args: [normalizedToken, ARC_ACTIVE_CONTRACTS.usdc, ARC_UNISWAP_V3.fee],
+          }),
+        ]);
         if (
           migratedPool === zeroAddress ||
           canonicalPool === zeroAddress ||
@@ -96,6 +99,7 @@ export async function GET(request: Request) {
         }
         const tokenIn = side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : normalizedToken;
         const tokenOut = side === "Buy" ? normalizedToken : ARC_ACTIVE_CONTRACTS.usdc;
+        stage = "quote-uniswap";
         const { result } = await client.simulateContract({
           address: ARC_UNISWAP_V3.quoter,
           abi: uniswapV3QuoterAbi,
@@ -123,6 +127,7 @@ export async function GET(request: Request) {
       }
     }
 
+    stage = "quote-curve";
     const [output, fee] = await client.readContract({
       address: normalizedCurve,
       abi: bondingCurveAbi,
@@ -140,7 +145,11 @@ export async function GET(request: Request) {
       },
       { headers: { "Cache-Control": "no-store" } },
     );
-  } catch {
+  } catch (error) {
+    console.error("ArcOrigin quote dependency failed.", {
+      stage,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
     return errorResponse("The onchain quote is temporarily unavailable.", 503);
   }
 }
