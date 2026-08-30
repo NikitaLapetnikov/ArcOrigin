@@ -97,7 +97,7 @@ async function main() {
   console.log(JSON.stringify({
     ready: true,
     checkedAt: new Date().toISOString(),
-    rpcUrl,
+    rpc: process.env.ARC_MAINNET_RPC_URL?.trim() ? "configured" : "public-fallback",
     chainId: Number(network.chainId),
     blockNumber,
     explorer: "https://arc-mainnet.cloud.blockscout.com",

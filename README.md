@@ -2,6 +2,8 @@
 
 ArcOrigin is a non-custodial, USDC-native token launch and discovery product for Arc. Every new token launches directly into its canonical Uniswap V3 pool; there is no separate bonding curve or later liquidity migration.
 
+The deployment gate, reviewed invariants, findings, and residual risks are documented in `audit/SECURITY_REVIEW.md`.
+
 ## Architecture
 
 - Fixed supply: 1,000,000,000 tokens, no owner, mint, tax, blacklist, or pause.

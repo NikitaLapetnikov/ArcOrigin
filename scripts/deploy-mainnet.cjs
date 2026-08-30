@@ -8,6 +8,12 @@ const UNISWAP_V3_FACTORY = "0xf0db7b58379503491d857db50ac9ece64c653918";
 const UNISWAP_V3_POSITION_MANAGER = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377";
 const LAUNCH_FEE = 10n * 10n ** 6n;
 const outputPath = path.join(__dirname, "..", "deployment", "arc-mainnet.local.json");
+const safeBatchPath = path.join(
+  __dirname,
+  "..",
+  "deployment",
+  "arc-mainnet-activation.safe.local.json",
+);
 
 function requiredValue(name) {
   const value = process.env[name]?.trim();
@@ -21,6 +27,23 @@ function requiredAddress(name) {
     throw new Error(`${name} must be a non-zero address.`);
   }
   return hre.ethers.getAddress(value);
+}
+
+function requiredAddressList(name) {
+  const values = requiredValue(name)
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => {
+      if (!hre.ethers.isAddress(value) || value === hre.ethers.ZeroAddress) {
+        throw new Error(`${name} contains an invalid address.`);
+      }
+      return hre.ethers.getAddress(value);
+    });
+  if (values.length !== 3 || new Set(values.map((value) => value.toLowerCase())).size !== 3) {
+    throw new Error(`${name} must contain exactly three unique addresses.`);
+  }
+  return values;
 }
 
 function assertEqual(label, actual, expected) {
@@ -39,7 +62,10 @@ async function main() {
   requiredValue("ARC_MAINNET_RPC_URL");
   const expectedDeployer = requiredAddress("MAINNET_EXPECTED_DEPLOYER");
   const governanceSafe = requiredAddress("MAINNET_GOVERNANCE_SAFE");
+  const expectedSafeOwners = requiredAddressList("MAINNET_GOVERNANCE_SAFE_OWNERS");
   const emergencyGuardian = requiredAddress("MAINNET_EMERGENCY_GUARDIAN");
+  const retiredFactory = requiredAddress("MAINNET_RETIRED_FACTORY_ADDRESS");
+  const protocolFeeRecipient = requiredAddress("MAINNET_PROTOCOL_FEE_RECIPIENT");
   const feeVault = requiredAddress("NEXT_PUBLIC_MAINNET_FEE_VAULT_ADDRESS");
   const creatorRegistry = requiredAddress("NEXT_PUBLIC_MAINNET_CREATOR_REGISTRY_ADDRESS");
   const [deployer] = await hre.ethers.getSigners();
@@ -47,10 +73,16 @@ async function main() {
   const network = await hre.ethers.provider.getNetwork();
   assertEqual("chain ID", network.chainId, ARC_MAINNET_CHAIN_ID);
   assertEqual("deployer", deployer.address, expectedDeployer);
+  const deployerBalance = await hre.ethers.provider.getBalance(deployer.address);
+  if (deployerBalance === 0n) {
+    throw new Error("Mainnet deployer has no native balance for gas.");
+  }
 
   for (const [label, address] of [
     ["governance Safe", governanceSafe],
     ["emergency guardian", emergencyGuardian],
+    ["retired Factory", retiredFactory],
+    ["protocol fee recipient", protocolFeeRecipient],
     ["existing FeeVault", feeVault],
     ["existing CreatorRegistry", creatorRegistry],
     ["canonical Arc USDC", ARC_USDC],
@@ -73,17 +105,50 @@ async function main() {
   if (
     safeThreshold !== 2n ||
     safeOwners.length !== 3 ||
-    new Set(safeOwners.map((owner) => owner.toLowerCase())).size !== 3
+    new Set(safeOwners.map((owner) => owner.toLowerCase())).size !== 3 ||
+    expectedSafeOwners.some(
+      (owner) => !safeOwners.some((actual) => actual.toLowerCase() === owner.toLowerCase()),
+    )
   ) {
-    throw new Error("MAINNET_GOVERNANCE_SAFE must be exactly 2-of-3 with unique owners.");
+    throw new Error("MAINNET_GOVERNANCE_SAFE must match the reviewed 2-of-3 owner set.");
   }
   const ownableAbi = ["function owner() view returns (address)"];
   for (const [label, address] of [["FeeVault", feeVault], ["CreatorRegistry", creatorRegistry]]) {
     const ownable = new hre.ethers.Contract(address, ownableAbi, hre.ethers.provider);
     assertEqual(`${label} owner`, await ownable.owner(), governanceSafe);
   }
-  if (fs.existsSync(outputPath) && process.env.DEPLOY_PREFLIGHT_ONLY !== "true") {
-    throw new Error(`Refusing to overwrite ${outputPath}. Archive it before a new deployment.`);
+  const retiredFactoryContract = new hre.ethers.Contract(
+    retiredFactory,
+    ["function owner() view returns (address)", "function paused() view returns (bool)"],
+    hre.ethers.provider,
+  );
+  const vaultState = new hre.ethers.Contract(
+    feeVault,
+    [
+      "function isRegistrar(address) view returns (bool)",
+      "function isCollector(address) view returns (bool)",
+      "function feeRecipient() view returns (address)",
+    ],
+    hre.ethers.provider,
+  );
+  const registryState = new hre.ethers.Contract(
+    creatorRegistry,
+    ["function factory() view returns (address)"],
+    hre.ethers.provider,
+  );
+  assertEqual("retired Factory owner", await retiredFactoryContract.owner(), governanceSafe);
+  assertEqual("active CreatorRegistry Factory", await registryState.factory(), retiredFactory);
+  if (!(await vaultState.isRegistrar(retiredFactory))) {
+    throw new Error("Retired Factory is not the active FeeVault registrar; review live ACL state.");
+  }
+  if (!(await vaultState.isCollector(retiredFactory))) {
+    throw new Error("Retired Factory is not the active FeeVault collector; review live ACL state.");
+  }
+  if (
+    process.env.DEPLOY_PREFLIGHT_ONLY !== "true" &&
+    (fs.existsSync(outputPath) || fs.existsSync(safeBatchPath))
+  ) {
+    throw new Error("Refusing to overwrite an existing local deployment or Safe batch manifest.");
   }
   console.log("Arc mainnet preflight passed. Candidate will remain paused.");
   if (process.env.DEPLOY_PREFLIGHT_ONLY === "true") return;
@@ -124,14 +189,34 @@ async function main() {
   const vaultInterface = new hre.ethers.Interface([
     "function setRegistrar(address registrar,bool allowed)",
     "function setCollector(address collector,bool allowed)",
+    "function setFeeRecipient(address newRecipient)",
   ]);
   const registryInterface = new hre.ethers.Interface([
     "function setFactory(address newFactory)",
   ]);
   const factoryInterface = new hre.ethers.Interface([
+    "function pauseLaunches()",
     "function unpauseLaunches()",
   ]);
   const activationOperations = [
+    {
+      target: retiredFactory,
+      value: "0",
+      data: factoryInterface.encodeFunctionData("pauseLaunches"),
+      purpose: "Retire launches from the previous Factory before changing shared ACLs",
+    },
+    {
+      target: feeVault,
+      value: "0",
+      data: vaultInterface.encodeFunctionData("setRegistrar", [retiredFactory, false]),
+      purpose: "Revoke the previous Factory registrar authority",
+    },
+    {
+      target: feeVault,
+      value: "0",
+      data: vaultInterface.encodeFunctionData("setCollector", [retiredFactory, false]),
+      purpose: "Revoke the previous Factory collector authority",
+    },
     {
       target: feeVault,
       value: "0",
@@ -143,6 +228,12 @@ async function main() {
       value: "0",
       data: vaultInterface.encodeFunctionData("setCollector", [factoryAddress, true]),
       purpose: "Authorize Factory launch fee collection",
+    },
+    {
+      target: feeVault,
+      value: "0",
+      data: vaultInterface.encodeFunctionData("setFeeRecipient", [protocolFeeRecipient]),
+      purpose: "Route protocol withdrawals to the reviewed Safe recipient",
     },
     {
       target: creatorRegistry,
@@ -183,11 +274,36 @@ async function main() {
     deploymentTransaction: transaction.hash,
     deploymentBlock: receipt.blockNumber,
     deployedAt: new Date().toISOString(),
+    transition: {
+      retiredFactory,
+      retiredFactoryWasPaused: await retiredFactoryContract.paused(),
+      previousProtocolFeeRecipient: await vaultState.feeRecipient(),
+      protocolFeeRecipient,
+    },
     activationOperations,
+  };
+  const safeBatch = {
+    version: "1.0",
+    chainId: String(ARC_MAINNET_CHAIN_ID),
+    createdAt: Date.now(),
+    meta: {
+      name: "ArcOrigin mainnet activation",
+      description: "Atomically retire old launches, rotate shared ACLs, select the reviewed Factory, and activate direct Uniswap pools.",
+      createdFromSafeAddress: governanceSafe,
+    },
+    transactions: activationOperations.map((operation) => ({
+      to: operation.target,
+      value: operation.value,
+      data: operation.data,
+      contractMethod: null,
+      contractInputsValues: null,
+    })),
   };
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  fs.writeFileSync(safeBatchPath, `${JSON.stringify(safeBatch, null, 2)}\n`);
   console.log(`Paused candidate manifest written to ${outputPath}`);
+  console.log(`Unsigned Safe Transaction Builder batch written to ${safeBatchPath}`);
   console.log("STOP: do not execute activationOperations before independent review and UI cutover.");
 }
 

@@ -28,6 +28,8 @@ Mainnet candidates must remain paused until all of the following are complete:
 5. Coordinated application and indexer configuration using the new Factory address and deployment block.
 6. Health monitoring, RPC failover, Redis persistence, and reorg recovery checks.
 
+The current internal review and its limitations are recorded in `audit/SECURITY_REVIEW.md`.
+
 Never store deployer keys, Safe signer material, RPC credentials, Pinata tokens, or Redis credentials in the repository. Deployment scripts produce a paused candidate and unsigned Safe operations; they do not authorize automatic activation.
 
 ## Known risks
