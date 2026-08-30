@@ -7,6 +7,7 @@ import { PnlShareCard } from "@/components/pnl-share-card";
 import { KLineTokenChart } from "@/components/kline-token-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, TokenIcon, WarningBox } from "@/components/ui";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { EXPLORER_URL, arcChain } from "@/lib/chains";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
@@ -17,6 +18,7 @@ import { money, number, tickerLabel } from "@/lib/utils";
 
 export type OnchainTokenSnapshot = MarketSnapshot;
 type TerminalTab = "Trades" | "My position" | "Top traders" | "Holders" | "Market";
+const MARKET_POLL_INTERVAL_MS = 5_000;
 
 type TraderSummary = {
   wallet: string;
@@ -57,6 +59,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
   const [stale, setStale] = useState(false);
   const pendingTradeHashes = useRef(new Set<string>());
   const refreshRequestRef = useRef(0);
+  const refreshInFlightRef = useRef(false);
   const staleRevalidationAttemptRef = useRef(0);
 
   const applyRefreshedSnapshot = useCallback((next: OnchainTokenSnapshot) => {
@@ -69,11 +72,12 @@ export function useOnchainTokenSnapshot(token: TokenData) {
     });
   }, []);
 
-  const refresh = useCallback(async (forceRefresh = false) => {
+  const refresh = useCallback(async (forceRefresh = false, background = false) => {
+    if (background && refreshInFlightRef.current) return;
     const requestId = ++refreshRequestRef.current;
+    refreshInFlightRef.current = true;
     const isCurrentRequest = () => refreshRequestRef.current === requestId;
-    setLoading(true);
-    setError("");
+    if (!background) setLoading(true);
     try {
       try {
         const response = await fetch(`/api/onchain/tokens/${token.address}/market${forceRefresh ? "?refresh=1" : ""}`, {
@@ -85,11 +89,13 @@ export function useOnchainTokenSnapshot(token: TokenData) {
         if (!isCurrentRequest()) return;
         applyRefreshedSnapshot(payload.snapshot);
         setStale(Boolean(payload.stale));
+        setError("");
       } catch {
         const fallback = await loadIndexedMarketSnapshot(token);
         if (!isCurrentRequest()) return;
         applyRefreshedSnapshot(fallback);
         setStale(false);
+        setError("");
       }
     } catch (loadError) {
       if (!isCurrentRequest()) return;
@@ -97,9 +103,17 @@ export function useOnchainTokenSnapshot(token: TokenData) {
       const message = loadError instanceof Error ? loadError.message : "Live market data could not be loaded.";
       setError(`Showing the latest Factory snapshot. ${message}`);
     } finally {
-      if (isCurrentRequest()) setLoading(false);
+      if (isCurrentRequest()) {
+        refreshInFlightRef.current = false;
+        if (!background) setLoading(false);
+      }
     }
   }, [applyRefreshedSnapshot, token]);
+
+  useLiveRefresh({
+    intervalMs: MARKET_POLL_INTERVAL_MS,
+    refresh: () => refresh(true, true),
+  });
 
   useEffect(() => {
     if (!stale) {

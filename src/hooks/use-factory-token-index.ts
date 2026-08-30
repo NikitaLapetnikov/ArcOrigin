@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ARC_ACTIVE_FACTORY, arcChain } from "@/lib/chains";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
@@ -17,6 +18,8 @@ const PENDING_TRADE_TTL = 24 * 60 * 60 * 1_000;
 const SNAPSHOT_REQUEST_TIMEOUT_MS = 12_000;
 const MARKET_REQUEST_CONCURRENCY = 4;
 const TRADE_FEED_LIMIT = 500;
+const MARKET_POLL_INTERVAL_MS = 12_000;
+const INDEX_POLL_INTERVAL_MS = 30_000;
 
 type CachedIndex = { savedAt: number; marketDataComplete: true; tokens: TokenData[] };
 type TokenIndexSnapshot = { tokens: TokenData[]; indexedBlock: string; generatedAt: string };
@@ -317,13 +320,15 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
   const [marketDataReady, setMarketDataReady] = useState(false);
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const refreshRequestRef = useRef(0);
+  const refreshInFlightRef = useRef(false);
   const staleRevalidationAttemptRef = useRef(0);
 
-  const refresh = useCallback(async (forceRefresh = true) => {
+  const refresh = useCallback(async (forceRefresh = true, background = false) => {
+    if (background && refreshInFlightRef.current) return;
     const requestId = ++refreshRequestRef.current;
+    refreshInFlightRef.current = true;
     const isCurrentRequest = () => refreshRequestRef.current === requestId;
-    setLoading(true);
-    setError("");
+    if (!background) setLoading(true);
     try {
       const result = await loadFactoryTokens(
         includeMarketData,
@@ -348,7 +353,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
           ))));
           setIsPartial(Boolean(marketDataError));
           setIsCached(stale);
-          setLoading(false);
+          if (!background) setLoading(false);
         },
       );
       if (!isCurrentRequest()) return;
@@ -365,7 +370,10 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       });
       setIsPartial(Boolean(result.marketDataError));
       setIsCached(result.stale);
-      if (!result.marketDataError) setMarketDataReady(true);
+      if (!result.marketDataError) {
+        setMarketDataReady(true);
+        setError("");
+      }
       if (result.marketDataError) {
         setError("Live market refresh is delayed. Confirm trade amounts with the onchain quote.");
       }
@@ -379,9 +387,17 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       setIsPartial(false);
       setError(message || `Factory launch data could not be refreshed from ${arcChain.name}.`);
     } finally {
-      if (isCurrentRequest()) setLoading(false);
+      if (isCurrentRequest()) {
+        refreshInFlightRef.current = false;
+        if (!background) setLoading(false);
+      }
     }
   }, [allowCache, includeMarketData]);
+
+  useLiveRefresh({
+    intervalMs: includeMarketData ? MARKET_POLL_INTERVAL_MS : INDEX_POLL_INTERVAL_MS,
+    refresh: () => refresh(true, true),
+  });
 
   useEffect(() => {
     let forceInitialRefresh = true;

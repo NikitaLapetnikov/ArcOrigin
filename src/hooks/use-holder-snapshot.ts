@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { arcChain, factoryForLaunchBlock } from "@/lib/chains";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import { snapshotRevalidationDelay } from "@/lib/onchain/snapshot-revalidation";
 import type { TokenData } from "@/lib/types";
@@ -12,6 +13,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 type HolderSnapshotResult = { snapshot: HolderSnapshot; stale: boolean };
 const pendingRequests = new Map<string, Promise<HolderSnapshotResult>>();
 const HOLDER_REFRESH_DELAYS_MS = [1_500, 5_000, 12_000] as const;
+const HOLDER_POLL_INTERVAL_MS = 30_000;
 
 type CachedHolderSnapshot = {
   savedAt: number;
@@ -158,13 +160,15 @@ export function useHolderSnapshot(
   const [error, setError] = useState("");
   const [stale, setStale] = useState(false);
   const refreshRequestRef = useRef(0);
+  const refreshInFlightRef = useRef(false);
   const staleRevalidationAttemptRef = useRef(0);
 
-  const refresh = useCallback(async (forceRefresh = false) => {
+  const refresh = useCallback(async (forceRefresh = false, background = false) => {
     if (!token || !address) return;
+    if (background && refreshInFlightRef.current) return;
     const requestId = ++refreshRequestRef.current;
-    setLoading(true);
-    setError("");
+    refreshInFlightRef.current = true;
+    if (!background) setLoading(true);
     try {
       const result = await requestSnapshot(token, forceRefresh);
       if (refreshRequestRef.current !== requestId) return;
@@ -172,14 +176,24 @@ export function useHolderSnapshot(
       setSnapshot(result.snapshot);
       setSavedAt(cached.savedAt);
       setStale(result.stale);
+      setError("");
     } catch (refreshError) {
       if (refreshRequestRef.current !== requestId) return;
       setStale(true);
       setError(refreshError instanceof Error ? refreshError.message : "Holder analytics are temporarily unavailable.");
     } finally {
-      if (refreshRequestRef.current === requestId) setLoading(false);
+      if (refreshRequestRef.current === requestId) {
+        refreshInFlightRef.current = false;
+        if (!background) setLoading(false);
+      }
     }
   }, [address, token]);
+
+  useLiveRefresh({
+    enabled: autoRefresh && Boolean(token && address),
+    intervalMs: HOLDER_POLL_INTERVAL_MS,
+    refresh: () => refresh(true, true),
+  });
 
   useEffect(() => {
     if (!stale) {

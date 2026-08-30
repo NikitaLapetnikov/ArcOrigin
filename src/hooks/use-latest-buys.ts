@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAddress, isHash } from "viem";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import type { LatestBuyRecord, LatestBuysSnapshot, Trade } from "@/lib/types";
 
 const REQUEST_TIMEOUT_MS = 8_000;
 const LATEST_BUY_LIMIT = 50;
+const LATEST_BUYS_POLL_INTERVAL_MS = 8_000;
 
 function isTrade(value: unknown): value is Trade {
   if (!value || typeof value !== "object") return false;
@@ -53,10 +55,13 @@ export function useLatestBuys() {
   const [loading, setLoading] = useState(true);
   const [ready, setReady] = useState(false);
   const requestRef = useRef(0);
+  const refreshInFlightRef = useRef(false);
 
-  const refresh = useCallback(async (forceRefresh = false) => {
+  const refresh = useCallback(async (forceRefresh = false, background = false) => {
+    if (background && refreshInFlightRef.current) return;
     const requestId = ++requestRef.current;
-    setLoading(true);
+    refreshInFlightRef.current = true;
+    if (!background) setLoading(true);
     try {
       const response = await fetch(`/api/onchain/latest-buys${forceRefresh ? "?refresh=1" : ""}`, {
         cache: forceRefresh ? "no-store" : "default",
@@ -72,9 +77,17 @@ export function useLatestBuys() {
     } catch {
       // The full market snapshot remains a verified fallback.
     } finally {
-      if (requestId === requestRef.current) setLoading(false);
+      if (requestId === requestRef.current) {
+        refreshInFlightRef.current = false;
+        if (!background) setLoading(false);
+      }
     }
   }, []);
+
+  useLiveRefresh({
+    intervalMs: LATEST_BUYS_POLL_INTERVAL_MS,
+    refresh: () => refresh(true, true),
+  });
 
   useEffect(() => {
     void refresh();

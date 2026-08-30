@@ -6,6 +6,7 @@ import { decodeEventLog, formatUnits, parseUnits, publicActions, zeroAddress, ty
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { erc20Abi, uniswapV3FactoryAbi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import type { TokenData } from "@/lib/types";
 import { tickerLabel } from "@/lib/utils";
 import { ArcscanLink, Badge, Button } from "./ui";
@@ -21,6 +22,8 @@ const percentageOptions = [10, 25, 50, 75, 100] as const;
 const slippageOptions = [1, 3, 5] as const;
 const priorityOptions: Priority[] = ["Low", "Medium", "High"];
 const MAX_SLIPPAGE_PERCENT = 50;
+const BALANCE_POLL_INTERVAL_MS = 10_000;
+const QUOTE_POLL_INTERVAL_MS = 5_000;
 
 function wait(milliseconds: number) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
@@ -113,6 +116,8 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState("");
   const submissionLockRef = useRef(false);
+  const balanceRefreshInFlightRef = useRef(false);
+  const quoteRefreshInFlightRef = useRef(false);
   const quoteRequestRef = useRef(0);
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient({ chainId: arcChain.id });
@@ -126,11 +131,14 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
   const slippage = Number(slippageInput);
   const slippageValid = Number.isFinite(slippage) && slippage > 0 && slippage <= MAX_SLIPPAGE_PERCENT;
 
-  const refreshBalances = useCallback(async () => {
+  const refreshBalances = useCallback(async (background = false) => {
     if (!address || chainId !== arcChain.id || !publicClient) { setBalances(null); return; }
+    if (background && balanceRefreshInFlightRef.current) return;
+    balanceRefreshInFlightRef.current = true;
     const walletReadClient = walletClient?.chain.id === arcChain.id ? walletClient.extend(publicActions) as unknown as PublicClient : null;
     const clients = [walletReadClient, publicClient].filter((client): client is PublicClient => Boolean(client));
-    setBalanceLoading(true); setBalanceError(false);
+    if (!background) setBalanceLoading(true);
+    setBalanceError(false);
     try {
       const readBalance = async (contract: Address) => {
         let lastError: unknown;
@@ -140,8 +148,17 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         throw lastError;
       };
       setBalances({ usdc: await readBalance(ARC_ACTIVE_CONTRACTS.usdc), token: await readBalance(token.address as Address) });
-    } catch { setBalances(null); setBalanceError(true); } finally { setBalanceLoading(false); }
+    } catch { setBalanceError(true); } finally {
+      balanceRefreshInFlightRef.current = false;
+      if (!background) setBalanceLoading(false);
+    }
   }, [address, chainId, publicClient, token.address, walletClient]);
+
+  useLiveRefresh({
+    enabled: Boolean(address && chainId === arcChain.id && publicClient),
+    intervalMs: BALANCE_POLL_INTERVAL_MS,
+    refresh: () => refreshBalances(true),
+  });
 
   useEffect(() => { const timer = window.setTimeout(() => void refreshBalances(), 1_000); return () => window.clearTimeout(timer); }, [refreshBalances]);
   useEffect(() => { setTransactionHash(null); setNotice(""); setNoticeIsError(false); }, [amount, side, slippageInput]);
@@ -175,14 +192,44 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     return { input, output, fee: BigInt(result.fee), minimumOutput: output * (10_000n - slippageBps) / 10_000n, spender: result.spender as Address, pool: result.pool as Address };
   }, [amount, inputDecimals, poolAddress, publicClient, side, slippage, slippageValid, token.address, walletClient]);
 
-  useEffect(() => {
+  const refreshQuote = useCallback(async (background = false) => {
+    if (background && quoteRefreshInFlightRef.current) return;
     const requestId = ++quoteRequestRef.current;
+    if (!publicClient || !slippageValid || !amount || Number(amount) <= 0) {
+      setLiveQuote(null);
+      setQuoteLoading(false);
+      return;
+    }
+    quoteRefreshInFlightRef.current = true;
+    if (!background) setQuoteLoading(true);
+    try {
+      const quote = await readQuote();
+      if (quoteRequestRef.current !== requestId) return;
+      setLiveQuote(quote);
+      setQuoteError("");
+    } catch {
+      if (quoteRequestRef.current !== requestId) return;
+      setQuoteError("Quote temporarily unavailable. Retry in a moment.");
+    } finally {
+      if (quoteRequestRef.current === requestId) {
+        quoteRefreshInFlightRef.current = false;
+        if (!background) setQuoteLoading(false);
+      }
+    }
+  }, [amount, publicClient, readQuote, slippageValid]);
+
+  useLiveRefresh({
+    enabled: Boolean(publicClient && slippageValid && amount && Number(amount) > 0),
+    intervalMs: QUOTE_POLL_INTERVAL_MS,
+    refresh: () => refreshQuote(true),
+  });
+
+  useEffect(() => {
     setLiveQuote(null); setQuoteError("");
     if (!publicClient || !slippageValid || !amount || Number(amount) <= 0) { setQuoteLoading(false); return; }
-    setQuoteLoading(true);
-    const timer = window.setTimeout(() => void readQuote().then((quote) => { if (quoteRequestRef.current === requestId) setLiveQuote(quote); }).catch(() => { if (quoteRequestRef.current === requestId) setQuoteError("Quote temporarily unavailable. Retry in a moment."); }).finally(() => { if (quoteRequestRef.current === requestId) setQuoteLoading(false); }), 300);
+    const timer = window.setTimeout(() => void refreshQuote(false), 300);
     return () => window.clearTimeout(timer);
-  }, [amount, publicClient, readQuote, side, slippageInput, slippageValid]);
+  }, [amount, publicClient, refreshQuote, side, slippageInput, slippageValid]);
 
   async function submitTrade() {
     if (!address) { setNotice("Connect a wallet to trade."); setNoticeIsError(true); return; }
