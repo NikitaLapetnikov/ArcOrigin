@@ -20,7 +20,7 @@ This is an internal engineering security review of the source committed with thi
 
 ## Result
 
-No unresolved critical or high-severity issue was found in the reviewed contracts. The source may be deployed only as a paused mainnet candidate. Activation remains gated by a successful updated Arc mainnet fork run, reproducible creation-bytecode verification, candidate-state verification, Safe review and signatures, keeper setup, and the production UI/indexer cutover.
+No unresolved critical or high-severity issue was found in the reviewed contracts. The source may be deployed only as a paused mainnet candidate. Activation remains gated by reproducible creation-bytecode verification, candidate-state verification, Safe review and signatures, keeper setup, and the production UI/indexer cutover.
 
 ## Remediated findings
 
@@ -87,7 +87,7 @@ Factory runtime bytecode is 19,064 bytes, below the EIP-170 limit. Constructor b
 ## Tests and live checks
 
 - Unit suite: 10 passing cases covering initial supply, atomic pool creation, LP custody, ordinary fee split, opt-in reserve routing, immediate token-fee burn, true buyback supply burn, minimum/capped keeper economics, manipulated-price rejection, both token address orderings, crossed status, pool-poison retry, and guardian controls.
-- Arc mainnet fork suite now covers canonical Uniswap Factory, PositionManager, Quoter, and Router; launch, buy, sell, LP ownership, fee collection, TWAP-backed buyback, keeper reward, and supply burn for both token address orderings. The updated fork case must pass against the production RPC before candidate deployment.
+- Arc mainnet fork suite passed against the production RPC in 99.251 seconds with exit status 0. It covered canonical Uniswap Factory, PositionManager, Quoter, and Router; launch, buy, sell, LP ownership, fee collection, a 15-minute TWAP-backed buyback, keeper reward, and supply burn for both token address orderings.
 - Arc USDC uses a chain-native precompile that Hardhat cannot emulate. The fork test substitutes standard six-decimal ERC-20 runtime at the canonical address only inside the fork. Live verification separately checks the real USDC bytecode hash, decimals, and symbol.
 - Live dependency verification at block 18,259,815 confirmed the expected bytecode hashes for Arc USDC and all configured Uniswap contracts, with the 1% fee tier enabled at tick spacing 200.
 - Live governance inspection confirmed the configured 2-of-3 Safe owns the previous Factory, FeeVault, and CreatorRegistry.
@@ -105,4 +105,4 @@ Factory runtime bytecode is 19,064 bytes, below the EIP-170 limit. Constructor b
 
 ## Deployment decision
 
-Deploy only a paused candidate owned directly by the reviewed Governance Safe. Do not execute the activation batch unless the updated mainnet fork, reproducible creation-bytecode verification, candidate-mode verification, production build, UI cutover, and keeper dry run all pass. The activation batch must be executed atomically through the Governance Safe and followed by active-mode verification.
+Deploy only a paused candidate owned directly by the reviewed Governance Safe. The updated mainnet fork and production build pass. Do not execute the activation batch unless reproducible creation-bytecode verification, candidate-mode verification, UI cutover, and keeper dry run also pass. The activation batch must be executed atomically through the Governance Safe and followed by active-mode verification.
