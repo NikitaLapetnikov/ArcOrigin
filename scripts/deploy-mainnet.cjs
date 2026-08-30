@@ -61,6 +61,7 @@ async function requireContract(label, address) {
 
 async function main() {
   requiredValue("ARC_MAINNET_RPC_URL");
+  const preflightOnly = process.env.DEPLOY_PREFLIGHT_ONLY === "true";
   const expectedDeployer = requiredAddress("MAINNET_EXPECTED_DEPLOYER");
   const governanceSafe = requiredAddress("MAINNET_GOVERNANCE_SAFE");
   const expectedSafeOwners = requiredAddressList("MAINNET_GOVERNANCE_SAFE_OWNERS");
@@ -69,12 +70,9 @@ async function main() {
   const protocolFeeRecipient = requiredAddress("MAINNET_PROTOCOL_FEE_RECIPIENT");
   const feeVault = requiredAddress("NEXT_PUBLIC_MAINNET_FEE_VAULT_ADDRESS");
   const creatorRegistry = requiredAddress("NEXT_PUBLIC_MAINNET_CREATOR_REGISTRY_ADDRESS");
-  const [deployer] = await hre.ethers.getSigners();
-  if (!deployer) throw new Error("MAINNET_DEPLOYER_PRIVATE_KEY is required.");
   const network = await hre.ethers.provider.getNetwork();
   assertEqual("chain ID", network.chainId, ARC_MAINNET_CHAIN_ID);
-  assertEqual("deployer", deployer.address, expectedDeployer);
-  const deployerBalance = await hre.ethers.provider.getBalance(deployer.address);
+  const deployerBalance = await hre.ethers.provider.getBalance(expectedDeployer);
   if (deployerBalance === 0n) {
     throw new Error("Mainnet deployer has no native balance for gas.");
   }
@@ -153,7 +151,11 @@ async function main() {
     throw new Error("Refusing to overwrite an existing local deployment or Safe batch manifest.");
   }
   console.log("Arc mainnet preflight passed. Candidate will remain paused.");
-  if (process.env.DEPLOY_PREFLIGHT_ONLY === "true") return;
+  if (preflightOnly) return;
+
+  const [deployer] = await hre.ethers.getSigners();
+  if (!deployer) throw new Error("MAINNET_DEPLOYER_PRIVATE_KEY is required for deployment.");
+  assertEqual("deployer", deployer.address, expectedDeployer);
 
   const Factory = await hre.ethers.getContractFactory("ArcForgeFactory");
   const factory = await Factory.deploy(
