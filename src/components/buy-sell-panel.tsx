@@ -297,9 +297,8 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
       await switchChainAsync({ chainId: arcChain.id });
       throw new Error(`${arcChain.name} is now selected. Request the quote again.`);
     }
-    const client = walletClient?.extend(publicActions) ?? publicClient;
-    if (!client) throw new Error(`No ${arcChain.name} client is available.`);
-    return client;
+    if (!publicClient) throw new Error(`No ${arcChain.name} public client is available.`);
+    return publicClient;
   }
 
   const readQuote = useCallback(async (): Promise<LiveQuote> => {
@@ -453,6 +452,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
           args: [quote.spender, quote.input],
           ...approvalFeeOverrides,
         });
+        setTransactionHash(approvalHash);
         const approvalReceipt = await withRpcRetry(() => client.waitForTransactionReceipt({ hash: approvalHash }));
         if (approvalReceipt.status !== "success") throw new Error(`${inputSymbol} approval reverted onchain.`);
       }

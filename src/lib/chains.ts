@@ -8,8 +8,23 @@ export const ARCORIGIN_PROTOCOL_VERSION =
   process.env.NEXT_PUBLIC_PROTOCOL_VERSION === "6" ? 6 : 5;
 
 const mainnetRpcUrl = process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL?.trim() || "https://invalid.invalid";
+const mainnetFallbackRpcUrls = (process.env.NEXT_PUBLIC_ARC_MAINNET_FALLBACK_RPC_URLS ?? "")
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
 const mainnetExplorerUrl =
   process.env.NEXT_PUBLIC_ARC_MAINNET_EXPLORER_URL?.trim() || "https://invalid.invalid";
+
+function uniqueRpcUrls(primary: string, fallbacks: string[]) {
+  const urls = [...new Set([primary, ...fallbacks])];
+  for (const url of urls) {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") {
+      throw new Error("Arc RPC endpoints must use HTTPS.");
+    }
+  }
+  return urls;
+}
 
 export const arcTestnet = defineChain({
   id: 5_042_002,
@@ -36,7 +51,7 @@ export const arcMainnet = defineChain({
   id: 5_042,
   name: "Arc",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-  rpcUrls: { default: { http: [mainnetRpcUrl] } },
+  rpcUrls: { default: { http: uniqueRpcUrls(mainnetRpcUrl, mainnetFallbackRpcUrls) } },
   blockExplorers: { default: { name: "Arc Explorer", url: mainnetExplorerUrl } },
 });
 
