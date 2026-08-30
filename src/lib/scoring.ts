@@ -29,8 +29,8 @@ export function calculateMomentumScore(token: TokenData): number {
   const volumeWeight = Math.log10(token.volume1h + 1) * 14;
   const buyerWeight = Math.log10(token.buyers + 1) * 11;
   const tradeWeight = Math.log10(token.trades + 1) * 8;
-  const curveWeight = token.curveProgress * 0.24;
+  const progressWeight = token.crossProgress * 0.24;
   const riskPenalty = (100 - token.riskScore) * 0.18;
   const ageDecay = Math.min(18, token.ageMinutes / 1_440 * 5);
-  return Math.max(0, Math.min(100, Math.round(volumeWeight + buyerWeight + tradeWeight + curveWeight - riskPenalty - ageDecay)));
+  return Math.max(0, Math.min(100, Math.round(volumeWeight + buyerWeight + tradeWeight + progressWeight - riskPenalty - ageDecay)));
 }

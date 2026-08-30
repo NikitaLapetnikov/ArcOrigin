@@ -7,7 +7,6 @@ import { PnlShareCard } from "@/components/pnl-share-card";
 import { KLineTokenChart } from "@/components/kline-token-chart";
 import { AddressPill, ArcscanLink, Badge, Button, Panel, Progress, TokenIcon, WarningBox } from "@/components/ui";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
-import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import { EXPLORER_URL, arcChain } from "@/lib/chains";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
@@ -31,33 +30,6 @@ type TraderSummary = {
 
 function createIndexedFallback(token: TokenData): OnchainTokenSnapshot {
   const totalSupply = token.totalSupply ?? 1_000_000_000;
-  if (token.venue === "uniswap-v3") {
-    return {
-      price: token.price,
-      priceChange: token.priceChange24h,
-      marketCap: token.marketCap,
-      volume: token.volume24h,
-      buyers: token.buyers,
-      sellers: token.sellers,
-      raisedUsdc: token.marketCap,
-      targetUsdc: token.targetUSDC,
-      progress: token.curveProgress,
-      graduated: token.status === "Crossed",
-      tokensSold: 0,
-      tokenReserve: totalSupply,
-      chart: token.chartData.length > 0 ? token.chartData : [{ time: "Launch", price: token.price, volume: 0 }],
-      trades: token.recentTrades,
-      indexedBlock: String(token.launchBlock ?? "Factory"),
-      generatedAt: new Date().toISOString(),
-    };
-  }
-  const initialReserve = totalSupply * (1 - (token.creatorAllocationPercent ?? 0) / 100);
-  const virtualUsdc = token.virtualUsdcReserve ?? 10_000;
-  const raisedUsdc = Math.max(0, token.raisedUSDC);
-  const tokenReserve = virtualUsdc + raisedUsdc > 0
-    ? initialReserve * virtualUsdc / (virtualUsdc + raisedUsdc)
-    : initialReserve;
-
   return {
     price: token.price,
     priceChange: token.priceChange24h,
@@ -65,12 +37,12 @@ function createIndexedFallback(token: TokenData): OnchainTokenSnapshot {
     volume: token.volume24h,
     buyers: token.buyers,
     sellers: token.sellers,
-    raisedUsdc,
+    raisedUsdc: token.marketCap,
     targetUsdc: token.targetUSDC,
-    progress: token.curveProgress,
-    graduated: token.status === "Graduated",
-    tokensSold: Math.max(0, initialReserve - tokenReserve),
-    tokenReserve,
+    progress: token.crossProgress,
+    crossed: token.status === "Crossed",
+    tokensSold: 0,
+    tokenReserve: totalSupply,
     chart: token.chartData.length > 0 ? token.chartData : [{ time: "Launch", price: token.price, volume: 0 }],
     trades: token.recentTrades,
     indexedBlock: String(token.launchBlock ?? "Factory"),
@@ -86,7 +58,6 @@ export function useOnchainTokenSnapshot(token: TokenData) {
   const pendingTradeHashes = useRef(new Set<string>());
   const refreshRequestRef = useRef(0);
   const staleRevalidationAttemptRef = useRef(0);
-  const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
 
   const applyRefreshedSnapshot = useCallback((next: OnchainTokenSnapshot) => {
     setSnapshot((current) => {
@@ -175,11 +146,10 @@ export function useOnchainTokenSnapshot(token: TokenData) {
       setSnapshot((current) => {
         if (current.trades.some((trade) => trade.txHash.toLowerCase() === hash)) return current;
         const timestamp = detail.timestamp ?? Math.floor(Date.now() / 1_000);
-        if (token.venue === "uniswap-v3") {
-          const price = usdc / tokens;
-          const totalSupply = token.totalSupply ?? 1_000_000_000;
-          const marketCap = price * totalSupply;
-          const trade: Trade = {
+        const price = usdc / tokens;
+        const totalSupply = token.totalSupply ?? 1_000_000_000;
+        const marketCap = price * totalSupply;
+        const trade: Trade = {
             time: detail.blockNumber ? `Block ${detail.blockNumber}` : "Confirmed",
             timestamp,
             type: side,
@@ -189,7 +159,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
             price,
             txHash: transactionHash,
           };
-          return {
+        return {
             ...current,
             price,
             priceChange: token.price > 0 ? (price / token.price - 1) * 100 : current.priceChange,
@@ -199,57 +169,12 @@ export function useOnchainTokenSnapshot(token: TokenData) {
             sellers: current.sellers + (side === "Sell" ? 1 : 0),
             raisedUsdc: marketCap,
             progress: current.targetUsdc > 0 ? Math.min(100, marketCap / current.targetUsdc * 100) : 0,
-            graduated: current.graduated || marketCap >= current.targetUsdc,
+            crossed: current.crossed || marketCap >= current.targetUsdc,
             tokensSold: Math.max(0, current.tokensSold + (side === "Buy" ? tokens : -tokens)),
             tokenReserve: Math.max(0, current.tokenReserve + (side === "Buy" ? -tokens : tokens)),
             chart: [...current.chart, { time: "Now", timestamp, price, volume: usdc }],
             trades: [trade, ...current.trades],
             generatedAt: new Date().toISOString(),
-          };
-        }
-        const reserveDelta = side === "Buy"
-          ? Math.max(0, usdc - (detail.fee ?? 0))
-          : -(usdc + (detail.fee ?? 0));
-        const raisedUsdc = Math.max(0, current.raisedUsdc + reserveDelta);
-        let tokenReserve = Math.max(0, current.tokenReserve + (side === "Buy" ? -tokens : tokens));
-        const nextGraduated = current.graduated || raisedUsdc >= current.targetUsdc;
-        if (!current.graduated && nextGraduated && permanentLiquidityMode) {
-          const effectiveUsdc = (token.virtualUsdcReserve ?? 0) + raisedUsdc;
-          if (effectiveUsdc > 0) tokenReserve = raisedUsdc * tokenReserve / effectiveUsdc;
-        }
-        const quoteReserve = nextGraduated && permanentLiquidityMode
-          ? raisedUsdc
-          : (token.virtualUsdcReserve ?? 0) + raisedUsdc;
-        const price = tokenReserve > 0 ? quoteReserve / tokenReserve : current.price;
-        const totalSupply = token.totalSupply ?? 1_000_000_000;
-        const trade: Trade = {
-          time: detail.blockNumber ? `Block ${detail.blockNumber}` : "Confirmed",
-          timestamp,
-          type: side,
-          wallet,
-          usdc,
-          tokens,
-          price,
-          txHash: transactionHash,
-        };
-        return {
-          ...current,
-          price,
-          priceChange: token.price > 0 ? (price / token.price - 1) * 100 : current.priceChange,
-          marketCap: price * totalSupply,
-          volume: current.volume + usdc,
-          buyers: current.buyers + (side === "Buy" ? 1 : 0),
-          sellers: current.sellers + (side === "Sell" ? 1 : 0),
-          raisedUsdc,
-          progress: current.targetUsdc > 0 ? Math.min(100, raisedUsdc / current.targetUsdc * 100) : 0,
-          graduated: nextGraduated,
-          tokensSold: nextGraduated && current.graduated
-            ? current.tokensSold
-            : Math.max(0, current.tokensSold + (side === "Buy" ? tokens : -tokens)),
-          tokenReserve,
-          chart: [...current.chart, { time: "Now", timestamp, price, volume: usdc }],
-          trades: [trade, ...current.trades],
-          generatedAt: new Date().toISOString(),
         };
       });
       for (const delay of [1_500, 5_000, 12_000]) {
@@ -261,7 +186,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
       window.removeEventListener("arcforge:trade-confirmed", handleTrade);
       retryTimers.forEach(clearTimeout);
     };
-  }, [permanentLiquidityMode, refresh, token.address, token.price, token.totalSupply, token.venue, token.virtualUsdcReserve]);
+  }, [refresh, token.address, token.price, token.totalSupply]);
 
   return { snapshot, loading, error, stale, refresh };
 }
@@ -289,9 +214,7 @@ export function OnchainTokenDashboard({
     initialHolderSnapshot,
   );
 
-  const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
-  const isV3 = token.venue === "uniswap-v3";
-  const remainingToGraduation = Math.max(0, token.targetUSDC - snapshot.raisedUsdc);
+  const remainingToCross = Math.max(0, token.targetUSDC - snapshot.raisedUsdc);
   const progressLabel = snapshot.progress > 0 && snapshot.progress < 0.01 ? "<0.01%" : `${snapshot.progress.toFixed(2)}%`;
   const cutoff24h = Math.floor(Date.now() / 1_000) - 24 * 60 * 60;
   const recentTrades = snapshot.trades.filter((trade) => (trade.timestamp ?? 0) >= cutoff24h);
@@ -382,7 +305,7 @@ export function OnchainTokenDashboard({
           {activeTab === tab.label && <span className="absolute inset-x-3 bottom-0 h-px bg-cyan" />}
         </button>)}
       </div>
-      <span className="hidden shrink-0 font-mono text-[8px] uppercase tracking-wider text-slate-700 2xl:block">{isV3 ? "Uniswap V3 · LP locked forever" : "Bonding curve · no order book"}</span>
+      <span className="hidden shrink-0 font-mono text-[8px] uppercase tracking-wider text-slate-700 2xl:block">Uniswap V3 · LP locked forever</span>
     </div>
 
     <div className="min-h-[260px]">
@@ -398,11 +321,11 @@ export function OnchainTokenDashboard({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="eyebrow">Connected wallet</p>
-            <p className="mt-2 text-sm text-slate-400">Actual token balance from confirmed ERC-20 Transfer events; trade totals include confirmed {isV3 ? "Uniswap V3" : "curve"} swaps only.</p>
+            <p className="mt-2 text-sm text-slate-400">Actual token balance from confirmed ERC-20 Transfer events; trade totals include confirmed Uniswap V3 swaps only.</p>
           </div>
           {address && <AddressPill address={address}/>}
         </div>
-        {!address && <TerminalEmpty title="Connect a wallet to view your position" body="ArcOrigin will show this wallet's confirmed balance and curve trades without estimating missing data."/>}
+        {!address && <TerminalEmpty title="Connect a wallet to view your position" body="ArcOrigin will show this wallet's confirmed balance and pool trades without estimating missing data."/>}
         {address && holderLoading && !holderSnapshot && <TerminalEmpty title="Loading your position…" body="Reading the confirmed holder snapshot in the background."/>}
         {address && holderSnapshot && !walletHolder && <TerminalEmpty title="No current token balance found" body="This wallet is not present in the confirmed holder snapshot for this token."/>}
         {address && walletHolder && <div className="mt-5 overflow-x-auto rounded-xl border border-line">
@@ -419,7 +342,7 @@ export function OnchainTokenDashboard({
             </tr></tbody>
           </table>
         </div>}
-        {address && walletHolder && walletPnl === null && <p className="mt-3 text-[11px] leading-5 text-slate-500">PnL is unavailable because the actual wallet balance does not match net curve trades. This usually means tokens were transferred; ArcOrigin does not invent a cost basis.</p>}
+        {address && walletHolder && walletPnl === null && <p className="mt-3 text-[11px] leading-5 text-slate-500">PnL is unavailable because the actual wallet balance does not match net pool trades. This usually means tokens were transferred; ArcOrigin does not invent a cost basis.</p>}
         {holderError && <div className="mt-4"><WarningBox>{holderError}</WarningBox></div>}
       </div>}
 
@@ -448,7 +371,7 @@ export function OnchainTokenDashboard({
       {activeTab === "Holders" && <div className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="eyebrow">Holder distribution</p><p className="mt-2 text-sm text-slate-400">Confirmed holder balances, cached locally for instant repeat visits.</p></div><div className="flex items-center gap-2"><Badge tone={holderSnapshot ? "good" : "neutral"}>{holderLoading ? "Refreshing" : holderSnapshot ? "Ready" : "Unavailable"}</Badge><Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={holderLoading} onClick={() => void refreshHolders(true)}>Refresh</Button></div></div>
         {holderLoading && !holderSnapshot && <div className="mt-8 rounded-xl border border-line bg-black/15 px-4 py-10 text-center text-sm text-slate-500">Loading holder analytics in the background…</div>}
-        {holderSnapshot && <div className="mt-6 grid gap-5 sm:grid-cols-3">{[["Creator", holderSnapshot.creatorPercent], [isV3 ? "Top 10 excluding pool" : "Top 10 excluding curve", holderSnapshot.topTenExcludingCurvePercent], [isV3 ? "Uniswap V3 pool" : "Trading curve", holderSnapshot.curvePercent]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-line bg-black/15 p-4"><div className="mb-3 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-200">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
+        {holderSnapshot && <div className="mt-6 grid gap-5 sm:grid-cols-3">{[["Creator", holderSnapshot.creatorPercent], ["Top 10 excluding pool", holderSnapshot.topTenExcludingPoolPercent], ["Uniswap V3 pool", holderSnapshot.poolPercent]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-line bg-black/15 p-4"><div className="mb-3 flex justify-between text-xs"><span className="text-slate-500">{label}</span><span className="text-slate-200">{Number(value).toFixed(2)}%</span></div><Progress value={Number(value)}/></div>)}</div>}
         {holderSnapshot && <div className="mt-5 overflow-x-auto rounded-xl border border-line">
           <table className="w-full min-w-[700px] text-left text-xs">
             <thead><tr className="border-b border-line bg-black/15 font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="px-4 py-3">#</th><th>Holder</th><th>Balance</th><th>Supply share</th><th>Role</th><th>Explorer</th></tr></thead>
@@ -457,7 +380,7 @@ export function OnchainTokenDashboard({
               <td><AddressPill address={holder.address}/></td>
               <td className="text-slate-200">{formatTokenAmount(Number(holder.balance))}</td>
               <td><div className="w-32"><div className="mb-1 flex justify-between"><span className="text-slate-300">{holder.percent.toFixed(2)}%</span></div><Progress value={holder.percent}/></div></td>
-              <td><Badge tone={holder.role === "Curve" || holder.role === "Pool" ? "cyan" : holder.role === "Creator" ? "warn" : "neutral"}>{holder.role}</Badge></td>
+              <td><Badge tone={holder.role === "Pool" ? "cyan" : holder.role === "Creator" ? "warn" : "neutral"}>{holder.role}</Badge></td>
               <td><a href={`${EXPLORER_URL}/address/${holder.address}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan hover:underline">Open <ExternalLink className="size-3"/></a></td>
             </tr>)}</tbody>
           </table>
@@ -466,16 +389,10 @@ export function OnchainTokenDashboard({
       </div>}
 
       {activeTab === "Market" && <div className="p-5">
-        <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">{isV3 ? "Locked Uniswap V3" : "Bonding curve"}</p><h2 className="mt-2 text-lg font-semibold text-white">{isV3
-          ? snapshot.graduated ? "Crossed · liquidity unchanged" : `${progressLabel} toward crossed`
-          : snapshot.graduated ? permanentLiquidityMode ? "Graduated · real-reserve AMM active" : "Graduated" : `${progressLabel} toward graduation`}</h2></div><div className="text-right"><p className="text-sm text-white">{money(snapshot.raisedUsdc)} / {money(token.targetUSDC)}</p><p className="mt-1 text-xs text-slate-500">{isV3 ? "Market cap" : "USDC raised"}</p></div></div>
+        <div className="flex flex-wrap items-end justify-between gap-4"><div><p className="eyebrow">Locked Uniswap V3</p><h2 className="mt-2 text-lg font-semibold text-white">{snapshot.crossed ? "Crossed · liquidity unchanged" : `${progressLabel} toward crossed`}</h2></div><div className="text-right"><p className="text-sm text-white">{money(snapshot.raisedUsdc)} / {money(token.targetUSDC)}</p><p className="mt-1 text-xs text-slate-500">Market cap</p></div></div>
         <div className="my-5"><Progress value={snapshot.progress}/></div>
-        <div className="grid grid-cols-2 gap-4 text-xs md:grid-cols-4"><Metric label="Tokens sold" value={number(snapshot.tokensSold)}/><Metric label={isV3 ? "Pool inventory" : "Curve inventory"} value={number(snapshot.tokenReserve)}/><Metric label={isV3 ? "To crossed" : "Remaining"} value={money(remainingToGraduation)}/><Metric label={isV3 ? "LP custody" : "After graduation"} value={isV3 ? "Locked forever" : permanentLiquidityMode ? "Permanent AMM" : "Legacy curve"}/></div>
-        <p className="mt-5 border-t border-line pt-4 text-[11px] leading-5 text-slate-500">{isV3
-          ? "The pool and single-sided LP position exist from launch. Reaching $50k only records the permanent Crossed status; liquidity does not migrate or unlock."
-          : permanentLiquidityMode
-          ? "At 100%, the virtual reserve is removed without changing the spot price. Price-matched tokens and all real USDC remain in the permanent AMM; buys and sells continue."
-          : "Legacy curve: real USDC backs sells, while the virtual reserve shapes pricing. Buying closes at the configured threshold."}</p>
+        <div className="grid grid-cols-2 gap-4 text-xs md:grid-cols-4"><Metric label="Tokens sold" value={number(snapshot.tokensSold)}/><Metric label="Pool inventory" value={number(snapshot.tokenReserve)}/><Metric label="To crossed" value={money(remainingToCross)}/><Metric label="LP custody" value="Locked forever"/></div>
+        <p className="mt-5 border-t border-line pt-4 text-[11px] leading-5 text-slate-500">The pool and single-sided LP position exist from launch. Reaching $50k only records the permanent Crossed status; liquidity does not migrate or unlock.</p>
       </div>}
 
     </div>

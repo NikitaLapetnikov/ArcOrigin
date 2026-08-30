@@ -1,15 +1,15 @@
-# ArcOrigin V7: direct Uniswap V3 launches
+# ArcOrigin architecture
 
-V7 replaces the V6 `token -> isolated bonding curve -> optional migration` lifecycle for new launches. Existing V6 tokens remain unchanged and continue to use their deployed curves.
+ArcOrigin launches every token directly into a canonical Uniswap V3 pool. There is no separate bonding curve and no migration lifecycle.
 
 ## Launch transaction
 
-Each successful V7 launch is atomic:
+Each successful launch is atomic:
 
 1. Deploy a fixed-supply ERC-20 with 1 billion tokens and no owner, mint, tax, pause, or blacklist hooks.
 2. Create or initialize the canonical token/USDC Uniswap V3 pool at a $5,000 starting market cap using the official 1% fee tier.
 3. Mint a single-sided LP position with the launch token supply.
-4. Send the LP NFT directly to the immutable V7 locker.
+4. Send the LP NFT directly to the immutable liquidity locker.
 5. Burn any token dust caused by Uniswap rounding, so the LP principal equals the effective total supply.
 6. Emit `TokenLaunched(token, pool, creator, name, symbol, positionId)`.
 
@@ -23,8 +23,8 @@ The locker has no NFT transfer, approval, liquidity decrease, burn, rescue, or a
 
 ## Indexing and trading
 
-Indexers can discover the market from the canonical Uniswap V3 `PoolCreated`, `Mint`, and `Swap` events in the launch block. ArcOrigin indexes the V7 `TokenLaunched` event, validates the canonical pool, quotes through the official Quoter, trades through the official Router, and builds charts from pool `Swap` events.
+Indexers can discover the market from the canonical Uniswap V3 `PoolCreated`, `Mint`, and `Swap` events in the launch block. ArcOrigin indexes the `TokenLaunched` event, validates the canonical pool, quotes through the official Quoter, trades through the official Router, and builds charts from pool `Swap` events.
 
 ## Deployment gate
 
-The V7 Factory starts paused. The deployment script only creates a paused candidate owned directly by the production 2-of-3 Governance Safe; the deployer never receives Factory ownership. Activation requires a separate reviewed Safe batch that authorizes FeeVault access, selects V7 in CreatorRegistry, and unpauses launches. Do not activate a candidate without source verification, an independent contract review, a test launch on a fork or testnet, and a coordinated UI/indexer cutover.
+The Factory starts paused. The deployment script only creates a paused candidate owned directly by the production 2-of-3 Governance Safe; the deployer never receives Factory ownership. Activation requires a separate reviewed Safe batch that authorizes FeeVault access, selects the Factory in CreatorRegistry, and unpauses launches. Do not activate a candidate without source verification, an independent contract review, a test launch on a fork or testnet, and a coordinated UI/indexer cutover.

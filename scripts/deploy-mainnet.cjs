@@ -7,7 +7,7 @@ const ARC_USDC = "0x3600000000000000000000000000000000000000";
 const UNISWAP_V3_FACTORY = "0xf0db7b58379503491d857db50ac9ece64c653918";
 const UNISWAP_V3_POSITION_MANAGER = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377";
 const LAUNCH_FEE = 10n * 10n ** 6n;
-const outputPath = path.join(__dirname, "..", "deployment", "arc-mainnet-v7.local.json");
+const outputPath = path.join(__dirname, "..", "deployment", "arc-mainnet.local.json");
 
 function requiredValue(name) {
   const value = process.env[name]?.trim();
@@ -85,10 +85,10 @@ async function main() {
   if (fs.existsSync(outputPath) && process.env.DEPLOY_PREFLIGHT_ONLY !== "true") {
     throw new Error(`Refusing to overwrite ${outputPath}. Archive it before a new deployment.`);
   }
-  console.log("Arc mainnet V7 preflight passed. Candidate will remain paused.");
+  console.log("Arc mainnet preflight passed. Candidate will remain paused.");
   if (process.env.DEPLOY_PREFLIGHT_ONLY === "true") return;
 
-  const Factory = await hre.ethers.getContractFactory("ArcForgeFactoryV7");
+  const Factory = await hre.ethers.getContractFactory("ArcForgeFactory");
   const factory = await Factory.deploy(
     governanceSafe,
     emergencyGuardian,
@@ -100,15 +100,15 @@ async function main() {
     LAUNCH_FEE,
   );
   const transaction = factory.deploymentTransaction();
-  console.log(`V7 Factory submitted: ${transaction.hash}`);
+  console.log(`Factory submitted: ${transaction.hash}`);
   const receipt = await transaction.wait();
-  if (receipt.status !== 1) throw new Error("V7 Factory deployment reverted.");
+  if (receipt.status !== 1) throw new Error("Factory deployment reverted.");
   await factory.waitForDeployment();
 
   const factoryAddress = await factory.getAddress();
   const lockerAddress = await factory.liquidityLocker();
   const locker = await hre.ethers.getContractAt(
-    "ArcOriginUniswapV3LaunchLockerV7",
+    "ArcOriginUniswapV3LiquidityLocker",
     lockerAddress,
   );
   assertEqual("factory owner", await factory.owner(), governanceSafe);
@@ -136,32 +136,31 @@ async function main() {
       target: feeVault,
       value: "0",
       data: vaultInterface.encodeFunctionData("setRegistrar", [factoryAddress, true]),
-      purpose: "Authorize V7 Factory to register launch fee collectors",
+      purpose: "Authorize Factory to register launch fee collectors",
     },
     {
       target: feeVault,
       value: "0",
       data: vaultInterface.encodeFunctionData("setCollector", [factoryAddress, true]),
-      purpose: "Authorize V7 Factory launch fee collection",
+      purpose: "Authorize Factory launch fee collection",
     },
     {
       target: creatorRegistry,
       value: "0",
       data: registryInterface.encodeFunctionData("setFactory", [factoryAddress]),
-      purpose: "Select V7 as the active launch factory",
+      purpose: "Select the new Factory as the active launch factory",
     },
     {
       target: factoryAddress,
       value: "0",
       data: factoryInterface.encodeFunctionData("unpauseLaunches"),
-      purpose: "Activate V7 launches only after audit and UI cutover",
+      purpose: "Activate launches only after audit and UI cutover",
     },
   ];
   const manifest = {
     network: "arc-mainnet",
     chainId: Number(ARC_MAINNET_CHAIN_ID),
-    protocolVersion: 7,
-    status: "V7_MAINNET_CANDIDATE_PAUSED_REQUIRES_AUDIT_AND_TIMELOCKED_ACTIVATION",
+    status: "MAINNET_CANDIDATE_PAUSED_REQUIRES_AUDIT_AND_SAFE_ACTIVATION",
     contracts: {
       factory: factoryAddress,
       liquidityLocker: lockerAddress,
@@ -178,7 +177,6 @@ async function main() {
       poolFee: 10_000,
       creatorFeeShareBps: 7_000,
       protocolFeeShareBps: 3_000,
-      migration: false,
       lpCustody: "PERMANENT_LOCKER_NO_WITHDRAWAL_PATH",
     },
     governance: { safe: governanceSafe, threshold: "2-of-3", emergencyGuardian },
@@ -187,8 +185,9 @@ async function main() {
     deployedAt: new Date().toISOString(),
     activationOperations,
   };
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  console.log(`Paused V7 candidate manifest written to ${outputPath}`);
+  console.log(`Paused candidate manifest written to ${outputPath}`);
   console.log("STOP: do not execute activationOperations before independent review and UI cutover.");
 }
 

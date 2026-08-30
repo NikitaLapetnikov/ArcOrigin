@@ -23,7 +23,7 @@ export function TrendingMarket() {
         <div className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div><p className="font-semibold text-white">{token.name}</p><p className="text-[10px] text-slate-500">{tickerLabel(token.ticker)}</p></div></div>
         <div><p className="text-[10px] font-medium uppercase tracking-[.08em] text-slate-600">Market cap</p><p className="mt-1 text-lg font-semibold text-white">{onchainUnavailable ? "—" : money(token.marketCap,true)}</p></div>
         <div><p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">Volume</p><p className="mt-1 text-sm text-slate-200">{onchainUnavailable ? "RPC unavailable" : money(token.volume24h,true)}</p></div>
-        <div><div className="mb-2 flex justify-between text-[10px] text-slate-500"><span>Curve</span><span>{onchainUnavailable ? "—" : `${token.curveProgress.toFixed(2)}%`}</span></div><Progress value={onchainUnavailable ? 0 : token.curveProgress}/></div>
+        <div><div className="mb-2 flex justify-between text-[10px] text-slate-500"><span>Crossed</span><span>{onchainUnavailable ? "—" : `${token.crossProgress.toFixed(2)}%`}</span></div><Progress value={onchainUnavailable ? 0 : token.crossProgress}/></div>
         <ArrowUpRight className="size-4 text-slate-600"/>
       </Link>;
     })}</div>}

@@ -1,200 +1,59 @@
 # ArcOrigin
 
-ArcOrigin is a USDC-native token launch and discovery layer for Arc. This repository contains a Next.js product interface and a local, tested Solidity protocol implementation for fixed-supply launches and virtual-reserve bonding curves. Testnet and mainnet use separate deployments of the same codebase and never share contract or indexer configuration.
+ArcOrigin is a non-custodial, USDC-native token launch and discovery product for Arc. Every new token launches directly into its canonical Uniswap V3 pool; there is no separate bonding curve or later liquidity migration.
 
-## Current status
+## Architecture
 
-- Frontend: Arc mainnet is the production environment; launches, trades, charts, holders, creator claims, and fees use confirmed onchain data.
-- Contracts: V6 is active on Arc mainnet and Arc Testnet. Mainnet Factory, FeeVault, and CreatorRegistry are owned directly by the reviewed 2-of-3 Governance Safe.
-- Arc mainnet: chain ID `5042`; Factory launches and the verified Uniswap V3 migration route are active. Canonical addresses and activation transactions are recorded in [`deployment/arc-mainnet.json`](./deployment/arc-mainnet.json).
-- Arc Testnet: chain ID `5042002`; the isolated testnet deployment remains available for development and does not share contracts or cached state with mainnet.
-- Canonical Arc USDC: `0x3600000000000000000000000000000000000000`.
+- Fixed supply: 1,000,000,000 tokens, no owner, mint, tax, blacklist, or pause.
+- Launch: the Factory creates the token, initializes the token/USDC 1% pool at a 5,000 USDC market cap, mints the single-sided LP position, and locks its NFT atomically.
+- Liquidity: the immutable locker has no withdrawal path.
+- Status: 50,000 USDC changes the token status to `Crossed`; it does not move or unlock liquidity.
+- Fees: collected LP fees are split 70% to the creator and 30% to the protocol Fee Vault.
+- Indexing: the app indexes only the configured active Factory and canonical Uniswap `Swap` events. Previous deployments and token lists are not loaded.
 
-The production interface does not insert simulated token listings or trading
-activity. The internal review and remaining production risks are documented in
-[`SECURITY.md`](./SECURITY.md). The repeatable 2026-07-30 V6 review evidence,
-invariants, Slither triage, deployed bytecode identity, and mainnet activation
-procedure are collected in
-[`audit/internal-v6-2026-07-30`](./audit/internal-v6-2026-07-30/README.md).
-Nothing in this repository is an independent audit claim or investment advice.
+See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for contract invariants and integration details.
 
 ## Local development
 
-Requirements: Node.js 20+ and pnpm.
+Requirements: Node.js 20+ and npm.
 
 ```bash
-pnpm install
-pnpm contracts:compile
-pnpm contracts:test
-pnpm dev
+cp .env.example .env
+npm install
+npm run dev
 ```
 
-Copy `.env.example` to `.env`. `PINATA_JWT` enables wallet-authorized image and token metadata uploads to public IPFS; keep it server-only. A Pinata V3 key should include `org:files:write`; legacy keys scoped to `pinFileToIPFS` are supported through a compatibility fallback. `IPFS_GATEWAY_URL` is optional and defaults to Pinata's public gateway.
+`PINATA_JWT` is server-only and enables wallet-authorized image and metadata uploads to public IPFS. Redis is optional but recommended in production for persistent index snapshots.
 
-Validation:
+Useful checks:
 
 ```bash
-pnpm typecheck
-pnpm lint
-pnpm build
+npm run typecheck
+npm run lint
+npm run contracts:compile
+npm run contracts:test
+npm run build
 ```
 
-Select the target web environment at build time with
-`NEXT_PUBLIC_ARC_NETWORK=mainnet|testnet`. The production default in
-`.env.example` is mainnet. Testnet remains an explicit, separate build and
-must use its own contracts, deployment block, Redis/cache namespace, and URL.
-The header links between deployments; one running index never mixes chains.
+## Configuration
 
-## Contracts
+The application requires exactly one active Factory per selected network. Configure its address and deployment block together with Fee Vault, Creator Registry, canonical USDC, and Uniswap endpoints. Do not add previous factories as fallbacks.
 
-The deployed contracts retain their original `ArcForge*` Solidity names. The ArcOrigin product rebrand does not alter deployed bytecode, ABIs, or token identity.
+Arc mainnet uses chain ID `5042` and canonical USDC `0x3600000000000000000000000000000000000000`. Official Uniswap addresses are validated by the deployment preflight.
 
-- `ArcForgeToken`: fixed supply, immutable creator/factory, immutable launch metadata, no owner controls.
-- `ArcForgeBondingCurve`: virtual-USDC-reserve constant product buys/sells with min-output protection. Current V4 curves split trading fees onchain and graduate into a permanent real-reserve AMM without a spot-price jump, so both buys and sells continue.
-- `ArcForgeFactory`: validates launches, collects a fixed launch fee, deploys token and curve, records creators.
-- `ArcForgeFeeVault`: pulls and records real ERC-20 fees by source; withdraws only to the visible recipient.
-- `ArcForgeCreatorRegistry`: creator metadata and factory-recorded launch counts.
-- `MockUSDC`: unrestricted minting for local tests only.
+## Deployment
 
-V6 adds authorized FeeVault collectors, pull-based creator fee claims, transaction deadlines, exact-transfer accounting, bounded pagination, two-step governance ownership, a pause-only emergency guardian, and graduation that cannot be blocked by optional DEX migration. See [`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md).
-
-V7 is the opt-in successor architecture for new launches: the token/USDC Uniswap V3 pool and single-sided LP position are created in the launch transaction, the LP NFT is held forever by an immutable locker, and `$50,000 crossed` is only a status mark. Existing V6 tokens and curves are unchanged. See [`docs/PROTOCOL_V7_DIRECT_UNISWAP.md`](./docs/PROTOCOL_V7_DIRECT_UNISWAP.md).
-
-The ArcOrigin launch flow uses zero free creator allocation, a 10 USDC launch fee, and 1% buy/sell fees. Creators can acquire tokens only through an optional paid developer buy capped at 5% of supply. V6 accrues 70% of each trading fee for creator claims and sends 30% to the protocol FeeVault. Current launches use a 2,500 virtual-USDC reserve and graduate after raising 10,000 real USDC. V6 adds a three-block launch-protection window and fail-safe DEX migration. Mainnet launches snapshot the activated, verified Arc Uniswap V3 adapter/locker/verifier tuple; testnet graduation continues in the permanent internal AMM.
-
-The canonical ORIGIN token is `0xB65Fd34cc428492DdF000A2Ae100Dbfea62E4802`.
-Its active mainnet controller routes 80% of allocated protocol revenue through
-bounded curve buybacks and 20% to operations; purchased ORIGIN is sent directly
-to the burn address. The deployed addresses, execution limits, manual Safe
-withdrawal step, and post-migration behavior are documented in
-[`docs/ORIGIN_TOKENOMICS_AND_BUYBACK.md`](./docs/ORIGIN_TOKENOMICS_AND_BUYBACK.md).
-
-Launch metadata uses an immutable `ipfs://` CID stored by the token contract. The upload endpoint validates and optimizes images, requires a one-time wallet signature bound to the exact metadata payload, rate-limits uploads by wallet and client, and never exposes the storage credential to the browser.
-
-### Deploy to Arc Testnet
-
-The deployment script pins and validates Circle's official Arc Testnet USDC contract, chain ID, token symbol/decimals, contract bytecode, and deployer gas balance before sending transactions. Copy `.env.example` to `.env`, populate `FEE_RECIPIENT` and `DEPLOYER_PRIVATE_KEY`, then:
+Verify the Arc network and deploy a paused candidate:
 
 ```bash
-pnpm contracts:test
-pnpm deploy:arc-testnet
-pnpm verify:arc-testnet
+npm run preflight:arc-mainnet
+npm run deploy:arc-mainnet
 ```
 
-The deployment script refuses placeholders and writes a gitignored local manifest. The public testnet manifest contains no secrets. Arcscan source verification and an independent audit are still required before any mainnet use.
+The deploy script writes `deployment/arc-mainnet.local.json` and an unsigned Safe activation batch. It does not enable launches. Before activation, require an independent contract review, verified source code, a fork or testnet launch, and coordinated application/indexer configuration.
 
-V6 is deployed as a separate full-stack candidate and never overwrites the active V5 manifest:
+Never commit private keys, RPC credentials, Pinata tokens, Redis credentials, or Safe signer material.
 
-```bash
-TREASURY_SAFE=0xReviewed2of3Safe \
-EMERGENCY_GUARDIAN=0xReviewedSafe \
-pnpm deploy:arc-testnet:v6
+## Security
 
-pnpm verify:arc-testnet:v6
-```
-
-The command requires contract addresses for both Safe roles, deploys migration disabled and paused, binds the CurveDeployer permanently, authorizes only the Factory, and writes `deployment/arcTestnet-v6.local.json`. It does not activate the candidate.
-
-### Prepare Arc mainnet
-
-The mainnet deployment script validates chain `5042`, the expected deployer,
-Safe/guardian bytecode, canonical USDC metadata, and gas before sending
-transactions. It deploys a candidate with launches and migrations paused:
-
-```bash
-pnpm network:verify:arc-mainnet
-pnpm preflight:arc-mainnet:v6
-pnpm deploy:arc-mainnet:v6
-pnpm verify:arc-mainnet:v6
-pnpm deploy:migration:arc-mainnet:v6
-```
-
-A V7 deployment is deliberately separate and produces only a paused candidate plus an unsigned 2-of-3 Safe activation batch:
-
-```bash
-pnpm preflight:arc-mainnet:v7
-pnpm deploy:arc-mainnet:v7
-```
-
-Do not run the V7 deployment or activation path without an independent contract review, source verification, a fork/testnet launch, and a coordinated web/indexer release.
-
-These deployment commands create a paused candidate. The canonical deployment
-has since completed runtime code-hash checks, source publication, direct 2-of-3
-Safe ownership handoff, migration configuration, and separate Safe activation
-transactions for migrations and launches. The exact addresses, transaction
-hashes, dual-environment procedure, and rollback steps are in
-[`docs/ARC_MAINNET_RELEASE_RUNBOOK.md`](./docs/ARC_MAINNET_RELEASE_RUNBOOK.md).
-
-Factory-only upgrades use separate deployment and activation commands so the new Factory can be inspected and the multi-factory indexer deployed before `CreatorRegistry` is changed:
-
-```bash
-pnpm deploy:arc-testnet:v4
-pnpm deploy:arc-testnet:v4:activate
-```
-
-### Governance preparation
-
-The repository includes a fail-closed preparation path for a 2-of-3 Governance Safe and 2-of-3 Treasury Safe. Arc mainnet V6 uses direct Safe ownership; the deployed Timelock is retained only as an unused historical deployment:
-
-```bash
-pnpm security:audit-admin:arc-testnet
-pnpm governance:deploy:arc-testnet
-pnpm governance:handoff:arc-testnet
-pnpm governance:verify:arc-testnet
-```
-
-The legacy Timelock handoff command is dry-run unless both `EXECUTE_ADMIN_HANDOFF=true` and an exact `CONFIRM_ADMIN_HANDOFF` address are provided. It is not the active Arc mainnet V6 ownership path. Never use placeholder signer addresses or store signer keys in the repository.
-
-The completed mainnet direct-Safe path is prepared and verified with:
-
-```bash
-pnpm governance:prepare-direct-safe:arc-mainnet:v6
-V6_DIRECT_SAFE_EXECUTION_TX_HASH=0x... \
-  pnpm governance:verify-direct-safe:arc-mainnet:v6
-```
-
-## VPS deployment
-
-The production VPS layout uses an unprivileged `arcorigin` user, immutable
-releases under `/opt/arcorigin/releases`, a `current` symlink, loopback-only
-Next.js and Redis ports, Caddy TLS, and a systemd health timer. Versioned service
-and proxy definitions are in `deploy/systemd`, `deploy/vps`, and `deploy/caddy`.
-The mainnet web build is isolated under `/opt/arcorigin-mainnet`, listens only
-on `127.0.0.1:3101`, and has its own service and health timer. Both deployments
-share the loopback-only Redis instance; cache keys remain network-scoped.
-
-Build a release before activation:
-
-```bash
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm lint
-pnpm build
-sudo arcorigin-activate-release /opt/arcorigin/releases/<release>
-sudo arcorigin-mainnet-activate-release /opt/arcorigin-mainnet/releases/<release>
-```
-
-Install `deploy/systemd/arcorigin.service` and the health-check units under
-`/etc/systemd/system`, install the two scripts from `deploy/vps` under
-`/usr/local/sbin`, and import `deploy/caddy/arcorigin.caddy` from the active
-Caddyfile. Keep `.env.production` at `/opt/arcorigin/shared/.env.production`
-with mode `0600`; never place deployment keys in the web runtime environment.
-
-The activator retains the previous release and automatically rolls back when
-the new release cannot pass the local homepage and `/api/health` checks. Run
-package and OS upgrades deliberately, validate the build after upgrades, and
-retain at least one known-good release.
-
-## Production operations
-
-The canonical Arc mainnet deployment is active. Operators must continuously
-monitor Factory ownership and pause state, RPC/indexer lag, metadata storage,
-FeeVault balances, and migration events. Any new deployment or governance
-change still requires reproducible builds, source publication, two Safe
-confirmations, transaction simulation, and post-execution verification.
-
-The repository includes a repeatable internal engineering review. It is not an
-independent audit claim; users should evaluate the published source,
-deployment, governance, and residual risks themselves.
-
-Not financial advice. Token launches are risky.
+Token trading is irreversible and highly risky. Permanent LP custody prevents liquidity withdrawal but does not guarantee demand, price stability, market depth, contract correctness, or token quality. Report vulnerabilities through the process in [SECURITY.md](./SECURITY.md).

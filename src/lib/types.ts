@@ -13,13 +13,7 @@ export type RiskLabel =
   | "new_creator"
   | "high_risk";
 
-export type TokenStatus =
-  | "Live on curve"
-  | "Graduating soon"
-  | "Graduated"
-  | "Live on V3"
-  | "Crossed"
-  | "Flagged";
+export type TokenStatus = "Live" | "Crossed" | "Flagged";
 export type ChartPoint = {
   time: string;
   price: number;
@@ -53,7 +47,7 @@ export type CreatorProfile = {
   address: string;
   reputation: number;
   launches: number;
-  graduated: number;
+  crossed: number;
   flagged: number;
   totalVolume: number;
   totalFees: number;
@@ -65,10 +59,8 @@ export type TokenData = {
   address: string;
   image?: string;
   metadataURI?: string;
-  curveAddress?: string;
   poolAddress?: string;
   positionId?: string;
-  venue?: "curve" | "uniswap-v3";
   factoryAddress?: string;
   source: "onchain";
   creatorAllocationPercent?: number;
@@ -77,7 +69,6 @@ export type TokenData = {
   /** Unix timestamp of the factory launch when confirmed by the indexed block. */
   launchedAt?: number;
   totalSupply?: number;
-  virtualUsdcReserve?: number;
   creator: string;
   icon: string;
   description: string;
@@ -94,7 +85,7 @@ export type TokenData = {
   sellers: number;
   trades: number;
   holders: number;
-  curveProgress: number;
+  crossProgress: number;
   riskScore: number;
   status: TokenStatus;
   chartData: ChartPoint[];

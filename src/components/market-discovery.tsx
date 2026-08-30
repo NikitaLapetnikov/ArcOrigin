@@ -9,13 +9,13 @@ import type { LatestBuyRecord, TokenData, Trade } from "@/lib/types";
 import { money, number, tickerLabel, utcDateTime } from "@/lib/utils";
 import { TokenIcon } from "@/components/ui";
 
-type DiscoveryTab = "new" | "old" | "trending" | "graduated" | "marketCap" | "volume" | "watchlist";
+type DiscoveryTab = "new" | "old" | "trending" | "crossed" | "marketCap" | "volume" | "watchlist";
 
 const tabs: { id: DiscoveryTab; label: string }[] = [
   { id: "new", label: "New" },
   { id: "old", label: "Old" },
   { id: "trending", label: "Trending" },
-  { id: "graduated", label: "Graduated" },
+  { id: "crossed", label: "Crossed" },
   { id: "marketCap", label: "Market cap" },
   { id: "volume", label: "Volume" },
   { id: "watchlist", label: "Watchlist" },
@@ -57,7 +57,7 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
   const trending = useMemo(() => tokens.map((token) => ({ token, score: calculateMomentumScore(token) }))
     .sort((left, right) => right.score - left.score)
     .map(({ token }) => token), [tokens]);
-  const graduated = useMemo(() => tokens.filter((token) => token.status === "Graduated")
+  const crossed = useMemo(() => tokens.filter((token) => token.status === "Crossed")
     .sort((left, right) => right.volume24h - left.volume24h), [tokens]);
   const byMarketCap = useMemo(() => [...tokens].sort((left, right) => right.marketCap - left.marketCap), [tokens]);
   const byVolume = useMemo(() => [...tokens].sort((left, right) => right.volume24h - left.volume24h), [tokens]);
@@ -71,8 +71,8 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
       ? oldLaunches
       : activeTab === "trending"
         ? trending
-        : activeTab === "graduated"
-          ? graduated
+        : activeTab === "crossed"
+          ? crossed
           : activeTab === "marketCap"
             ? byMarketCap
             : activeTab === "volume"
@@ -112,8 +112,8 @@ export function MarketDiscovery({ tokens }: { tokens: TokenData[] }) {
         rank={activeTab === "trending" || activeTab === "marketCap" || activeTab === "volume" ? pageStart + index + 1 : undefined}
       />)}
 
-      {activeTokens.length === 0 && <EmptyActivity message={activeTab === "graduated"
-        ? "No tokens have graduated yet."
+      {activeTokens.length === 0 && <EmptyActivity message={activeTab === "crossed"
+        ? "No tokens have crossed the mark yet."
         : activeTab === "watchlist"
           ? "No saved tokens yet. Use the star on a token page to add it here."
         : "No tokens match this view or search."}/>}

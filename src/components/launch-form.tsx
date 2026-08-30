@@ -7,7 +7,6 @@ import {
   encodeFunctionData,
   formatUnits,
   isHash,
-  parseUnits,
   publicActions,
   type Address,
   type Hash,
@@ -15,16 +14,12 @@ import {
 import type SafeAppsSDK from "@safe-global/safe-apps-sdk";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import {
-  ARCORIGIN_PROTOCOL_VERSION,
+  ARCORIGIN_CROSS_MARKET_CAP_USDC,
   ARC_ACTIVE_CONTRACTS,
   EXPLORER_URL,
   arcChain,
 } from "@/lib/chains";
-import {
-  DEFAULT_GRADUATION_THRESHOLD,
-  DEFAULT_VIRTUAL_USDC_RESERVE,
-} from "@/lib/bonding-curve";
-import { bondingCurveAbi, erc20Abi, factoryAbi, factoryV7Abi } from "@/lib/contracts";
+import { erc20Abi, factoryAbi } from "@/lib/contracts";
 import {
   TOKEN_IMAGE_INPUT_MAX_BYTES,
   TOKEN_IMAGE_MAX_BYTES,
@@ -43,11 +38,10 @@ type FormData = {
   website: string;
   x: string;
   telegram: string;
-  developerBuy: string;
 };
 
-type TransactionStatus = "idle" | "checking" | "signing_metadata" | "uploading_metadata" | "approving" | "launching" | "safe_confirming" | "initial_buy_approving" | "initial_buy";
-type LaunchResult = { token: Address; market: Address; venue: "curve" | "uniswap-v3"; hash: Hash; metadataURI: string; metadataURL: string; initialBuyHash?: Hash; initialBuyError?: string };
+type TransactionStatus = "idle" | "checking" | "signing_metadata" | "uploading_metadata" | "approving" | "launching" | "safe_confirming";
+type LaunchResult = { token: Address; pool: Address; hash: Hash; metadataURI: string; metadataURL: string };
 type UploadedMetadata = {
   commitment: string;
   creator: Address;
@@ -62,11 +56,9 @@ const defaults: FormData = {
   website: "",
   x: "",
   telegram: "",
-  developerBuy: "0",
 };
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const DEFAULT_LAUNCH_FEE = 10n * 10n ** 6n;
-const TOTAL_SUPPLY = 1_000_000_000n * 10n ** 18n;
 const DISPLAY_NUMBER_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
 function formatDisplayNumber(value: number) {
@@ -176,7 +168,6 @@ export function LaunchForm() {
   const [storageStatus, setStorageStatus] = useState<"unknown" | "available" | "unavailable">("unknown");
   const [uploadedMetadata, setUploadedMetadata] = useState<UploadedMetadata | null>(null);
   const [launchFee, setLaunchFee] = useState(DEFAULT_LAUNCH_FEE);
-  const [tradingFees, setTradingFees] = useState({ buy: 100, sell: 100 });
   const [error, setError] = useState("");
   const [result, setResult] = useState<LaunchResult | null>(null);
   const previewUrl = useRef("");
@@ -200,38 +191,12 @@ export function LaunchForm() {
   useEffect(() => {
     if (!publicClient) return;
     let cancelled = false;
-    if (ARCORIGIN_PROTOCOL_VERSION === 7) {
-      void withRpcRetry(() => publicClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.factory,
-        abi: factoryV7Abi,
-        functionName: "launchFee",
-      }), 2).then((nextLaunchFee) => {
-        if (!cancelled) setLaunchFee(nextLaunchFee);
-      }).catch(() => undefined);
-      return () => {
-        cancelled = true;
-      };
-    }
-    void Promise.all([
-      withRpcRetry(() => publicClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.factory,
-        abi: factoryAbi,
-        functionName: "launchFee",
-      }), 2),
-      withRpcRetry(() => publicClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.factory,
-        abi: factoryAbi,
-        functionName: "buyFeeBps",
-      }), 2),
-      withRpcRetry(() => publicClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.factory,
-        abi: factoryAbi,
-        functionName: "sellFeeBps",
-      }), 2),
-    ]).then(([nextLaunchFee, buyFeeBps, sellFeeBps]) => {
-      if (cancelled) return;
-      setLaunchFee(nextLaunchFee);
-      setTradingFees({ buy: Number(buyFeeBps), sell: Number(sellFeeBps) });
+    void withRpcRetry(() => publicClient.readContract({
+      address: ARC_ACTIVE_CONTRACTS.factory,
+      abi: factoryAbi,
+      functionName: "launchFee",
+    }), 2).then((nextLaunchFee) => {
+      if (!cancelled) setLaunchFee(nextLaunchFee);
     }).catch(() => {
       // The launch transaction re-reads the fee before approving, so a failed preview read is safe.
     });
@@ -257,28 +222,10 @@ export function LaunchForm() {
       return false;
     }
   }, [metadataInput, storageStatus]);
-  const developerBuyMax = useMemo(() => {
-    if (ARCORIGIN_PROTOCOL_VERSION === 7) return 0;
-    const curveTokens = 1_000_000_000;
-    const maximumTokens = 50_000_000;
-    if (curveTokens <= maximumTokens) return 0;
-    const netUsdc = DEFAULT_VIRTUAL_USDC_RESERVE * maximumTokens / (curveTokens - maximumTokens);
-    const netMultiplier = 1 - tradingFees.buy / 10_000;
-    return netMultiplier > 0 ? Math.floor(netUsdc / netMultiplier * 100) / 100 : 0;
-  }, [tradingFees.buy]);
-  const developerBuyAmount = Math.max(0, Number(form.developerBuy) || 0);
   const safeLaunch = connector?.id === "safe";
-  const developerBuyLimit = safeLaunch ? 0 : developerBuyMax;
   const launchFeeAmount = Number(formatUnits(launchFee, 6));
   const launchFeeLabel = `${formatDisplayNumber(launchFeeAmount)} USDC`;
-  const tradingFeeLabel = tradingFees.buy === tradingFees.sell
-    ? `${formatDisplayNumber(tradingFees.buy / 100)}% · 70/30 split`
-    : `${formatDisplayNumber(tradingFees.buy / 100)}% buy · ${formatDisplayNumber(tradingFees.sell / 100)}% sell`;
-  const totalWalletPayment = launchFeeAmount + developerBuyAmount;
-  const canLaunch = identityValid
-    && !imageProcessing
-    && Number(form.developerBuy) >= 0
-    && Number(form.developerBuy) <= developerBuyLimit;
+  const canLaunch = identityValid && !imageProcessing;
   const isPending = status !== "idle";
 
   function update(key: keyof FormData, value: string) {
@@ -389,30 +336,14 @@ export function LaunchForm() {
         functionName: "balanceOf",
         args: [address],
       }));
-      const currentLaunchFee = ARCORIGIN_PROTOCOL_VERSION === 7
-        ? await withRpcRetry(() => transactionClient.readContract({
-            address: ARC_ACTIVE_CONTRACTS.factory,
-            abi: factoryV7Abi,
-            functionName: "launchFee",
-          }))
-        : await withRpcRetry(() => transactionClient.readContract({
-            address: ARC_ACTIVE_CONTRACTS.factory,
-            abi: factoryAbi,
-            functionName: "launchFee",
-          }));
+      const currentLaunchFee = await withRpcRetry(() => transactionClient.readContract({
+        address: ARC_ACTIVE_CONTRACTS.factory,
+        abi: factoryAbi,
+        functionName: "launchFee",
+      }));
       setLaunchFee(currentLaunchFee);
-      const developerBuy = parseUnits(form.developerBuy || "0", 6);
-      if (safeLaunch && developerBuy > 0n) {
-        throw new Error(
-          "Safe launches must use a 0 USDC developer buy. Buy after launch with a separate, freshly quoted Safe transaction.",
-        );
-      }
-      if (ARCORIGIN_PROTOCOL_VERSION === 7 && developerBuy > 0n) {
-        throw new Error("V7 launches lock liquidity first. Make the developer buy from the token market after launch.");
-      }
-      const requiredBalance = currentLaunchFee + developerBuy;
-      if (balance < requiredBalance) {
-        throw new Error(`You have ${formatUnits(balance, 6)} USDC, but launch plus developer buy requires ${formatUnits(requiredBalance, 6)} USDC.`);
+      if (balance < currentLaunchFee) {
+        throw new Error(`You have ${formatUnits(balance, 6)} USDC, but the launch requires ${formatUnits(currentLaunchFee, 6)} USDC.`);
       }
 
       const metadata = await ensureMetadata(address);
@@ -448,17 +379,11 @@ export function LaunchForm() {
         transactions.push({
           to: ARC_ACTIVE_CONTRACTS.factory,
           value: "0",
-          data: ARCORIGIN_PROTOCOL_VERSION === 7
-            ? encodeFunctionData({
-                abi: factoryV7Abi,
-                functionName: "launchToken",
-                args: [launchParameters],
-              })
-            : encodeFunctionData({
-                abi: factoryAbi,
-                functionName: "launchToken",
-                args: [launchParameters],
-              }),
+          data: encodeFunctionData({
+            abi: factoryAbi,
+            functionName: "launchToken",
+            args: [launchParameters],
+          }),
         });
         setStatus("safe_confirming");
         const proposal = await safeContext.sdk.txs.send({ txs: transactions });
@@ -476,19 +401,12 @@ export function LaunchForm() {
           if (approvalReceipt.status !== "success") throw new Error("USDC approval reverted onchain.");
         }
         setStatus("launching");
-        launchHash = ARCORIGIN_PROTOCOL_VERSION === 7
-          ? await writeContractAsync({
-              address: ARC_ACTIVE_CONTRACTS.factory,
-              abi: factoryV7Abi,
-              functionName: "launchToken",
-              args: [launchParameters],
-            })
-          : await writeContractAsync({
-              address: ARC_ACTIVE_CONTRACTS.factory,
-              abi: factoryAbi,
-              functionName: "launchToken",
-              args: [launchParameters],
-            });
+        launchHash = await writeContractAsync({
+          address: ARC_ACTIVE_CONTRACTS.factory,
+          abi: factoryAbi,
+          functionName: "launchToken",
+          args: [launchParameters],
+        });
       }
       const receipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: launchHash }));
       if (receipt.status !== "success") throw new Error("Token launch reverted onchain.");
@@ -497,71 +415,14 @@ export function LaunchForm() {
       for (const log of receipt.logs) {
         if (log.address.toLowerCase() !== ARC_ACTIVE_CONTRACTS.factory.toLowerCase()) continue;
         try {
-          if (ARCORIGIN_PROTOCOL_VERSION === 7) {
-            const event = decodeEventLog({ abi: factoryV7Abi, eventName: "TokenLaunched", data: log.data, topics: log.topics });
-            launched = { token: event.args.token, market: event.args.pool, venue: "uniswap-v3", hash: launchHash, metadataURI: metadata.metadataURI, metadataURL: metadata.gatewayURL };
-          } else {
-            const event = decodeEventLog({ abi: factoryAbi, eventName: "TokenLaunched", data: log.data, topics: log.topics });
-            launched = { token: event.args.token, market: event.args.curve, venue: "curve", hash: launchHash, metadataURI: metadata.metadataURI, metadataURL: metadata.gatewayURL };
-          }
+          const event = decodeEventLog({ abi: factoryAbi, eventName: "TokenLaunched", data: log.data, topics: log.topics });
+          launched = { token: event.args.token, pool: event.args.pool, hash: launchHash, metadataURI: metadata.metadataURI, metadataURL: metadata.gatewayURL };
           break;
         } catch {
           // The receipt includes constructor and registry logs from other contracts.
         }
       }
       if (!launched) throw new Error("The launch succeeded, but its TokenLaunched event was not found.");
-      if (developerBuy > 0n) {
-        try {
-          const curveAllowance = await withRpcRetry(() => transactionClient.readContract({
-            address: ARC_ACTIVE_CONTRACTS.usdc,
-            abi: erc20Abi,
-            functionName: "allowance",
-            args: [address, launched!.market],
-          }));
-          if (curveAllowance < developerBuy) {
-            setStatus("initial_buy_approving");
-            const approvalHash = await writeContractAsync({
-              address: ARC_ACTIVE_CONTRACTS.usdc,
-              abi: erc20Abi,
-              functionName: "approve",
-              args: [launched.market, developerBuy],
-            });
-            const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: approvalHash }));
-            if (approvalReceipt.status !== "success") throw new Error("Developer buy approval reverted onchain.");
-          }
-          const [tokensOut] = await withRpcRetry(() => transactionClient.readContract({
-            address: launched!.market,
-            abi: bondingCurveAbi,
-            functionName: "quoteBuy",
-            args: [developerBuy],
-          }));
-          if (tokensOut <= 0n) throw new Error("The curve returned no tokens for the developer buy.");
-          if (tokensOut > TOTAL_SUPPLY * 5n / 100n) {
-            throw new Error("The current curve quote exceeds the 5% developer-buy cap. Reduce the USDC amount.");
-          }
-          setStatus("initial_buy");
-          const initialBuyHash = await writeContractAsync(ARCORIGIN_PROTOCOL_VERSION === 6 ? {
-            address: launched.market,
-            abi: bondingCurveAbi,
-            functionName: "buy",
-            args: [
-              developerBuy,
-              tokensOut * 95n / 100n,
-              BigInt(Math.floor(Date.now() / 1_000) + 20 * 60),
-            ],
-          } : {
-            address: launched.market,
-            abi: bondingCurveAbi,
-            functionName: "buy",
-            args: [developerBuy, tokensOut * 95n / 100n],
-          });
-          const initialBuyReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: initialBuyHash }));
-          if (initialBuyReceipt.status !== "success") throw new Error("Developer buy reverted onchain.");
-          launched.initialBuyHash = initialBuyHash;
-        } catch (buyError) {
-          launched.initialBuyError = `Token launched successfully, but the optional developer buy did not complete: ${transactionError(buyError)}`;
-        }
-      }
       setResult(launched);
       window.localStorage.setItem(
         `arcorigin:${arcChain.id}:last-launch-confirmed-at`,
@@ -570,8 +431,7 @@ export function LaunchForm() {
       window.dispatchEvent(new CustomEvent("arcforge:launch-confirmed", {
         detail: {
           tokenAddress: launched.token,
-          curveAddress: launched.venue === "curve" ? launched.market : undefined,
-          poolAddress: launched.venue === "uniswap-v3" ? launched.market : undefined,
+          poolAddress: launched.pool,
           transactionHash: launchHash,
         },
       }));
@@ -601,15 +461,13 @@ export function LaunchForm() {
       <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-cyan/10 text-cyan"><Rocket /></div>
       <p className="eyebrow mt-6">Onchain launch confirmed</p>
       <h2 className="mt-3 text-3xl font-semibold text-white">{form.name} · {tickerLabel(form.ticker.toUpperCase())}</h2>
-      <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">Your token metadata is pinned to public IPFS and the fixed-supply token with its {result.venue === "uniswap-v3" ? "permanently locked Uniswap V3 pool" : "USDC curve"} is deployed on {arcChain.name}.</p>
+      <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">Your metadata is pinned to public IPFS, and the fixed-supply token is live in its permanently locked Uniswap V3 pool on {arcChain.name}.</p>
       <dl className="mx-auto mt-6 grid max-w-lg gap-3 rounded-xl border border-line bg-black/25 p-4 text-left text-xs">
         <ResultRow label="Token" address={result.token} />
-        <ResultRow label={result.venue === "uniswap-v3" ? "Uniswap V3 pool" : "Bonding curve"} address={result.market} />
+        <ResultRow label="Uniswap V3 pool" address={result.pool} />
         <ResultLink label="Metadata" href={result.metadataURL} value={result.metadataURI.slice(0, 22) + "…"} />
         <ResultLink label="Transaction" href={`${EXPLORER_URL}/tx/${result.hash}`} value={shortAddress(result.hash)} />
-        {result.initialBuyHash && <ResultLink label="Developer buy" href={`${EXPLORER_URL}/tx/${result.initialBuyHash}`} value={shortAddress(result.initialBuyHash)} />}
       </dl>
-      {result.initialBuyError && <p className="mx-auto mt-4 max-w-lg rounded-xl border border-amber-400/20 bg-amber-400/[.07] p-3 text-left text-xs leading-5 text-amber-100">{result.initialBuyError}</p>}
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
         <LinkButton href={`/tokens/${result.token}`}>Open token market</LinkButton>
         <Button variant="secondary" onClick={reset}>Create another</Button>
@@ -631,19 +489,13 @@ export function LaunchForm() {
             ? "Launching on Arc…"
             : status === "safe_confirming"
               ? "Confirm launch with Safe owners…"
-            : status === "initial_buy_approving"
-              ? "Approving developer buy…"
-              : status === "initial_buy"
-                ? "Executing developer buy…"
-                : "Launch token";
+            : "Launch token";
 
   return <form onSubmit={submit} className="overflow-hidden rounded-3xl border border-line bg-panel shadow-glow lg:grid lg:grid-cols-[minmax(0,1fr)_380px]">
     <div className="p-5 sm:p-8 lg:p-10">
       <div className="mb-8">
         <h1 className="text-[34px] font-semibold tracking-[-.045em] text-white sm:text-[40px]">Launch token</h1>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">{ARCORIGIN_PROTOCOL_VERSION === 7
-          ? "Create a fixed-supply token directly in a permanently locked USDC Uniswap V3 pool."
-          : "Create a fixed-supply token with a USDC bonding curve."}</p>
+        <p className="mt-3 max-w-xl text-sm leading-6 text-slate-400">Create a fixed-supply token directly in a permanently locked USDC Uniswap V3 pool.</p>
       </div>
 
       <div className="grid gap-5">
@@ -668,21 +520,9 @@ export function LaunchForm() {
           </div>
         </div>
 
-        <div>
-          <Field label="Developer buy (optional)" value={form.developerBuy} onChange={(value) => update("developerBuy", value)} type="number" min="0" max={String(developerBuyLimit)} step="0.01" />
-          <p className="mt-2 text-[11px] leading-5 text-slate-500">
-            {safeLaunch
-              ? "Safe launch uses 0 USDC here. A treasury purchase can be proposed separately after launch."
-              : ARCORIGIN_PROTOCOL_VERSION === 7
-                ? "V7 liquidity is locked first. Buy from the live Uniswap V3 market after launch."
-                : `Separate USDC purchase after launch · maximum ${formatDisplayNumber(developerBuyMax)} USDC or 5% of supply.`}
-          </p>
-          {Number(form.developerBuy) > developerBuyLimit && <p className="mt-2 text-xs text-rose-300">Reduce the developer buy to {formatDisplayNumber(developerBuyLimit)} USDC.</p>}
-        </div>
-
         <div className="grid overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2">
           <PaymentSummary label="Launch fee" value={launchFeeLabel} />
-          <PaymentSummary label="Total wallet payment" value={`${formatDisplayNumber(totalWalletPayment)} USDC`} />
+          <PaymentSummary label="Initial market cap" value="5,000 USDC" />
         </div>
 
         {storageStatus === "unavailable" && <WarningBox>Token metadata storage is temporarily unavailable. Launching is disabled until it reconnects.</WarningBox>}
@@ -711,9 +551,9 @@ export function LaunchForm() {
           <dl className="mt-6 grid gap-3 border-t border-line pt-5 text-xs">
             <Row label="Supply" value="1 billion" />
             <Row label="Launch fee" value={launchFeeLabel} />
-            <Row label="Trading fee" value={tradingFeeLabel} />
-            <Row label={ARCORIGIN_PROTOCOL_VERSION === 7 ? "Crossed mark" : "Graduation"} value={`${formatDisplayNumber(ARCORIGIN_PROTOCOL_VERSION === 7 ? 50_000 : DEFAULT_GRADUATION_THRESHOLD)} USDC`} />
-            <Row label="Developer buy" value={`${formatDisplayNumber(developerBuyAmount)} USDC`} />
+            <Row label="Trading fee" value="1% · 70/30 split" />
+            <Row label="Crossed mark" value={`${formatDisplayNumber(ARCORIGIN_CROSS_MARKET_CAP_USDC)} USDC`} />
+            <Row label="LP custody" value="Locked forever" />
             <Row label="Network" value={arcChain.name} />
           </dl>
         </div>

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { isAddress, isHash, type Address } from "viem";
-import { ARCORIGIN_NETWORK, ARCORIGIN_PROTOCOL_VERSION, ARC_ACTIVE_FACTORY } from "@/lib/chains";
+import { ARCORIGIN_NETWORK, ARC_ACTIVE_FACTORY } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import {
   createCanonicalCheckpoint,
@@ -17,7 +17,7 @@ const REFRESH_COOLDOWN_MS = 5_000;
 const MARKET_CONCURRENCY = 4;
 const LATEST_BUY_LIMIT = 50;
 const PERSISTENT_CACHE_KEY =
-  `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:latest-buys:${ARC_ACTIVE_FACTORY.toLowerCase()}`;
+  `arcorigin:${ARCORIGIN_NETWORK}:latest-buys:${ARC_ACTIVE_FACTORY.toLowerCase()}`;
 
 type LatestBuysState = {
   snapshot: LatestBuysSnapshot | null;

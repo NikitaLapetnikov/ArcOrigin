@@ -3,7 +3,6 @@ import { ExternalLink } from "lucide-react";
 import { FeeVaultWithdrawal } from "@/components/fee-vault-withdrawal";
 import { AddressPill, Badge, PageIntro, Panel } from "@/components/ui";
 import {
-  ARCORIGIN_PROTOCOL_VERSION,
   ARC_ACTIVE_CONTRACTS,
   ARC_ACTIVE_FACTORY_BLOCK,
   EXPLORER_URL,
@@ -12,7 +11,6 @@ import {
 
 export const metadata: Metadata = { title: "Deployment Status" };
 
-const protocolLabel = `V${ARCORIGIN_PROTOCOL_VERSION}`;
 const rows = [
   ["Network", arcChain.name],
   ["Chain ID", String(arcChain.id)],
@@ -22,7 +20,7 @@ const rows = [
 const contracts = [
   ["Fee vault", ARC_ACTIVE_CONTRACTS.feeVault],
   ["Creator registry", ARC_ACTIVE_CONTRACTS.creatorRegistry],
-  [`Active Factory (${protocolLabel})`, ARC_ACTIVE_CONTRACTS.factory],
+  ["Active Factory", ARC_ACTIVE_CONTRACTS.factory],
   ["USDC", ARC_ACTIVE_CONTRACTS.usdc],
 ] as const;
 
@@ -40,7 +38,7 @@ export default function AdminPage() {
             <p className="font-semibold text-white">ArcOrigin contracts</p>
             <p className="mt-1 text-xs text-slate-500">Selected network deployment</p>
           </div>
-          <Badge tone="good">{protocolLabel} active</Badge>
+          <Badge tone="good">Active</Badge>
         </div>
         <dl className="mt-5 grid gap-4 text-sm">
           {rows.map(([label, value]) => <div key={label} className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-6">

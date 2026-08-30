@@ -14,15 +14,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
     const factory = request.nextUrl.searchParams.get("factory");
-    const curve = request.nextUrl.searchParams.get("curve");
+    const pool = request.nextUrl.searchParams.get("pool");
     const creator = request.nextUrl.searchParams.get("creator");
     const launchBlock = request.nextUrl.searchParams.get("launchBlock");
-    const hint: HolderLaunchHint | undefined = factory && curve && creator && launchBlock
-      && isAddress(factory) && isAddress(curve) && isAddress(creator)
+    const hint: HolderLaunchHint | undefined = factory && pool && creator && launchBlock
+      && isAddress(factory) && isAddress(pool) && isAddress(creator)
       && launchBlock.length <= 16 && /^\d+$/.test(launchBlock)
       ? {
           factory: getAddress(factory),
-          curve: getAddress(curve),
+          pool: getAddress(pool),
           creator: getAddress(creator),
           launchBlock: BigInt(launchBlock),
         }

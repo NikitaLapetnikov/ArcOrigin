@@ -619,7 +619,7 @@ export function TokenChart({
             setIndicatorMenuOpen(false);
           }}><Settings2 className="size-4"/></ChartIconButton>
           {settingsOpen && <ChartMenu className="right-0">
-            <MenuToggle label="Trade markers" detail="Confirmed curve trades" active={showMarkers} onClick={() => setShowMarkers((value) => !value)}/>
+            <MenuToggle label="Trade markers" detail="Confirmed pool trades" active={showMarkers} onClick={() => setShowMarkers((value) => !value)}/>
             <MenuToggle label="Grid" detail="Chart grid lines" active={showGrid} onClick={() => setShowGrid((value) => !value)}/>
             <MenuToggle label="Volume" detail="USDC histogram" active={showVolume} onClick={() => setShowVolume((value) => !value)}/>
           </ChartMenu>}
@@ -649,7 +649,7 @@ export function TokenChart({
         <div className="pointer-events-none absolute left-4 top-3 z-10 max-w-[calc(100%-32px)]">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
             <span className="font-semibold text-white">{tokenName} · {timeframe}</span>
-            <span className="text-slate-500">· ArcOrigin curve</span>
+            <span className="text-slate-500">· Uniswap pool</span>
             {activeCandle && <>
               <span className="font-mono text-[10px] text-slate-500">O <b className="font-normal text-slate-300">{valueFormatter(activeCandle.open)}</b></span>
               <span className="font-mono text-[10px] text-slate-500">H <b className="font-normal text-emerald-300">{valueFormatter(activeCandle.high)}</b></span>

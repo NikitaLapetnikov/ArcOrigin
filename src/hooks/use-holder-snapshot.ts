@@ -31,11 +31,11 @@ function isSnapshot(value: unknown): value is HolderSnapshot {
       && typeof holder.address === "string"
       && typeof holder.balance === "string"
       && Number.isFinite(holder.percent)
-      && (holder.role === "Creator" || holder.role === "Curve" || holder.role === "Holder"))
+      && (holder.role === "Creator" || holder.role === "Pool" || holder.role === "Holder"))
     && Number.isFinite(snapshot.creatorPercent)
-    && Number.isFinite(snapshot.curvePercent)
+    && Number.isFinite(snapshot.poolPercent)
     && Number.isFinite(snapshot.permanentLiquidityLockPercent)
-    && Number.isFinite(snapshot.topTenExcludingCurvePercent)
+    && Number.isFinite(snapshot.topTenExcludingPoolPercent)
     && typeof snapshot.indexedBlock === "string"
     && typeof snapshot.generatedAt === "string";
 }
@@ -72,19 +72,19 @@ function applyConfirmedTransfer(
   token: TokenData,
   detail: { side: "Buy" | "Sell"; wallet: string; tokens: number; blockNumber?: string },
 ) {
-  if (!token.curveAddress || !Number.isFinite(detail.tokens) || detail.tokens <= 0) return snapshot;
+  if (!token.poolAddress || !Number.isFinite(detail.tokens) || detail.tokens <= 0) return snapshot;
   const wallet = detail.wallet.toLowerCase();
-  const curve = token.curveAddress.toLowerCase();
+  const pool = token.poolAddress.toLowerCase();
   const creator = token.creator.toLowerCase();
   const balances = new Map(snapshot.topHolders.map((holder) => [holder.address.toLowerCase(), Number(holder.balance)]));
   const walletWasKnown = balances.has(wallet);
   const walletBefore = balances.get(wallet) ?? 0;
-  const curveBefore = balances.get(curve) ?? 0;
+  const poolBefore = balances.get(pool) ?? 0;
   const direction = detail.side === "Buy" ? 1 : -1;
   const walletAfter = Math.max(0, walletBefore + direction * detail.tokens);
-  const curveAfter = Math.max(0, curveBefore - direction * detail.tokens);
+  const poolAfter = Math.max(0, poolBefore - direction * detail.tokens);
   balances.set(wallet, walletAfter);
-  balances.set(curve, curveAfter);
+  balances.set(pool, poolAfter);
 
   const totalSupply = token.totalSupply ?? [...balances.values()].reduce((sum, balance) => sum + balance, 0);
   if (!Number.isFinite(totalSupply) || totalSupply <= 0) return snapshot;
@@ -96,10 +96,10 @@ function applyConfirmedTransfer(
     address: holderAddress as `0x${string}`,
     balance: String(balance),
     percent: percent(balance),
-    role: holderAddress === curve ? "Curve" : holderAddress === creator ? "Creator" : "Holder",
+    role: holderAddress === pool ? "Pool" : holderAddress === creator ? "Creator" : "Holder",
   }));
-  const topTenExcludingCurvePercent = entries
-    .filter(([address]) => address !== curve)
+  const topTenExcludingPoolPercent = entries
+    .filter(([address]) => address !== pool)
     .slice(0, 10)
     .reduce((sum, [, balance]) => sum + percent(balance), 0);
   let holders = snapshot.holders;
@@ -111,8 +111,9 @@ function applyConfirmedTransfer(
     holders,
     topHolders,
     creatorPercent: percent(balances.get(creator) ?? 0),
-    curvePercent: percent(curveAfter),
-    topTenExcludingCurvePercent,
+    poolPercent: percent(poolAfter),
+    permanentLiquidityLockPercent: percent(poolAfter),
+    topTenExcludingPoolPercent,
     indexedBlock: detail.blockNumber ?? snapshot.indexedBlock,
     generatedAt: new Date().toISOString(),
   };
@@ -125,9 +126,9 @@ async function requestSnapshot(token: TokenData, forceRefresh: boolean) {
   if (existing) return existing;
   const query = new URLSearchParams();
   if (forceRefresh) query.set("refresh", "1");
-  if (token.curveAddress && token.creator && token.launchBlock !== undefined) {
-    query.set("factory", token.factoryAddress ?? factoryForLaunchBlock(token.launchBlock));
-    query.set("curve", token.curveAddress);
+  if (token.poolAddress && token.creator && token.launchBlock !== undefined) {
+    query.set("factory", token.factoryAddress ?? factoryForLaunchBlock());
+    query.set("pool", token.poolAddress);
     query.set("creator", token.creator);
     query.set("launchBlock", String(token.launchBlock));
   }

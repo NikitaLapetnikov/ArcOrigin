@@ -13,7 +13,7 @@ export const revalidate = 60;
 export const metadata: Metadata = {
   metadataBase: new URL("https://arcorigin.xyz"),
   title: { default: "ArcOrigin — Launch and discover tokens on Arc", template: "%s · ArcOrigin" },
-  description: "Launch, discover, and trade Arc-native tokens through transparent USDC bonding curves.",
+  description: "Launch, discover, and trade Arc-native tokens in permanently locked USDC pools.",
   manifest: "/manifest.json",
   icons: {
     icon: [{ url: "/brand/arcorigin-favicon-v2.png", type: "image/png", sizes: "192x192" }],
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "ArcOrigin",
     title: "ArcOrigin — Launch and discover tokens on Arc",
-    description: "Launch and trade Arc-native tokens through transparent USDC bonding curves.",
+    description: "Launch and trade Arc-native tokens in permanently locked USDC pools.",
     images: [{
       url: "/brand/arcorigin-x-header-premium-master-v2.png",
       width: 2172,
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "ArcOrigin — Launch and discover tokens on Arc",
-    description: "Launch and trade Arc-native tokens through transparent USDC bonding curves.",
+    description: "Launch and trade Arc-native tokens in permanently locked USDC pools.",
     images: ["/brand/arcorigin-x-header-premium-master-v2.png"],
   },
 };

@@ -9,9 +9,9 @@ import type { TokenData } from "@/lib/types";
 import { money, number, tickerLabel, utcDateTime } from "@/lib/utils";
 import { Badge, Button, Progress, TokenIcon } from "./ui";
 
-const filters = ["All", "Watchlist", "New", "Trending", "Graduating", "High volume"] as const;
+const filters = ["All", "Watchlist", "New", "Trending", "Near crossed", "High volume"] as const;
 type Filter = typeof filters[number];
-type SortKey = "created" | "price" | "priceChange24h" | "marketCap" | "volume24h" | "trades" | "holders" | "curveProgress";
+type SortKey = "created" | "price" | "priceChange24h" | "marketCap" | "volume24h" | "trades" | "holders" | "crossProgress";
 type SortDirection = "asc" | "desc";
 type OnchainState = "loading" | "live" | "cached" | "unavailable";
 
@@ -23,7 +23,7 @@ const sortOptions: { key: SortKey; label: string }[] = [
   { key: "priceChange24h", label: "24h change" },
   { key: "trades", label: "Trades" },
   { key: "holders", label: "Holders" },
-  { key: "curveProgress", label: "Curve" },
+  { key: "crossProgress", label: "Crossed" },
 ];
 
 function createdSortValue(token: TokenData) {
@@ -82,7 +82,7 @@ export function TokenTable({
     if (filter === "Watchlist") return watchlist.includes(token.address.toLowerCase());
     if (filter === "New") return token.ageMinutes <= 1_440;
     if (filter === "Trending") return calculateMomentumScore(token) >= 40;
-    if (filter === "Graduating") return token.curveProgress >= 75 && token.curveProgress < 100;
+    if (filter === "Near crossed") return token.crossProgress >= 75 && token.crossProgress < 100;
     if (filter === "High volume") return token.volume24h >= 10_000;
     return true;
   }).sort((left, right) => {
@@ -125,7 +125,7 @@ export function TokenTable({
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3 p-3 md:hidden">
       {shown.map((token) => {
         const awaitingLive = onchainState === "unavailable" && token.price <= 0;
-        const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
+        const progressLabel = token.crossProgress > 0 && token.crossProgress < 0.01 ? "<0.01%" : `${token.crossProgress.toFixed(2)}%`;
         return <Link key={token.address} href={`/tokens/${token.address}`} className="min-w-0 rounded-xl border border-line bg-black/15 p-4 transition active:border-cyan/40">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{tickerLabel(token.ticker)}</span></div></div></div>
@@ -136,8 +136,8 @@ export function TokenTable({
             <MobileMetric label="Volume" value={awaitingLive ? "—" : money(token.volume24h, true)}/>
             <MobileMetric label="Holders" value={token.holders === 0 ? "—" : number(token.holders)}/>
           </div>
-          <div className="mt-4"><div className="mb-2 flex items-center justify-between font-mono text-[9px] text-slate-500"><span>Curve {awaitingLive ? "—" : progressLabel}</span><span>{money(token.targetUSDC, true)}</span></div><Progress value={awaitingLive ? 0 : token.curveProgress}/></div>
-          <div className="mt-4 flex items-center justify-between"><Badge tone={token.status === "Flagged" ? "bad" : token.status === "Graduated" ? "good" : token.status === "Graduating soon" ? "warn" : "cyan"}>{token.status}</Badge><span className="text-xs font-semibold text-cyan">Open market →</span></div>
+          <div className="mt-4"><div className="mb-2 flex items-center justify-between font-mono text-[9px] text-slate-500"><span>Crossed {awaitingLive ? "—" : progressLabel}</span><span>{money(token.targetUSDC, true)}</span></div><Progress value={awaitingLive ? 0 : token.crossProgress}/></div>
+          <div className="mt-4 flex items-center justify-between"><Badge tone={token.status === "Flagged" ? "bad" : token.status === "Crossed" ? "good" : "cyan"}>{token.status}</Badge><span className="text-xs font-semibold text-cyan">Open market →</span></div>
         </Link>;
       })}
       {shown.length === 0 && <div className="p-8 text-center text-sm text-slate-500">No tokens match this view.</div>}
@@ -153,12 +153,12 @@ export function TokenTable({
           <SortableHeader label="Volume" sortKey="volume24h" activeSort={sort} direction={direction} onSort={changeSort}/>
           {!compact && <SortableHeader label="Trades" sortKey="trades" activeSort={sort} direction={direction} onSort={changeSort}/>}
           {!compact && <SortableHeader label="Holders" sortKey="holders" activeSort={sort} direction={direction} onSort={changeSort}/>}
-          <SortableHeader label="Curve" sortKey="curveProgress" activeSort={sort} direction={direction} onSort={changeSort} className="w-36"/>
+          <SortableHeader label="Crossed" sortKey="crossProgress" activeSort={sort} direction={direction} onSort={changeSort} className="w-36"/>
           <th></th>
         </tr></thead>
         <tbody>{shown.map((token) => {
           const awaitingLive = onchainState === "unavailable" && token.price <= 0;
-          const progressLabel = token.curveProgress > 0 && token.curveProgress < 0.01 ? "<0.01%" : `${token.curveProgress.toFixed(2)}%`;
+          const progressLabel = token.crossProgress > 0 && token.crossProgress < 0.01 ? "<0.01%" : `${token.crossProgress.toFixed(2)}%`;
           return <tr key={token.address} className="border-b border-line/60 transition last:border-0 hover:bg-white/[.025]">
             <td className="px-4 py-3"><Link href={`/tokens/${token.address}`} className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div><p className="font-semibold text-white">{token.name}</p><div className="mt-1 flex items-center gap-2"><span className="font-mono text-[10px] text-slate-500">{tickerLabel(token.ticker)}</span><span className="text-[10px] text-slate-600">{token.status}</span></div></div></Link></td>
             {!compact && <td className="whitespace-nowrap text-slate-400">{createdLabel(token)}</td>}
@@ -167,7 +167,7 @@ export function TokenTable({
             <td className="text-slate-300">{awaitingLive ? "—" : money(token.volume24h, true)}</td>
             {!compact && <td className="text-slate-400">{awaitingLive ? "—" : number(token.trades)}</td>}
             {!compact && <td className="text-slate-400">{token.holders === 0 ? "—" : number(token.holders)}</td>}
-            <td className="pr-5"><div className="mb-1.5 flex justify-between text-[10px] text-slate-500"><span>{awaitingLive ? "—" : progressLabel}</span><span>{money(token.targetUSDC, true)}</span></div><Progress value={awaitingLive ? 0 : token.curveProgress}/></td>
+            <td className="pr-5"><div className="mb-1.5 flex justify-between text-[10px] text-slate-500"><span>{awaitingLive ? "—" : progressLabel}</span><span>{money(token.targetUSDC, true)}</span></div><Progress value={awaitingLive ? 0 : token.crossProgress}/></td>
             <td className="pr-4"><Link href={`/tokens/${token.address}`} className="font-semibold text-cyan">Trade →</Link></td>
           </tr>;
         })}</tbody>

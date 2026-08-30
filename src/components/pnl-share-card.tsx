@@ -205,7 +205,7 @@ function drawShareCard(
 
   context.fillStyle = "#63717e";
   context.font = "500 15px Inter, sans-serif";
-  context.fillText("Estimate from wallet curve trades · transfers may affect actual PnL", 84, 540);
+  context.fillText("Estimate from wallet pool trades · transfers may affect actual PnL", 84, 540);
   context.textAlign = "right";
   context.fillStyle = "#73ecc7";
   context.font = "600 18px ui-monospace, monospace";
@@ -279,7 +279,7 @@ export function PnlShareCard({ token, snapshot }: { token: TokenData; snapshot: 
         <div className="flex items-center justify-between border-b border-line px-4 py-3">
           <div>
             <p className="text-sm font-semibold text-white">Share performance</p>
-            <p className="mt-0.5 text-[10px] text-slate-500">{metrics ? "Estimated from your confirmed curve trades" : address ? "No confirmed trades were found for this wallet" : "Connect a wallet for personal PnL"}</p>
+            <p className="mt-0.5 text-[10px] text-slate-500">{metrics ? "Estimated from your confirmed pool trades" : address ? "No confirmed trades were found for this wallet" : "Connect a wallet for personal PnL"}</p>
           </div>
           <button type="button" aria-label="Close" onClick={() => setOpen(false)} className="grid size-8 place-items-center rounded-lg text-slate-500 transition hover:bg-white/[.05] hover:text-white"><X className="size-4" /></button>
         </div>
@@ -315,8 +315,8 @@ export function PnlShareCard({ token, snapshot }: { token: TokenData; snapshot: 
                 </div>
               </div>
             </div>
-          </div> : <div className="rounded-2xl border border-line bg-black/20 p-8 text-center"><p className="text-sm font-medium text-white">{address ? "No confirmed trades for this wallet" : "Wallet not connected"}</p><p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">{address ? "ArcOrigin will not invent a PnL value. A share card becomes available after an indexed buy or sell by this wallet." : "Connect the wallet that traded this token to calculate PnL from confirmed curve events."}</p></div>}
-          <p className="mt-3 text-[10px] leading-4 text-slate-500">PnL is estimated from this wallet’s confirmed curve trades. Token transfers are not treated as buys or sells, so transferred balances can make the estimate incomplete.</p>
+          </div> : <div className="rounded-2xl border border-line bg-black/20 p-8 text-center"><p className="text-sm font-medium text-white">{address ? "No confirmed trades for this wallet" : "Wallet not connected"}</p><p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">{address ? "ArcOrigin will not invent a PnL value. A share card becomes available after an indexed buy or sell by this wallet." : "Connect the wallet that traded this token to calculate PnL from confirmed pool events."}</p></div>}
+          <p className="mt-3 text-[10px] leading-4 text-slate-500">PnL is estimated from this wallet’s confirmed pool trades. Token transfers are not treated as buys or sells, so transferred balances can make the estimate incomplete.</p>
           {metrics && <div className="mt-4 flex flex-wrap items-center gap-2">
             <Button onClick={() => void exportImage("copy")}><Copy className="size-4" />Copy image</Button>
             <Button variant="secondary" onClick={() => void exportImage("download")}><Download className="size-4" />Download PNG</Button>

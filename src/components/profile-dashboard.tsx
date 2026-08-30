@@ -9,20 +9,17 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { CircleDollarSign, Copy, ExternalLink, ImagePlus, LogOut, Pencil, RefreshCw, Share2, Trash2, UserRound, X } from "lucide-react";
-import { formatUnits, isAddress, type Address } from "viem";
+import { Copy, ExternalLink, ImagePlus, LogOut, Pencil, RefreshCw, Share2, Trash2, UserRound, X } from "lucide-react";
+import { formatUnits, type Address } from "viem";
 import {
   useAccount,
   useDisconnect,
-  usePublicClient,
   useReadContracts,
-  useSwitchChain,
   useWalletClient,
-  useWriteContract,
 } from "wagmi";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { arcChain, EXPLORER_URL } from "@/lib/chains";
-import { bondingCurveAbi, erc20Abi } from "@/lib/contracts";
+import { erc20Abi } from "@/lib/contracts";
 import type { TokenData, Trade } from "@/lib/types";
 import { money, number, shortAddress, tickerLabel, utcDateTime } from "@/lib/utils";
 import { Badge, Button, LinkButton, TokenIcon, WarningBox } from "@/components/ui";
@@ -32,12 +29,6 @@ type PortfolioRange = "1D" | "7D" | "30D";
 type WalletTrade = { token: TokenData; trade: Trade };
 type WalletProfile = { address: Address; username: string; avatar: string; updatedAt: string };
 type PortfolioPoint = { timestamp: number; value: number };
-type CreatorEarning = {
-  token: TokenData;
-  amount: number | null;
-  claimable: number | null;
-  claimableRaw: bigint | null;
-};
 type Position = {
   token: TokenData;
   balance: number;
@@ -91,16 +82,13 @@ async function optimizeProfileImage(file: File) {
 }
 
 export function ProfileDashboard({ profileAddress }: { profileAddress?: Address } = {}) {
-  const { address: connectedAddress, chainId } = useAccount();
+  const { address: connectedAddress } = useAccount();
   const address = profileAddress ?? connectedAddress;
   const ownsProfile = Boolean(
     address && connectedAddress && address.toLowerCase() === connectedAddress.toLowerCase(),
   );
   const { disconnect } = useDisconnect();
   const { data: walletClient } = useWalletClient();
-  const publicClient = usePublicClient({ chainId: arcChain.id });
-  const { switchChainAsync } = useSwitchChain();
-  const { writeContractAsync } = useWriteContract();
   const { tokens, loading, error, refresh, isPartial } = useFactoryTokenIndex();
   const [activeTab, setActiveTab] = useState<ProfileTab>("Positions");
   const [portfolioRange, setPortfolioRange] = useState<PortfolioRange>("1D");
@@ -113,16 +101,11 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [editError, setEditError] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
-  const [claimingCurve, setClaimingCurve] = useState("");
   const launches = useMemo(() => {
     if (!address) return [];
     return tokens.filter((token) => token.creator.toLowerCase() === address.toLowerCase())
       .sort((left, right) => (right.launchedAt ?? 0) - (left.launchedAt ?? 0));
   }, [address, tokens]);
-  const creatorFeeTargets = useMemo(
-    () => launches.filter((token) => token.curveAddress && isAddress(token.curveAddress)),
-    [launches],
-  );
   const balanceReads = useReadContracts({
     contracts: tokens.map((token) => ({
       address: token.address as Address,
@@ -133,34 +116,6 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
     })),
     query: {
       enabled: Boolean(address) && tokens.length > 0,
-      staleTime: 10_000,
-      refetchInterval: 15_000,
-    },
-    allowFailure: true,
-  });
-  const creatorFeeReads = useReadContracts({
-    contracts: creatorFeeTargets.map((token) => ({
-      address: token.curveAddress as Address,
-      abi: bondingCurveAbi,
-      functionName: "totalCreatorFees",
-      chainId: arcChain.id,
-    })),
-    query: {
-      enabled: creatorFeeTargets.length > 0,
-      staleTime: 10_000,
-      refetchInterval: 15_000,
-    },
-    allowFailure: true,
-  });
-  const creatorClaimableReads = useReadContracts({
-    contracts: creatorFeeTargets.map((token) => ({
-      address: token.curveAddress as Address,
-      abi: bondingCurveAbi,
-      functionName: "claimableCreatorFees",
-      chainId: arcChain.id,
-    })),
-    query: {
-      enabled: creatorFeeTargets.length > 0,
       staleTime: 10_000,
       refetchInterval: 15_000,
     },
@@ -214,16 +169,6 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
     .sort((left, right) => right.value - left.value || left.token.name.localeCompare(right.token.name)),
   [balanceReads.data, tokens, walletTrades]);
 
-  const creatorEarnings = useMemo(() => creatorFeeTargets.map((token, index): CreatorEarning => {
-    const rawAmount = creatorFeeReads.data?.[index]?.result;
-    const rawClaimable = creatorClaimableReads.data?.[index]?.result;
-    return {
-      token,
-      amount: typeof rawAmount === "bigint" ? Number(formatUnits(rawAmount, 6)) : null,
-      claimable: typeof rawClaimable === "bigint" ? Number(formatUnits(rawClaimable, 6)) : null,
-      claimableRaw: typeof rawClaimable === "bigint" ? rawClaimable : null,
-    };
-  }), [creatorClaimableReads.data, creatorFeeReads.data, creatorFeeTargets]);
   const portfolioValue = positions.reduce((sum, position) => sum + position.value, 0);
   const confirmedVolume = walletTrades.reduce((sum, { trade }) => sum + trade.usdc, 0);
   const portfolioHistory = useMemo(() => {
@@ -285,38 +230,6 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
     setActionMessage("Profile link copied");
   }
 
-  async function claimCreatorEarning(earning: CreatorEarning) {
-    const curveAddress = earning.token.curveAddress;
-    if (
-      !ownsProfile || !connectedAddress || !publicClient ||
-      !curveAddress || !isAddress(curveAddress) ||
-      !earning.claimableRaw || earning.claimableRaw <= 0n
-    ) return;
-    setClaimingCurve(curveAddress);
-    setActionMessage("");
-    try {
-      if (chainId !== arcChain.id) await switchChainAsync({ chainId: arcChain.id });
-      const hash = await writeContractAsync({
-        address: curveAddress,
-        abi: bondingCurveAbi,
-        functionName: "claimCreatorFees",
-        args: [connectedAddress],
-        chainId: arcChain.id,
-      });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("Creator fee claim reverted onchain.");
-      setActionMessage(`Creator fees claimed · ${shortAddress(hash)}`);
-      await Promise.all([
-        creatorFeeReads.refetch(),
-        creatorClaimableReads.refetch(),
-      ]);
-    } catch (claimError) {
-      const message = claimError instanceof Error ? claimError.message : "Creator fee claim failed.";
-      setActionMessage(/rejected|denied/i.test(message) ? "The wallet request was cancelled." : message);
-    } finally {
-      setClaimingCurve("");
-    }
-  }
 
   function openProfileEditor() {
     setEditUsername(profile?.username ?? "");
@@ -426,8 +339,6 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
             <Button variant="secondary" disabled={loading} onClick={() => {
               void refresh(true);
               void balanceReads.refetch();
-              void creatorFeeReads.refetch();
-              void creatorClaimableReads.refetch();
             }}><RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button>
           </div>
         </div>
@@ -439,16 +350,6 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
         />
       </div>
     </section>
-
-    {launches.length > 0 && <CreatorEarningsPanel
-      earnings={creatorEarnings}
-      launchCount={launches.length}
-      loading={creatorFeeReads.isPending}
-      unavailable={Boolean(creatorFeeReads.error) || creatorEarnings.some((earning) => earning.amount === null)}
-      ownsProfile={ownsProfile}
-      claimingCurve={claimingCurve}
-      onClaim={(earning) => void claimCreatorEarning(earning)}
-    />}
 
     <section className="mt-5 overflow-hidden rounded-[22px] border border-line bg-panel shadow-glow">
       <div className="flex gap-1 overflow-x-auto border-b border-line px-4 pt-3 sm:px-6" role="tablist" aria-label="Profile data">
@@ -480,89 +381,6 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
       onSave={() => void saveProfile()}
     />}
   </div>;
-}
-
-function CreatorEarningsPanel({
-  earnings,
-  launchCount,
-  loading,
-  unavailable,
-  ownsProfile,
-  claimingCurve,
-  onClaim,
-}: {
-  earnings: CreatorEarning[];
-  launchCount: number;
-  loading: boolean;
-  unavailable: boolean;
-  ownsProfile: boolean;
-  claimingCurve: string;
-  onClaim: (earning: CreatorEarning) => void;
-}) {
-  const knownTotal = earnings.reduce((sum, earning) => sum + (earning.amount ?? 0), 0);
-  const claimableTotal = earnings.reduce((sum, earning) => sum + (earning.claimable ?? 0), 0);
-  const hasV6Earnings = earnings.some((earning) => earning.claimable !== null);
-  const hasKnownTotal = earnings.some((earning) => earning.amount !== null);
-  const totalLabel = loading && !hasKnownTotal
-    ? "—"
-    : `${unavailable ? "≥" : ""}${money(knownTotal)}`;
-
-  return <section className="mt-5 overflow-hidden rounded-[22px] border border-line bg-panel shadow-glow">
-    <div className="grid gap-5 border-b border-line p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-      <div className="flex min-w-0 items-start gap-4">
-        <div className="grid size-11 shrink-0 place-items-center rounded-2xl border border-cyan/20 bg-cyan/[.08] text-cyan">
-          <CircleDollarSign className="size-5" />
-        </div>
-        <div>
-          <p className="text-[15px] font-semibold text-white">Creator earnings</p>
-          <p className="mt-2 text-[34px] font-semibold leading-none tracking-[-.045em] text-white sm:text-[40px]">{totalLabel}</p>
-          <p className="mt-3 text-sm font-medium leading-6 text-slate-400">
-            Lifetime creator fee share accrued across your launches.
-          </p>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-        <p className="font-medium text-slate-400"><span className="font-semibold text-white">{launchCount}</span> launch{launchCount === 1 ? "" : "es"}</p>
-        <p className="font-medium text-slate-400"><span className="font-semibold text-white">70%</span> of each trading fee</p>
-        {hasV6Earnings
-          ? <p className="font-medium text-slate-400">Available <span className="font-semibold text-white">{money(claimableTotal)}</span></p>
-          : <Badge tone="cyan">Paid automatically</Badge>}
-      </div>
-    </div>
-    <div className="divide-y divide-line/70">
-      {earnings.map((earning) => <div key={earning.token.address} className="flex items-center gap-4 px-5 py-4 sm:px-6">
-        <TokenIcon label={earning.token.icon} image={earning.token.image} className="size-10 rounded-xl" />
-        <div className="min-w-0 flex-1">
-          <Link href={`/tokens/${earning.token.address}`} className="truncate font-semibold text-white transition hover:text-cyan">{earning.token.name}</Link>
-          <p className="mt-1 font-mono text-[11px] font-medium text-slate-500">{tickerLabel(earning.token.ticker)}</p>
-        </div>
-        <div className="flex items-center gap-3 text-right">
-          <div>
-          <p className="font-semibold tabular-nums text-white">{earning.amount === null ? "—" : money(earning.amount)}</p>
-          <p className="mt-1 text-[11px] font-medium text-slate-500">
-            {earning.claimable === null ? "Received in USDC" : `${money(earning.claimable)} claimable`}
-          </p>
-          </div>
-          {ownsProfile && earning.claimableRaw !== null && earning.claimableRaw > 0n && <Button
-            type="button"
-            variant="secondary"
-            className="h-9 px-3 text-xs"
-            disabled={claimingCurve === earning.token.curveAddress}
-            onClick={() => onClaim(earning)}
-          >
-            {claimingCurve === earning.token.curveAddress ? "Claiming…" : "Claim"}
-          </Button>}
-        </div>
-      </div>)}
-      {earnings.length === 0 && <div className="px-5 py-5 text-sm font-medium text-slate-400 sm:px-6">
-        Creator fee totals will appear when the deployed curves are available.
-      </div>}
-    </div>
-    <div className="border-t border-line bg-black/[.08] px-5 py-3 text-xs font-medium leading-5 text-slate-400 sm:px-6">
-      V5 curves pay automatically. V6 curves keep creator fees separate from trading reserves and require a creator-authorized claim.
-      {unavailable && !loading ? ` Some curve totals could not be read from ${arcChain.name}, so the visible total is partial.` : ""}
-    </div>
-  </section>;
 }
 
 function PortfolioChart({
@@ -766,7 +584,7 @@ function PositionsTable({ positions, loading }: { positions: Position[]; loading
       <td className={position.pnl === null ? "text-slate-400" : position.pnl >= 0 ? "text-emerald-300" : "text-rose-300"}>{position.pnl === null ? "—" : `${position.pnl >= 0 ? "+" : ""}${money(position.pnl)}`}</td>
       <td className="pr-6 text-right"><Link href={`/tokens/${position.token.address}`} className="font-semibold text-cyan hover:underline">Trade</Link></td>
     </tr>)}</tbody>
-  </table><p className="border-t border-line px-6 py-3 text-xs font-medium leading-5 text-slate-400">PnL appears only when the actual ERC-20 balance matches confirmed curve trades. Transfers can make cost basis unavailable.</p></div>;
+  </table><p className="border-t border-line px-6 py-3 text-xs font-medium leading-5 text-slate-400">PnL appears only when the actual ERC-20 balance matches confirmed pool trades. Transfers can make cost basis unavailable.</p></div>;
 }
 
 function HistoryTable({ trades }: { trades: WalletTrade[] }) {

@@ -3,365 +3,355 @@ const { ethers } = require("hardhat");
 
 const USDC = 10n ** 6n;
 const TOKEN = 10n ** 18n;
-const LAUNCH_FEE = 25n * USDC;
-const LIQUIDITY_LOCK = "0x000000000000000000000000000000000000dEaD";
+const TOTAL_SUPPLY = 1_000_000_000n * TOKEN;
+const LAUNCH_FEE = 10n * USDC;
+const Q192 = 1n << 192n;
 
-async function deployPlatform() {
-  const [owner, creator, trader, recipient, stranger] = await ethers.getSigners();
+function sqrt(value) {
+  if (value < 0n) throw new Error("negative square root");
+  if (value < 2n) return value;
+  let left = 1n;
+  let right = value;
+  while (left + 1n < right) {
+    const middle = (left + right) >> 1n;
+    if (middle * middle <= value) left = middle;
+    else right = middle;
+  }
+  return left;
+}
+
+function sqrtPriceX96(tokenAddress, usdcAddress, marketCap) {
+  const tokenIsToken0 = BigInt(tokenAddress) < BigInt(usdcAddress);
+  const amount0 = tokenIsToken0 ? TOTAL_SUPPLY : marketCap;
+  const amount1 = tokenIsToken0 ? marketCap : TOTAL_SUPPLY;
+  return sqrt((amount1 * Q192) / amount0);
+}
+
+async function deployFixture() {
+  const [owner, creator, trader, protocolRecipient, stranger, guardian] =
+    await ethers.getSigners();
   const Usdc = await ethers.getContractFactory("MockUSDC");
   const usdc = await Usdc.deploy();
   const Vault = await ethers.getContractFactory("ArcForgeFeeVault");
-  const vault = await Vault.deploy(owner.address, recipient.address);
+  const vault = await Vault.deploy(owner.address, protocolRecipient.address);
   const Registry = await ethers.getContractFactory("ArcForgeCreatorRegistry");
   const registry = await Registry.deploy(owner.address);
+  const V3Factory = await ethers.getContractFactory("MockUniswapV3Factory");
+  const v3Factory = await V3Factory.deploy();
+  const PositionManager = await ethers.getContractFactory(
+    "MockUniswapV3PositionManager",
+  );
+  const positionManager = await PositionManager.deploy(await v3Factory.getAddress());
   const Factory = await ethers.getContractFactory("ArcForgeFactory");
   const factory = await Factory.deploy(
     owner.address,
+    guardian.address,
     await usdc.getAddress(),
     await vault.getAddress(),
     await registry.getAddress(),
+    await v3Factory.getAddress(),
+    await positionManager.getAddress(),
     LAUNCH_FEE,
   );
-  await registry.setFactory(await factory.getAddress());
+  const factoryAddress = await factory.getAddress();
+  await vault.setRegistrar(factoryAddress, true);
+  await vault.setCollector(factoryAddress, true);
+  await registry.setFactory(factoryAddress);
+  await factory.connect(owner).unpauseLaunches();
   await usdc.mint(creator.address, 1_000_000n * USDC);
   await usdc.mint(trader.address, 1_000_000n * USDC);
-  return { owner, creator, trader, recipient, stranger, usdc, vault, registry, factory };
-}
-
-function launchParams(overrides = {}) {
   return {
-    name: "Forge Token",
-    symbol: "FORGE",
-    metadataURI: "ipfs://forge-metadata",
-    totalSupply: 1_000_000_000n * TOKEN,
-    creatorAllocationBps: 500,
-    virtualUsdcReserve: 2_500n * USDC,
-    graduationThreshold: 10_000n * USDC,
-    ...overrides,
+    owner,
+    creator,
+    trader,
+    protocolRecipient,
+    stranger,
+    guardian,
+    usdc,
+    vault,
+    registry,
+    v3Factory,
+    positionManager,
+    factory,
+    locker: await ethers.getContractAt(
+      "ArcOriginUniswapV3LiquidityLocker",
+      await factory.liquidityLocker(),
+    ),
   };
 }
 
-async function launch(platform, overrides = {}) {
-  const { creator, usdc, factory } = platform;
-  await usdc.connect(creator).approve(await factory.getAddress(), LAUNCH_FEE);
-  const tx = await factory.connect(creator).launchToken(launchParams(overrides));
-  const receipt = await tx.wait();
-  const parsed = receipt.logs
-    .map((log) => { try { return factory.interface.parseLog(log); } catch { return null; } })
-    .find((event) => event?.name === "TokenLaunched");
-  return {
-    token: await ethers.getContractAt("ArcForgeToken", parsed.args.token),
-    curve: await ethers.getContractAt("ArcForgeBondingCurve", parsed.args.curve),
-    tx,
-  };
-}
-
-describe("ArcForgeFactory and ArcForgeToken", function () {
-  it("launches a fixed-supply token, funds its curve, records the creator, and collects the launch fee", async function () {
-    const platform = await deployPlatform();
-    const { creator, factory, registry, vault, usdc } = platform;
-    const params = launchParams();
-
-    const { token, curve, tx } = await launch(platform);
-    const creatorAllocation = params.totalSupply * 500n / 10_000n;
-    const curveAllocation = params.totalSupply - creatorAllocation;
-
-    await expect(tx).to.emit(factory, "TokenLaunched");
-    expect(await token.totalSupply()).to.equal(params.totalSupply);
-    expect(await token.balanceOf(creator.address)).to.equal(creatorAllocation);
-    expect(await token.balanceOf(await curve.getAddress())).to.equal(curveAllocation);
-    expect(await token.metadataURI()).to.equal("ipfs://forge-metadata");
-    expect(token.interface.fragments.some((fragment) => fragment.name === "mint")).to.equal(false);
-    expect((await registry.getCreatorProfile(creator.address)).launchCount).to.equal(1);
-    expect(await vault.getFeeTotal(await usdc.getAddress(), ethers.keccak256(ethers.toUtf8Bytes("LAUNCH_FEE"))))
-      .to.equal(LAUNCH_FEE);
-  });
-
-  it("rejects invalid names, symbols, and creator allocations", async function () {
-    const platform = await deployPlatform();
-    const { creator, usdc, factory } = platform;
-    await usdc.connect(creator).approve(await factory.getAddress(), LAUNCH_FEE * 3n);
-    await expect(factory.connect(creator).launchToken(launchParams({ name: "" }))).to.be.revertedWithCustomError(factory, "EmptyName");
-    await expect(factory.connect(creator).launchToken(launchParams({ symbol: "" }))).to.be.revertedWithCustomError(factory, "EmptySymbol");
-    await expect(factory.connect(creator).launchToken(launchParams({ name: "N".repeat(65) }))).to.be.revertedWithCustomError(factory, "NameTooLong");
-    await expect(factory.connect(creator).launchToken(launchParams({ symbol: "SYMBOL-LONG" }))).to.be.revertedWithCustomError(factory, "SymbolTooLong");
-    await expect(factory.connect(creator).launchToken(launchParams({ metadataURI: `ipfs://${"x".repeat(506)}` }))).to.be.revertedWithCustomError(factory, "MetadataURITooLong");
-    await expect(factory.connect(creator).launchToken(launchParams({ creatorAllocationBps: 2001 })))
-      .to.be.revertedWithCustomError(factory, "InvalidAllocation");
-    await expect(factory.connect(creator).launchToken(launchParams({ graduationThreshold: 50_000n * USDC })))
-      .to.be.revertedWithCustomError(factory, "InvalidConfiguration");
-  });
-
-  it("restricts fee administration and applies trading-fee changes only to future curves", async function () {
-    const platform = await deployPlatform();
-    const { owner, stranger, factory } = platform;
-    const { curve: existingCurve } = await launch(platform);
-
-    await expect(factory.connect(stranger).setLaunchFee(30n * USDC))
-      .to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount")
-      .withArgs(stranger.address);
-    await expect(factory.connect(owner).setTradingFees(1_001, 100))
-      .to.be.revertedWithCustomError(factory, "InvalidConfiguration");
-    await expect(factory.connect(owner).setTradingFees(125, 150))
-      .to.emit(factory, "TradingFeesUpdated")
-      .withArgs(125, 150);
-
-    const { curve: futureCurve } = await launch(platform);
-    expect(await existingCurve.buyFeeBps()).to.equal(100n);
-    expect(await existingCurve.sellFeeBps()).to.equal(100n);
-    expect(await futureCurve.buyFeeBps()).to.equal(125n);
-    expect(await futureCurve.sellFeeBps()).to.equal(150n);
-  });
-});
-
-describe("ArcForgeBondingCurve", function () {
-  it("quotes and executes buys and sells while collecting transparent fees", async function () {
-    const platform = await deployPlatform();
-    const { creator, trader, usdc, vault } = platform;
-    const { token, curve } = await launch(platform);
-    expect(await curve.creatorFeeRecipient()).to.equal(creator.address);
-    expect(await curve.CREATOR_FEE_SHARE_BPS()).to.equal(7_000n);
-    const amountIn = 1_000n * USDC;
-    const [quotedTokens, buyFee] = await curve.quoteBuy(amountIn);
-    expect(quotedTokens).to.be.greaterThan(0);
-    expect(buyFee).to.equal(10n * USDC);
-
-    const creatorBalanceBeforeBuy = await usdc.balanceOf(creator.address);
-    await usdc.connect(trader).approve(await curve.getAddress(), amountIn);
-    await expect(curve.connect(trader).buy(amountIn, quotedTokens))
-      .to.emit(curve, "FeeSplit")
-      .withArgs(trader.address, await curve.BUY_FEE(), creator.address, 7n * USDC, 3n * USDC);
-    expect(await token.balanceOf(trader.address)).to.equal(quotedTokens);
-    expect(await usdc.balanceOf(creator.address) - creatorBalanceBeforeBuy).to.equal(7n * USDC);
-    expect(await vault.getFeeTotal(await usdc.getAddress(), ethers.keccak256(ethers.toUtf8Bytes("BUY_FEE"))))
-      .to.equal(3n * USDC);
-
-    const tokenIn = quotedTokens / 2n;
-    const [quotedUsdc, sellFee] = await curve.quoteSell(tokenIn);
-    const creatorBalanceBeforeSell = await usdc.balanceOf(creator.address);
-    await token.connect(trader).approve(await curve.getAddress(), tokenIn);
-    await expect(curve.connect(trader).sell(tokenIn, quotedUsdc)).to.emit(curve, "FeeSplit");
-    expect(quotedUsdc).to.be.greaterThan(0);
-    const expectedSellProtocolFee = sellFee * 3_000n / 10_000n;
-    const expectedSellCreatorFee = sellFee - expectedSellProtocolFee;
-    expect(await usdc.balanceOf(creator.address) - creatorBalanceBeforeSell).to.equal(expectedSellCreatorFee);
-    expect(await vault.getFeeTotal(await usdc.getAddress(), ethers.keccak256(ethers.toUtf8Bytes("SELL_FEE"))))
-      .to.equal(expectedSellProtocolFee);
-    expect(await curve.totalCreatorFees()).to.equal(7n * USDC + expectedSellCreatorFee);
-    expect(await curve.totalProtocolFees()).to.equal(3n * USDC + expectedSellProtocolFee);
-  });
-
-  it("enforces amount and slippage checks", async function () {
-    const platform = await deployPlatform();
-    const { trader, usdc } = platform;
-    const { token, curve } = await launch(platform);
-    await expect(curve.connect(trader).buy(0, 0)).to.be.revertedWithCustomError(curve, "ZeroAmount");
-    const amount = 100n * USDC;
-    const [quote] = await curve.quoteBuy(amount);
-    await usdc.connect(trader).approve(await curve.getAddress(), amount);
-    await expect(curve.connect(trader).buy(amount, quote + 1n)).to.be.revertedWithCustomError(curve, "SlippageExceeded");
-    await expect(curve.connect(trader).sell(0, 0)).to.be.revertedWithCustomError(curve, "ZeroAmount");
-    await expect(curve.connect(trader).sell(TOKEN, 0)).to.be.reverted;
-    expect(await token.balanceOf(trader.address)).to.equal(0);
-  });
-
-  it("does not pay a whole USDC base unit for a dust token sale", async function () {
-    const platform = await deployPlatform();
-    const { trader, usdc } = platform;
-    const { token, curve } = await launch(platform);
-    const amount = 100n * USDC;
-    const [tokensOut] = await curve.quoteBuy(amount);
-    await usdc.connect(trader).approve(await curve.getAddress(), amount);
-    await curve.connect(trader).buy(amount, tokensOut);
-
-    const [dustOutput, dustFee] = await curve.quoteSell(1n);
-    expect(dustOutput).to.equal(0);
-    expect(dustFee).to.equal(0);
-    await token.connect(trader).approve(await curve.getAddress(), 1n);
-    await expect(curve.connect(trader).sell(1n, 0)).to.be.revertedWithCustomError(curve, "InsufficientLiquidity");
-  });
-
-  it("preserves reserve solvency and a non-decreasing invariant across randomized trades", async function () {
-    const platform = await deployPlatform();
-    const { trader, usdc } = platform;
-    const { token, curve } = await launch(platform);
-    const curveAddress = await curve.getAddress();
-    await usdc.connect(trader).approve(curveAddress, ethers.MaxUint256);
-    await token.connect(trader).approve(curveAddress, ethers.MaxUint256);
-
-    let seed = 0xA11CEn;
-    const nextRandom = () => {
-      seed ^= seed << 13n;
-      seed ^= seed >> 7n;
-      seed ^= seed << 17n;
-      return seed & ((1n << 64n) - 1n);
-    };
-
-    for (let iteration = 0; iteration < 32; iteration += 1) {
-      const tokenReserveBefore = await curve.tokenReserve();
-      const usdcReserveBefore = await curve.usdcReserve();
-      const virtualReserve = await curve.virtualUsdcReserve();
-      const invariantBefore = (virtualReserve + usdcReserveBefore) * tokenReserveBefore;
-      const traderTokens = await token.balanceOf(trader.address);
-      const shouldBuy = traderTokens === 0n || nextRandom() % 3n !== 0n;
-
-      if (shouldBuy) {
-        const amount = (nextRandom() % 200n + 1n) * USDC;
-        const [quote] = await curve.quoteBuy(amount);
-        expect(quote).to.be.greaterThan(0);
-        await curve.connect(trader).buy(amount, quote);
-      } else {
-        const amount = traderTokens * (nextRandom() % 80n + 1n) / 100n;
-        const [quote] = await curve.quoteSell(amount);
-        if (quote > 0n) await curve.connect(trader).sell(amount, quote);
+async function launch(fixture) {
+  await fixture.usdc
+    .connect(fixture.creator)
+    .approve(await fixture.factory.getAddress(), LAUNCH_FEE);
+  const receipt = await (
+    await fixture.factory.connect(fixture.creator).launchToken({
+      name: "Arc Direct",
+      symbol: "ARCD",
+      metadataURI: "ipfs://arc-direct",
+    })
+  ).wait();
+  const event = receipt.logs
+    .map((log) => {
+      try {
+        return fixture.factory.interface.parseLog(log);
+      } catch {
+        return null;
       }
+    })
+    .find((entry) => entry?.name === "TokenLaunched");
+  return {
+    token: await ethers.getContractAt("ArcForgeToken", event.args.token),
+    pool: await ethers.getContractAt("MockUniswapV3Pool", event.args.pool),
+    positionId: event.args.positionId,
+  };
+}
 
-      const tokenReserveAfter = await curve.tokenReserve();
-      const usdcReserveAfter = await curve.usdcReserve();
-      const invariantAfter = (virtualReserve + usdcReserveAfter) * tokenReserveAfter;
-      expect(await token.balanceOf(curveAddress)).to.equal(tokenReserveAfter);
-      expect(await usdc.balanceOf(curveAddress)).to.equal(usdcReserveAfter);
-      expect(tokenReserveAfter).to.be.greaterThan(0);
-      expect(invariantAfter).to.be.at.least(invariantBefore);
+async function predictNextToken(factory, creator, params) {
+  const parent = await ethers.provider.getBlock("latest");
+  const nonce = await factory.launchNonce();
+  const salt = ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+    ["bytes32", "address", "uint256"],
+    [parent.hash, creator, nonce],
+  ));
+  const Token = await ethers.getContractFactory("ArcForgeToken");
+  const deployment = await Token.getDeployTransaction(
+    params.name,
+    params.symbol,
+    TOTAL_SUPPLY,
+    creator,
+    params.metadataURI,
+  );
+  return ethers.getCreate2Address(
+    await factory.getAddress(),
+    salt,
+    ethers.keccak256(deployment.data),
+  );
+}
+
+describe("ArcOrigin direct Uniswap V3 launches", function () {
+  it("computes single-sided ranges and market cap for either token ordering", async function () {
+    const Harness = await ethers.getContractFactory("MockArcOriginUniswapV3MathHarness");
+    const harness = await Harness.deploy();
+    expect(await harness.singleSidedTicks(-123, 200, true)).to.deep.equal([
+      0n,
+      887_200n,
+    ]);
+    expect(await harness.singleSidedTicks(-123, 200, false)).to.deep.equal([
+      -887_200n,
+      -200n,
+    ]);
+
+    const marketCap = 5_000n * USDC;
+    const token0Price = sqrt((marketCap * Q192) / TOTAL_SUPPLY);
+    const token1Price = sqrt((TOTAL_SUPPLY * Q192) / marketCap);
+    const token0MarketCap = await harness.marketCapFromSqrtPriceX96(
+      token0Price,
+      TOTAL_SUPPLY,
+      true,
+    );
+    const token1MarketCap = await harness.marketCapFromSqrtPriceX96(
+      token1Price,
+      TOTAL_SUPPLY,
+      false,
+    );
+    expect(marketCap - token0MarketCap).to.be.lessThan(10n);
+    expect(token1MarketCap - marketCap).to.be.lessThan(10n);
+  });
+
+  it("creates an indexable V3 pool and permanently locks the entire effective supply atomically", async function () {
+    const fixture = await deployFixture();
+    const { token, pool, positionId } = await launch(fixture);
+    const tokenAddress = await token.getAddress();
+    const poolAddress = await pool.getAddress();
+
+    expect(
+      await fixture.v3Factory.getPool(
+        tokenAddress,
+        await fixture.usdc.getAddress(),
+        10_000,
+      ),
+    ).to.equal(poolAddress);
+    expect(await fixture.positionManager.ownerOf(positionId)).to.equal(
+      await fixture.locker.getAddress(),
+    );
+    expect(await token.balanceOf(poolAddress)).to.equal(await token.totalSupply());
+    expect(await token.balanceOf(await fixture.factory.getAddress())).to.equal(0n);
+    expect(await token.balanceOf(fixture.creator.address)).to.equal(0n);
+
+    const record = await fixture.locker.locks(positionId);
+    expect(record.pool).to.equal(poolAddress);
+    expect(record.launchToken).to.equal(tokenAddress);
+    expect(record.launchTokenPrincipal).to.equal(await token.totalSupply());
+    expect(record.creatorFeeShareBps).to.equal(7_000n);
+    const info = await fixture.factory.getTokenInfo(tokenAddress);
+    expect(info.pool).to.equal(poolAddress);
+    expect(info.positionId).to.equal(positionId);
+  });
+
+  it("does not expose a migration or LP-withdrawal path", async function () {
+    const fixture = await deployFixture();
+    const { positionId } = await launch(fixture);
+    expect(fixture.factory.interface.hasFunction("migrateToDex")).to.equal(false);
+    expect(fixture.locker.interface.hasFunction("transferFrom")).to.equal(false);
+    expect(fixture.locker.interface.hasFunction("decreaseLiquidity")).to.equal(false);
+    await expect(
+      fixture.positionManager
+        .connect(fixture.stranger)
+        .transferFrom(
+          await fixture.locker.getAddress(),
+          fixture.stranger.address,
+          positionId,
+        ),
+    ).to.be.revertedWithCustomError(fixture.positionManager, "InvalidPosition");
+  });
+
+  it("permissionlessly splits LP fees 70% to creator and 30% to the protocol vault", async function () {
+    const fixture = await deployFixture();
+    const { positionId } = await launch(fixture);
+    const record = await fixture.locker.locks(positionId);
+    const quoteIsToken0 = record.token0 === (await fixture.usdc.getAddress());
+    const amount0 = quoteIsToken0 ? 100n * USDC : 0n;
+    const amount1 = quoteIsToken0 ? 0n : 100n * USDC;
+    await fixture.usdc
+      .connect(fixture.trader)
+      .approve(await fixture.positionManager.getAddress(), 100n * USDC);
+    await fixture.positionManager
+      .connect(fixture.trader)
+      .seedFees(positionId, amount0, amount1);
+
+    const creatorBefore = await fixture.usdc.balanceOf(fixture.creator.address);
+    const protocolBefore = await fixture.usdc.balanceOf(await fixture.vault.getAddress());
+    await expect(fixture.locker.connect(fixture.stranger).collectFees(positionId))
+      .to.emit(fixture.locker, "FeesClaimed");
+    expect(
+      (await fixture.usdc.balanceOf(fixture.creator.address)) - creatorBefore,
+    ).to.equal(70n * USDC);
+    expect(
+      (await fixture.usdc.balanceOf(await fixture.vault.getAddress())) - protocolBefore,
+    ).to.equal(30n * USDC);
+  });
+
+  it("treats $50k as a permanent status mark without moving liquidity", async function () {
+    const fixture = await deployFixture();
+    const { token, pool, positionId } = await launch(fixture);
+    const tokenAddress = await token.getAddress();
+    expect(await fixture.factory.isCrossed(tokenAddress)).to.equal(false);
+    const lockerOwnerBefore = await fixture.positionManager.ownerOf(positionId);
+
+    const crossedPrice = sqrtPriceX96(
+      tokenAddress,
+      await fixture.usdc.getAddress(),
+      50_100n * USDC,
+    );
+    await pool.setSqrtPriceX96ForTest(crossedPrice);
+    expect(await fixture.factory.isCrossed(tokenAddress)).to.equal(true);
+    await expect(fixture.factory.connect(fixture.stranger).markCrossed(tokenAddress))
+      .to.emit(fixture.factory, "TokenCrossed");
+    expect((await fixture.factory.getTokenInfo(tokenAddress)).crossed).to.equal(true);
+    expect(await fixture.positionManager.ownerOf(positionId)).to.equal(lockerOwnerBefore);
+    expect(await token.balanceOf(await pool.getAddress())).to.equal(await token.totalSupply());
+  });
+
+  it("accepts a same-block uninitialized pool and cannot be permanently bricked by a poisoned prediction", async function () {
+    const fixture = await deployFixture();
+    const factoryAddress = await fixture.factory.getAddress();
+    const params = {
+      name: "Block Bound",
+      symbol: "BBND",
+      metadataURI: "ipfs://block-bound",
+    };
+    await fixture.usdc
+      .connect(fixture.creator)
+      .approve(factoryAddress, 3n * LAUNCH_FEE);
+
+    const predictedToken = await predictNextToken(
+      fixture.factory,
+      fixture.creator.address,
+      params,
+    );
+    await ethers.provider.send("evm_setAutomine", [false]);
+    try {
+      const poolTx = await fixture.v3Factory
+        .connect(fixture.stranger)
+        .createPool(
+          predictedToken,
+          await fixture.usdc.getAddress(),
+          10_000,
+          { gasLimit: 5_000_000 },
+        );
+      const launchTx = await fixture.factory
+        .connect(fixture.creator)
+        .launchToken(params, { gasLimit: 12_000_000 });
+      await ethers.provider.send("evm_mine", []);
+      expect((await ethers.provider.getTransactionReceipt(poolTx.hash)).status).to.equal(1);
+      expect((await ethers.provider.getTransactionReceipt(launchTx.hash)).status).to.equal(1);
+    } finally {
+      await ethers.provider.send("evm_setAutomine", [true]);
     }
-  });
+    const expectedPool = await fixture.v3Factory.getPool(
+      predictedToken,
+      await fixture.usdc.getAddress(),
+      10_000,
+    );
+    expect((await fixture.factory.getTokenInfo(predictedToken)).pool).to.equal(expectedPool);
 
-  it("caps pre-graduation input so a large buy cannot drain the token reserve", async function () {
-    const platform = await deployPlatform();
-    const { trader, usdc } = platform;
-    const { curve } = await launch(platform);
-    const maximum = await curve.maxBuyAmount();
-    await usdc.connect(trader).approve(await curve.getAddress(), maximum + 1n);
-    expect(await curve.quoteBuy(maximum + 1n)).to.deep.equal([0n, 0n]);
-    await expect(curve.connect(trader).buy(maximum + 1n, 0))
-      .to.be.revertedWithCustomError(curve, "GraduationThresholdExceeded")
-      .withArgs(maximum);
-    const [quote] = await curve.quoteBuy(maximum);
-    expect(quote).to.be.greaterThan(0);
-    await expect(curve.connect(trader).buy(maximum, quote)).to.emit(curve, "CurveGraduated");
-    expect(await curve.tokenReserve()).to.be.greaterThan(0);
-  });
-
-  it("graduates into permanent real-reserve liquidity without a price discontinuity", async function () {
-    const platform = await deployPlatform();
-    const { trader, usdc } = platform;
-    const { token, curve } = await launch(platform, {
-      virtualUsdcReserve: 25n * USDC,
-      graduationThreshold: 100n * USDC,
-    });
-    const maximum = await curve.maxBuyAmount();
-    const [quote] = await curve.quoteBuy(maximum);
-    const initialReserve = await curve.initialTokenReserve();
-    await usdc.connect(trader).approve(await curve.getAddress(), maximum + 50n * USDC);
-    const preGraduationTokenReserve = initialReserve - quote;
-    const expectedPrice = (125n * USDC) * TOKEN / preGraduationTokenReserve;
-
-    await expect(curve.connect(trader).buy(maximum, quote))
-      .to.emit(curve, "PermanentLiquidityActivated");
-    expect(await curve.isGraduated()).to.equal(true);
-    expect(await curve.usdcReserve()).to.equal(100n * USDC);
-    expect(await curve.getCurveProgress()).to.equal(10_000n);
-    expect(await curve.tokensSold()).to.equal(quote);
-    const lockedAtGraduation = await token.balanceOf(LIQUIDITY_LOCK);
-    expect(lockedAtGraduation).to.be.greaterThan(0);
-    expect(await token.balanceOf(await curve.getAddress())).to.equal(await curve.tokenReserve());
-    expect(await curve.tokensSold() * 10_000n / initialReserve).to.be.closeTo(8_000n, 1n);
-
-    const postGraduationPrice = await curve.getCurrentPrice();
-    expect(postGraduationPrice).to.be.closeTo(expectedPrice, 1n);
-
-    const postGraduationBuy = 10n * USDC;
-    const [moreTokens] = await curve.quoteBuy(postGraduationBuy);
-    await expect(curve.connect(trader).buy(postGraduationBuy, moreTokens)).to.emit(curve, "TokenBought");
-    expect(moreTokens).to.be.greaterThan(0);
-
-    const invariantBeforeSell = (await curve.usdcReserve()) * (await curve.tokenReserve());
-    const tokensToSell = quote / 2n;
-    const [usdcOut] = await curve.quoteSell(tokensToSell);
-    await token.connect(trader).approve(await curve.getAddress(), tokensToSell);
-    await expect(curve.connect(trader).sell(tokensToSell, usdcOut)).to.emit(curve, "TokenSold");
-    expect(usdcOut).to.be.greaterThan(0);
-    const invariantAfterSell = (await curve.usdcReserve()) * (await curve.tokenReserve());
-    expect(invariantAfterSell).to.be.at.least(invariantBeforeSell);
-    expect(await token.balanceOf(LIQUIDITY_LOCK)).to.equal(lockedAtGraduation);
-    expect(await token.balanceOf(await curve.getAddress())).to.equal(await curve.tokenReserve());
-  });
-
-  it("keeps the permanent AMM solvent across post-graduation round trips", async function () {
-    const platform = await deployPlatform();
-    const { trader, usdc } = platform;
-    const { token, curve } = await launch(platform);
-    const maximum = await curve.maxBuyAmount();
-    const [graduationQuote] = await curve.quoteBuy(maximum);
-    await usdc.connect(trader).approve(await curve.getAddress(), maximum + 1_000n * USDC);
-    await curve.connect(trader).buy(maximum, graduationQuote);
-
-    const lockedAtGraduation = await token.balanceOf(LIQUIDITY_LOCK);
-    for (let iteration = 0; iteration < 16; iteration += 1) {
-      const buyAmount = BigInt(5 + iteration) * USDC;
-      const [tokensOut] = await curve.quoteBuy(buyAmount);
-      await curve.connect(trader).buy(buyAmount, tokensOut);
-      const sellAmount = tokensOut / 2n;
-      const [usdcOut] = await curve.quoteSell(sellAmount);
-      await token.connect(trader).approve(await curve.getAddress(), sellAmount);
-      await curve.connect(trader).sell(sellAmount, usdcOut);
-
-      expect(await usdc.balanceOf(await curve.getAddress())).to.equal(await curve.usdcReserve());
-      expect(await token.balanceOf(await curve.getAddress())).to.equal(await curve.tokenReserve());
-      expect(await token.balanceOf(LIQUIDITY_LOCK)).to.equal(lockedAtGraduation);
+    const poisonedParams = {
+      name: "Poison Retry",
+      symbol: "RETRY",
+      metadataURI: "ipfs://retry",
+    };
+    const poisonedToken = await predictNextToken(
+      fixture.factory,
+      fixture.creator.address,
+      poisonedParams,
+    );
+    let failedLaunchHash;
+    await ethers.provider.send("evm_setAutomine", [false]);
+    try {
+      const poisonTx = await fixture.positionManager
+        .connect(fixture.stranger)
+        .createAndInitializePoolIfNecessary(
+          poisonedToken,
+          await fixture.usdc.getAddress(),
+          10_000,
+          2n ** 96n,
+          { gasLimit: 5_000_000 },
+        );
+      const failedLaunch = await fixture.factory
+        .connect(fixture.creator)
+        .launchToken(poisonedParams, { gasLimit: 12_000_000 });
+      failedLaunchHash = failedLaunch.hash;
+      await ethers.provider.send("evm_mine", []);
+      expect((await ethers.provider.getTransactionReceipt(poisonTx.hash)).status).to.equal(1);
+      expect((await ethers.provider.getTransactionReceipt(failedLaunch.hash)).status).to.equal(0);
+    } finally {
+      await ethers.provider.send("evm_setAutomine", [true]);
     }
-  });
-});
+    expect(failedLaunchHash).to.not.equal(undefined);
 
-describe("ArcForgeFeeVault", function () {
-  it("records real fees, withdraws to the recipient, and rejects unauthorized withdrawals", async function () {
-    const { owner, creator, recipient, stranger, usdc, vault } = await deployPlatform();
-    const fee = 75n * USDC;
-    const feeType = ethers.keccak256(ethers.toUtf8Bytes("TEST_FEE"));
-    await usdc.connect(creator).approve(await vault.getAddress(), fee);
-    await expect(vault.connect(creator).collectFee(await usdc.getAddress(), creator.address, feeType, fee))
-      .to.emit(vault, "FeeReceived");
-    await expect(vault.connect(stranger).withdraw(await usdc.getAddress(), fee))
-      .to.be.revertedWithCustomError(vault, "Unauthorized");
-    await expect(vault.connect(owner).withdraw(await usdc.getAddress(), fee)).to.emit(vault, "FeeWithdrawn");
-    expect(await usdc.balanceOf(recipient.address)).to.equal(fee);
-  });
-
-  it("lets only the owner rotate the recipient and always withdraws to the active recipient", async function () {
-    const { owner, creator, recipient, stranger, usdc, vault } = await deployPlatform();
-    const fee = 10n * USDC;
-    const feeType = ethers.keccak256(ethers.toUtf8Bytes("TEST_FEE"));
-    await expect(vault.connect(stranger).setFeeRecipient(stranger.address))
-      .to.be.revertedWithCustomError(vault, "OwnableUnauthorizedAccount")
-      .withArgs(stranger.address);
-    await vault.connect(owner).setFeeRecipient(stranger.address);
-    await usdc.connect(creator).approve(await vault.getAddress(), fee);
-    await vault.connect(creator).collectFee(await usdc.getAddress(), creator.address, feeType, fee);
-    await expect(vault.connect(recipient).withdraw(await usdc.getAddress(), fee))
-      .to.be.revertedWithCustomError(vault, "Unauthorized");
-    await vault.connect(stranger).withdraw(await usdc.getAddress(), fee);
-    expect(await usdc.balanceOf(stranger.address)).to.equal(fee);
-  });
-});
-
-describe("ArcForgeCreatorRegistry", function () {
-  it("registers and lets a creator update metadata", async function () {
-    const { creator, registry } = await deployPlatform();
-    await expect(registry.connect(creator).registerCreator("ipfs://profile")).to.emit(registry, "CreatorRegistered");
-    await expect(registry.connect(creator).updateCreatorMetadata("ipfs://profile-v2")).to.emit(registry, "CreatorUpdated");
-    expect((await registry.getCreatorProfile(creator.address)).metadataURI).to.equal("ipfs://profile-v2");
+    const retryReceipt = await (
+      await fixture.factory.connect(fixture.creator).launchToken(poisonedParams)
+    ).wait();
+    const retryEvent = retryReceipt.logs
+      .map((log) => {
+        try {
+          return fixture.factory.interface.parseLog(log);
+        } catch {
+          return null;
+        }
+      })
+      .find((entry) => entry?.name === "TokenLaunched");
+    expect(retryEvent.args.token).to.not.equal(poisonedToken);
   });
 
-  it("allows only the owner to select the factory and only that factory to record launches", async function () {
-    const { owner, creator, stranger, registry } = await deployPlatform();
-    await expect(registry.connect(stranger).setFactory(stranger.address))
-      .to.be.revertedWithCustomError(registry, "OwnableUnauthorizedAccount")
-      .withArgs(stranger.address);
-    await expect(registry.connect(creator).recordLaunch(creator.address, stranger.address))
-      .to.be.revertedWithCustomError(registry, "Unauthorized");
-    await registry.connect(owner).setFactory(stranger.address);
-    await expect(registry.connect(stranger).recordLaunch(creator.address, stranger.address))
-      .to.emit(registry, "CreatorLaunchRecorded")
-      .withArgs(creator.address, stranger.address, 1);
+  it("lets the guardian pause launches while only governance can unpause", async function () {
+    const fixture = await deployFixture();
+    await fixture.factory.connect(fixture.guardian).pauseLaunches();
+    await expect(
+      fixture.factory.connect(fixture.guardian).unpauseLaunches(),
+    ).to.be.revertedWithCustomError(fixture.factory, "OwnableUnauthorizedAccount");
+    await fixture.factory.connect(fixture.owner).unpauseLaunches();
+    expect(await fixture.factory.paused()).to.equal(false);
   });
 });

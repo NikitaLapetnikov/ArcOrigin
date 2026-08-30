@@ -4,7 +4,6 @@ import { isAddress, type Address } from "viem";
 import {
   ARC_ACTIVE_CONTRACTS,
   ARCORIGIN_NETWORK,
-  ARCORIGIN_PROTOCOL_VERSION,
   arcChain,
 } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
@@ -22,13 +21,6 @@ const factoryHealthAbi = [
   {
     type: "function",
     name: "paused",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ type: "bool" }],
-  },
-  {
-    type: "function",
-    name: "migrationPaused",
     stateMutability: "view",
     inputs: [],
     outputs: [{ type: "bool" }],
@@ -66,9 +58,6 @@ async function loadProductionHealth() {
   const expectedLaunchPaused = ARCORIGIN_NETWORK === "mainnet"
     ? process.env.MAINNET_EXPECT_LAUNCHES_PAUSED !== "false"
     : process.env.TESTNET_EXPECT_LAUNCHES_PAUSED === "true";
-  const expectedMigrationPaused = ARCORIGIN_NETWORK === "mainnet"
-    ? process.env.MAINNET_EXPECT_MIGRATIONS_PAUSED !== "false"
-    : process.env.TESTNET_EXPECT_MIGRATIONS_PAUSED !== "false";
   const owner = expectedOwner();
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -80,7 +69,6 @@ async function loadProductionHealth() {
       bytecodeResult,
       ownerResult,
       launchPauseResult,
-      migrationPauseResult,
       indexerResult,
       cacheResult,
     ] = await Promise.allSettled([
@@ -92,20 +80,11 @@ async function loadProductionHealth() {
         abi: factoryHealthAbi,
         functionName: "owner",
       }),
-      ARCORIGIN_PROTOCOL_VERSION === 6
-        ? healthClient.readContract({
-            address: ARC_ACTIVE_CONTRACTS.factory,
-            abi: factoryHealthAbi,
-            functionName: "paused",
-          })
-        : Promise.resolve(null),
-      ARCORIGIN_PROTOCOL_VERSION === 6
-        ? healthClient.readContract({
-            address: ARC_ACTIVE_CONTRACTS.factory,
-            abi: factoryHealthAbi,
-            functionName: "migrationPaused",
-          })
-        : Promise.resolve(null),
+      healthClient.readContract({
+        address: ARC_ACTIVE_CONTRACTS.factory,
+        abi: factoryHealthAbi,
+        functionName: "paused",
+      }),
       getTokenIndexCacheStatus(),
       getPersistentCacheStatus(),
     ]);
@@ -116,9 +95,6 @@ async function loadProductionHealth() {
     const factoryOwner = ownerResult.status === "fulfilled" ? ownerResult.value : null;
     const launchesPaused = launchPauseResult.status === "fulfilled"
       ? launchPauseResult.value
-      : null;
-    const migrationsPaused = migrationPauseResult.status === "fulfilled"
-      ? migrationPauseResult.value
       : null;
     const indexer = indexerResult.status === "fulfilled" ? indexerResult.value : null;
     const cache = cacheResult.status === "fulfilled" ? cacheResult.value : null;
@@ -136,12 +112,8 @@ async function loadProductionHealth() {
     else if (!bytecode || bytecode === "0x") errors.push("factory_code_missing");
     if (!factoryOwner) errors.push("factory_owner_unavailable");
     if (ownerMatches === false) errors.push("factory_owner_mismatch");
-    if (ARCORIGIN_PROTOCOL_VERSION === 6) {
-      if (launchesPaused === null) errors.push("launch_pause_unavailable");
-      else if (launchesPaused !== expectedLaunchPaused) errors.push("launch_pause_mismatch");
-      if (migrationsPaused === null) errors.push("migration_pause_unavailable");
-      else if (migrationsPaused !== expectedMigrationPaused) errors.push("migration_pause_mismatch");
-    }
+    if (launchesPaused === null) errors.push("launch_pause_unavailable");
+    else if (launchesPaused !== expectedLaunchPaused) errors.push("launch_pause_mismatch");
     if (indexer?.checkpoint === "orphaned" || indexer?.checkpoint === "invalid") {
       errors.push("indexer_checkpoint_noncanonical");
     }
@@ -165,7 +137,6 @@ async function loadProductionHealth() {
         codePresent: Boolean(bytecode && bytecode !== "0x"),
         ownerMatches,
         launchesPaused,
-        migrationsPaused,
       },
       indexer: indexer
         ? { ...indexer, blockLag: blockLag?.toString() ?? null }

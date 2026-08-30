@@ -3,7 +3,6 @@ import "server-only";
 import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector, type Address, type Hash } from "viem";
 import {
   ARCORIGIN_NETWORK,
-  ARCORIGIN_PROTOCOL_VERSION,
   ARC_ACTIVE_FACTORY,
   ARC_ACTIVE_FACTORY_INDEXES,
 } from "@/lib/chains";
@@ -14,17 +13,11 @@ import {
   getCanonicalCheckpointStatus,
   upgradeLegacyCanonicalCheckpoint,
 } from "@/lib/onchain/canonical-checkpoint";
-import { hasCompleteFactoryLaunchSet } from "@/lib/onchain/factory-index-validation";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 
-const tokenLaunchedV6Event = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
-const tokenLaunchedV7Event = parseAbiItem("event TokenLaunched(address indexed token, address indexed pool, address indexed creator, string name, string symbol, uint256 positionId)");
-const tokenLaunchedEvent = ARCORIGIN_PROTOCOL_VERSION === 7
-  ? tokenLaunchedV7Event
-  : tokenLaunchedV6Event;
+const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed pool, address indexed creator, string name, string symbol, uint256 positionId)");
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-const PERMANENT_LIQUIDITY_LOCK = "0x000000000000000000000000000000000000dead";
 const LOG_BLOCK_RANGE = 9_999n;
 const FACTORY_CACHE_TTL_MS = 60_000;
 const HOLDER_CACHE_TTL_MS = 45_000;
@@ -37,20 +30,11 @@ const EXPLORER_BLOCK_BATCH_SIZE = 10;
 const ACTIVE_FACTORY_INDEXES = ARC_ACTIVE_FACTORY_INDEXES.filter(
   (factory) => factory.address.toLowerCase() === ARC_ACTIVE_FACTORY.toLowerCase(),
 );
-const factoryLaunchCountAbi = [{
-  type: "function",
-  name: "getLaunchedTokenCount",
-  stateMutability: "view",
-  inputs: [],
-  outputs: [{ type: "uint256" }],
-}] as const;
-
 export type FactoryLaunch = {
   factory: Address;
   token: Address;
-  curve: Address;
-  venue: "curve" | "uniswap-v3";
-  positionId?: bigint;
+  pool: Address;
+  positionId: bigint;
   creator: Address;
   name: string;
   symbol: string;
@@ -63,9 +47,9 @@ export type HolderSnapshot = {
   holders: number;
   topHolders: HolderEntry[];
   creatorPercent: number;
-  curvePercent: number;
+  poolPercent: number;
   permanentLiquidityLockPercent: number;
-  topTenExcludingCurvePercent: number;
+  topTenExcludingPoolPercent: number;
   indexedBlock: string;
   indexedBlockHash?: Hash;
   generatedAt: string;
@@ -75,12 +59,12 @@ export type HolderEntry = {
   address: Address;
   balance: string;
   percent: number;
-  role: "Creator" | "Curve" | "Pool" | "Holder";
+  role: "Creator" | "Pool" | "Holder";
 };
 
 export type HolderLaunchHint = {
   factory: Address;
-  curve: Address;
+  pool: Address;
   creator: Address;
   launchBlock: bigint;
 };
@@ -161,35 +145,18 @@ function loadLaunchLogs(address: Address, fromBlock: bigint, toBlock: bigint) {
 }
 
 function decodeLaunch(data: `0x${string}`, topics: readonly `0x${string}`[]) {
-  if (ARCORIGIN_PROTOCOL_VERSION === 7) {
-    const decoded = decodeEventLog({
-      abi: [tokenLaunchedV7Event],
-      data,
-      topics: topics as [`0x${string}`, ...`0x${string}`[]],
-    });
-    return {
-      token: decoded.args.token,
-      curve: decoded.args.pool,
-      creator: decoded.args.creator,
-      name: decoded.args.name,
-      symbol: decoded.args.symbol,
-      venue: "uniswap-v3" as const,
-      positionId: decoded.args.positionId,
-    };
-  }
   const decoded = decodeEventLog({
-    abi: [tokenLaunchedV6Event],
+    abi: [tokenLaunchedEvent],
     data,
     topics: topics as [`0x${string}`, ...`0x${string}`[]],
   });
   return {
     token: decoded.args.token,
-    curve: decoded.args.curve,
+    pool: decoded.args.pool,
     creator: decoded.args.creator,
     name: decoded.args.name,
     symbol: decoded.args.symbol,
-    venue: "curve" as const,
-    positionId: undefined,
+    positionId: decoded.args.positionId,
   };
 }
 
@@ -223,8 +190,7 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
         launches.set(token.toLowerCase(), {
           factory: ACTIVE_FACTORY_INDEXES[factoryIndex].address,
           token,
-          curve: decoded.curve,
-          venue: decoded.venue,
+          pool: decoded.pool,
           positionId: decoded.positionId,
           creator: decoded.creator,
           name: decoded.name,
@@ -236,17 +202,7 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
         state.factoryBlockTimestamps.set(log.blockNumber.toString(), log.timestamp);
       }
     }
-    if (ARCORIGIN_PROTOCOL_VERSION !== 6) {
-      if (launches.size > 0) return launches;
-    } else if (ACTIVE_FACTORY_INDEXES.length === 1) {
-      const expectedLaunches = await withRpcRetry(() => publicClient.readContract({
-        address: ACTIVE_FACTORY_INDEXES[0].address,
-        abi: factoryLaunchCountAbi,
-        functionName: "getLaunchedTokenCount",
-        blockNumber: indexedBlock,
-      }), 2);
-      if (hasCompleteFactoryLaunchSet(launches.size, expectedLaunches)) return launches;
-    }
+    if (launches.size > 0) return launches;
   } catch {
     // The public explorer is an optimization only; verified RPC logs remain the fallback.
   }
@@ -262,8 +218,7 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
         launches.set(token.toLowerCase(), {
           factory: factory.address,
           token,
-          curve: decoded.curve as Address,
-          venue: decoded.venue,
+          pool: decoded.pool as Address,
           positionId: decoded.positionId,
           creator: decoded.creator as Address,
           name: decoded.name ?? "Indexed token",
@@ -358,7 +313,7 @@ async function verifyLaunchHint(tokenAddress: Address, hint: HolderLaunchHint) {
   for (const log of logs) {
     const decoded = decodeLaunch(log.data, log.topics);
     if (decoded.token.toLowerCase() !== tokenAddress.toLowerCase()
-      || decoded.curve.toLowerCase() !== hint.curve.toLowerCase()
+      || decoded.pool.toLowerCase() !== hint.pool.toLowerCase()
       || decoded.creator.toLowerCase() !== hint.creator.toLowerCase()) continue;
     const launchedAt = "timestamp" in log
       ? log.timestamp
@@ -367,8 +322,7 @@ async function verifyLaunchHint(tokenAddress: Address, hint: HolderLaunchHint) {
       launch: {
         factory: hint.factory,
         token: decoded.token,
-        curve: decoded.curve,
-        venue: decoded.venue,
+        pool: decoded.pool,
         positionId: decoded.positionId,
         creator: decoded.creator,
         name: decoded.name,
@@ -457,13 +411,12 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
 
   const positiveBalances = [...balances.entries()].filter(([, balance]) => balance > 0n);
   const totalSupply = positiveBalances.reduce((sum, [, balance]) => sum + balance, 0n);
-  const curveAddress = launch.curve.toLowerCase();
+  const poolAddress = launch.pool.toLowerCase();
   const creatorBalance = balances.get(launch.creator.toLowerCase()) ?? 0n;
-  const curveBalance = balances.get(curveAddress) ?? 0n;
-  const permanentLiquidityLockBalance = balances.get(PERMANENT_LIQUIDITY_LOCK) ?? 0n;
-  const visibleHolders = positiveBalances.filter(([address]) => address !== PERMANENT_LIQUIDITY_LOCK);
-  const topTenExcludingCurve = positiveBalances
-    .filter(([address]) => address !== curveAddress && address !== PERMANENT_LIQUIDITY_LOCK)
+  const poolBalance = balances.get(poolAddress) ?? 0n;
+  const visibleHolders = positiveBalances;
+  const topTenExcludingPool = positiveBalances
+    .filter(([address]) => address !== poolAddress)
     .map(([, balance]) => balance)
     .sort((left, right) => left === right ? 0 : left > right ? -1 : 1)
     .slice(0, 10)
@@ -476,8 +429,8 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
       address: address as Address,
       balance: formatUnits(balance, 18),
       percent: percentOf(balance, totalSupply),
-      role: address === curveAddress
-        ? launch.venue === "uniswap-v3" ? "Pool" : "Curve"
+      role: address === poolAddress
+        ? "Pool"
         : address === launch.creator.toLowerCase()
           ? "Creator"
           : "Holder",
@@ -488,11 +441,9 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
     holders: visibleHolders.length,
     topHolders,
     creatorPercent: percentOf(creatorBalance, totalSupply),
-    curvePercent: percentOf(curveBalance, totalSupply),
-    permanentLiquidityLockPercent: launch.venue === "uniswap-v3"
-      ? percentOf(curveBalance, totalSupply)
-      : percentOf(permanentLiquidityLockBalance, totalSupply),
-    topTenExcludingCurvePercent: percentOf(topTenExcludingCurve, totalSupply),
+    poolPercent: percentOf(poolBalance, totalSupply),
+    permanentLiquidityLockPercent: percentOf(poolBalance, totalSupply),
+    topTenExcludingPoolPercent: percentOf(topTenExcludingPool, totalSupply),
     ...checkpoint,
     generatedAt: new Date().toISOString(),
   };
@@ -521,7 +472,7 @@ function getTokenCache(tokenAddress: Address) {
 }
 
 function holderPersistentKey(tokenAddress: Address) {
-  return `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:holders:${tokenAddress.toLowerCase()}`;
+  return `arcorigin:${ARCORIGIN_NETWORK}:holders:${ARC_ACTIVE_FACTORY.toLowerCase()}:${tokenAddress.toLowerCase()}`;
 }
 
 function isUsableHolderSnapshot(snapshot: HolderSnapshot | null): snapshot is HolderSnapshot {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice Minimal canonical Uniswap V3 interfaces used by ArcOrigin migration contracts.
+/// @notice Minimal canonical Uniswap V3 interfaces used by ArcOrigin launch contracts.
 interface IUniswapV3FactoryMinimal {
     function getPool(
         address tokenA,
