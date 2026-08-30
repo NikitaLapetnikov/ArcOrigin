@@ -1,7 +1,6 @@
 const hre = require("hardhat");
 
 const ARC_MAINNET_CHAIN_ID = 5_042n;
-const DEFAULT_RPC_URL = "https://rpc.blockdaemon.mainnet.arc.io";
 const ARC_USDC = "0x3600000000000000000000000000000000000000";
 const POOL_FEE = 10_000;
 
@@ -42,7 +41,8 @@ function assertEqual(label, actual, expected) {
 }
 
 async function main() {
-  const rpcUrl = process.env.ARC_MAINNET_RPC_URL?.trim() || DEFAULT_RPC_URL;
+  const rpcUrl = process.env.ARC_MAINNET_RPC_URL?.trim();
+  if (!rpcUrl) throw new Error("ARC_MAINNET_RPC_URL must be explicitly configured.");
   const provider = new hre.ethers.JsonRpcProvider(
     rpcUrl,
     Number(ARC_MAINNET_CHAIN_ID),
@@ -97,7 +97,7 @@ async function main() {
   console.log(JSON.stringify({
     ready: true,
     checkedAt: new Date().toISOString(),
-    rpc: process.env.ARC_MAINNET_RPC_URL?.trim() ? "configured" : "public-fallback",
+    rpc: "configured",
     chainId: Number(network.chainId),
     blockNumber,
     explorer: "https://arc-mainnet.cloud.blockscout.com",

@@ -28,20 +28,4 @@ module.exports = {
         : [],
     },
   },
-  etherscan: {
-    apiKey: {
-      arcMainnet:
-        process.env.MAINNET_EXPLORER_API_KEY || "blockscout-api-key-not-required",
-    },
-    customChains: [
-      {
-        network: "arcMainnet",
-        chainId: 5042,
-        urls: {
-          apiURL: "https://arc-mainnet.cloud.blockscout.com/api",
-          browserURL: "https://arc-mainnet.cloud.blockscout.com",
-        },
-      },
-    ],
-  },
 };
