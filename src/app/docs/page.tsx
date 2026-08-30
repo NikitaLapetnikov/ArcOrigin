@@ -25,7 +25,7 @@ const contracts = [
   ["Uniswap V3 Router", ARC_UNISWAP_V3.router, "Buy and sell execution"],
 ] as const;
 
-const sections = ["overview", "launch", "trading", "fees", "events", "contracts", "risks"] as const;
+const sections = ["overview", "launch", "trading", "fees", "events", "contracts", "integrations", "risks"] as const;
 
 export default function DocsPage() {
   return <div className="relative overflow-hidden pb-24">
@@ -86,6 +86,17 @@ export default function DocsPage() {
         </Section>
         <Section id="contracts" title="Contracts">
           <div className="divide-y divide-line">{contracts.map(([label, address, detail]) => <div key={label} className="grid gap-2 py-4 sm:grid-cols-[180px_minmax(0,1fr)_auto] sm:items-center"><span className="text-slate-300">{label}</span><code className="break-all text-xs text-slate-500">{address}</code><a href={`${EXPLORER_URL}/address/${address}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-cyan">Explorer <ExternalLink className="size-3" /></a><span className="text-xs text-slate-600 sm:col-start-2">{detail}</span></div>)}</div>
+        </Section>
+        <Section id="integrations" title="Indexer integration">
+          <p>Screeners and analytics services can discover ArcOrigin launches from the Factory and enrich them with the public token list. The endpoint includes token and pool addresses, creator, image, website, X, Telegram, immutable auto-buyback status, and the address-bound Official ORIGIN marker.</p>
+          <Definition rows={[
+            ["Token list", "https://mainnet.arcorigin.xyz/api/tokenlist"],
+            ["Factory", ARC_ACTIVE_CONTRACTS.factory],
+            ["From block", ARC_ACTIVE_FACTORY_BLOCK.toString()],
+            ["Event", "TokenLaunched(address,address,address,string,string,uint256)"],
+            ["Platform logo", "https://mainnet.arcorigin.xyz/brand/arcorigin-logo-v2.png"],
+          ]} />
+          <Callout>The endpoint is public, requires no API key, permits cross-origin reads, and keeps metadata compatible with external DEX screeners.</Callout>
         </Section>
         <Section id="risks" title="Risks">
           <p>Tokens can be volatile and lose all value. Permanent liquidity prevents LP withdrawal but does not guarantee demand, price stability, token quality, or sufficient depth for a large trade. Smart contracts, wallets, RPC providers, Uniswap, and metadata gateways can fail.</p>
