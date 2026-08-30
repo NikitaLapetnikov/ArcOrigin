@@ -52,6 +52,10 @@ function createIndexedFallback(token: TokenData): OnchainTokenSnapshot {
   };
 }
 
+function numericBlock(value: string) {
+  return /^\d+$/.test(value) ? BigInt(value) : null;
+}
+
 export function useOnchainTokenSnapshot(token: TokenData) {
   const [snapshot, setSnapshot] = useState<OnchainTokenSnapshot>(() => createIndexedFallback(token));
   const [loading, setLoading] = useState(true);
@@ -64,6 +68,9 @@ export function useOnchainTokenSnapshot(token: TokenData) {
 
   const applyRefreshedSnapshot = useCallback((next: OnchainTokenSnapshot) => {
     setSnapshot((current) => {
+      const currentBlock = numericBlock(current.indexedBlock);
+      const nextBlock = numericBlock(next.indexedBlock);
+      if (currentBlock !== null && nextBlock !== null && nextBlock < currentBlock) return current;
       for (const hash of pendingTradeHashes.current) {
         if (!next.trades.some((trade) => trade.txHash.toLowerCase() === hash)) return current;
         pendingTradeHashes.current.delete(hash);
