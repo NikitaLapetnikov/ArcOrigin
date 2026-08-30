@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAddress } from "viem";
+import { prewarmHolderSnapshots } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshot, isTokenIndexRpcError } from "@/lib/onchain/token-index-snapshot";
 import { snapshotCacheControl } from "@/lib/onchain/snapshot-http-cache";
 
@@ -9,6 +11,9 @@ export async function GET(request: NextRequest) {
   try {
     const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
     const result = await getTokenIndexSnapshot(forceRefresh);
+    void prewarmHolderSnapshots(
+      result.snapshot?.tokens.map((token) => getAddress(token.address)) ?? [],
+    );
     return NextResponse.json(result, {
       headers: {
         "Cache-Control": snapshotCacheControl({

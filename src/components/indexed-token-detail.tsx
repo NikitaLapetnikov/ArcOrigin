@@ -15,13 +15,28 @@ import {
   EXPLORER_URL,
   isOfficialOriginToken,
 } from "@/lib/chains";
+import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
+import type { TokenData } from "@/lib/types";
 import { number, shortAddress, tickerLabel, utcDateTime } from "@/lib/utils";
 
-export function IndexedTokenDetail({ address }: { address: string }) {
+export function IndexedTokenDetail({
+  address,
+  initialToken,
+  initialHolderSnapshot,
+}: {
+  address: string;
+  initialToken: TokenData | null;
+  initialHolderSnapshot: HolderSnapshot | null;
+}) {
   const [copied, setCopied] = useState(false);
   const { tokens, loading, error, refresh } = useFactoryTokenIndex({ includeMarketData: false, allowCache: true });
-  const token = tokens.find((item) => item.address.toLowerCase() === address.toLowerCase());
-  const { snapshot: holderSnapshot } = useHolderSnapshot(token, Boolean(token));
+  const token = tokens.find((item) => item.address.toLowerCase() === address.toLowerCase())
+    ?? (initialToken?.address.toLowerCase() === address.toLowerCase() ? initialToken : undefined);
+  const { snapshot: holderSnapshot } = useHolderSnapshot(
+    token,
+    Boolean(token),
+    initialHolderSnapshot,
+  );
 
   if (!token) {
     return <div className="container-shell py-12">
@@ -109,6 +124,7 @@ export function IndexedTokenDetail({ address }: { address: string }) {
 
     <OnchainTokenDashboard
       token={token}
+      initialHolderSnapshot={initialHolderSnapshot}
       rightRail={<>
         <BuySellPanel token={token} />
         <TokenInfoPanel token={token} />

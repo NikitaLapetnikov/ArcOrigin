@@ -82,6 +82,23 @@ function readCanonicalBlock(blockNumber: bigint) {
   return publicClient.getBlock({ blockNumber });
 }
 
+function isUsableTokenIndexSnapshot(snapshot: TokenIndexSnapshot | null): snapshot is TokenIndexSnapshot {
+  return Boolean(snapshot && Array.isArray(snapshot.tokens) && typeof snapshot.generatedAt === "string");
+}
+
+/** Returns the last confirmed snapshot without blocking the initial page on RPC. */
+export async function getCachedTokenIndexSnapshot() {
+  if (isUsableTokenIndexSnapshot(state.snapshot)) return state.snapshot;
+  const persisted = await readPersistentSnapshot<TokenIndexSnapshot>(PERSISTENT_CACHE_KEY);
+  if (isUsableTokenIndexSnapshot(persisted)) return persisted;
+  if (verifiedV4Tokens.length === 0) return null;
+  return {
+    tokens: verifiedV4Tokens,
+    indexedBlock: String(Math.max(...verifiedV4Tokens.map((token) => token.launchBlock ?? 0))),
+    generatedAt: new Date().toISOString(),
+  } satisfies TokenIndexSnapshot;
+}
+
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

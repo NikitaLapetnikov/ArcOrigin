@@ -143,10 +143,16 @@ async function requestSnapshot(token: TokenData, forceRefresh: boolean) {
   return request;
 }
 
-export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = false) {
+export function useHolderSnapshot(
+  token: TokenData | undefined,
+  autoRefresh = false,
+  initialSnapshot: HolderSnapshot | null = null,
+) {
   const address = token?.address ?? "";
-  const [snapshot, setSnapshot] = useState<HolderSnapshot | null>(null);
-  const [savedAt, setSavedAt] = useState(0);
+  const [snapshot, setSnapshot] = useState<HolderSnapshot | null>(initialSnapshot);
+  const [savedAt, setSavedAt] = useState(
+    () => initialSnapshot ? Date.parse(initialSnapshot.generatedAt) || Date.now() : 0,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [stale, setStale] = useState(false);
@@ -199,6 +205,18 @@ export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = fa
     if (cached) {
       setSnapshot(cached.snapshot);
       setSavedAt(cached.savedAt);
+    } else if (initialSnapshot) {
+      const initialSavedAt = Date.parse(initialSnapshot.generatedAt) || Date.now();
+      setSnapshot(initialSnapshot);
+      setSavedAt(initialSavedAt);
+      try {
+        window.localStorage.setItem(storageKey(address), JSON.stringify({
+          savedAt: initialSavedAt,
+          snapshot: initialSnapshot,
+        } satisfies CachedHolderSnapshot));
+      } catch {
+        // The server-provided snapshot still renders when storage is unavailable.
+      }
     } else {
       setSnapshot(null);
       setSavedAt(0);
@@ -213,7 +231,7 @@ export function useHolderSnapshot(token: TokenData | undefined, autoRefresh = fa
     };
     window.addEventListener("arcorigin:holders-updated", handleUpdate);
     return () => window.removeEventListener("arcorigin:holders-updated", handleUpdate);
-  }, [address, autoRefresh, refresh]);
+  }, [address, autoRefresh, initialSnapshot, refresh]);
 
   useEffect(() => {
     if (!token || !address) return;

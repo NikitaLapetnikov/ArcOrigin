@@ -11,6 +11,7 @@ import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
 import { EXPLORER_URL, arcChain } from "@/lib/chains";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
+import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import { snapshotRevalidationDelay } from "@/lib/onchain/snapshot-revalidation";
 import type { TokenData, Trade } from "@/lib/types";
 import { money, number, tickerLabel } from "@/lib/utils";
@@ -215,9 +216,11 @@ export function useOnchainTokenSnapshot(token: TokenData) {
 
 export function OnchainTokenDashboard({
   token,
+  initialHolderSnapshot,
   rightRail,
 }: {
   token: TokenData;
+  initialHolderSnapshot?: HolderSnapshot | null;
   rightRail?: React.ReactNode;
 }) {
   const { snapshot, loading, error, stale, refresh } = useOnchainTokenSnapshot(token);
@@ -228,7 +231,11 @@ export function OnchainTokenDashboard({
     loading: holderLoading,
     error: holderError,
     refresh: refreshHolders,
-  } = useHolderSnapshot(token, activeTab === "Holders" || activeTab === "My position");
+  } = useHolderSnapshot(
+    token,
+    activeTab === "Holders" || activeTab === "My position",
+    initialHolderSnapshot,
+  );
 
   const permanentLiquidityMode = usesPermanentLiquidityMode(token.virtualUsdcReserve, token.targetUSDC);
   const remainingToGraduation = Math.max(0, token.targetUSDC - snapshot.raisedUsdc);

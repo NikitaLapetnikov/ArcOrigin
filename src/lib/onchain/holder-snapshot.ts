@@ -27,6 +27,7 @@ const HOLDER_CACHE_TTL_MS = 45_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const MAX_TOKEN_CACHES = 50;
+const MAX_PREWARM_TOKENS = 20;
 const RPC_REQUEST_GAP_MS = 220;
 const EXPLORER_BLOCK_BATCH_SIZE = 10;
 const ACTIVE_FACTORY_INDEXES = ARC_ACTIVE_FACTORY_INDEXES.filter(
@@ -483,12 +484,46 @@ function getTokenCache(tokenAddress: Address) {
   return entry;
 }
 
+function holderPersistentKey(tokenAddress: Address) {
+  return `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:holders:${tokenAddress.toLowerCase()}`;
+}
+
+function isUsableHolderSnapshot(snapshot: HolderSnapshot | null): snapshot is HolderSnapshot {
+  return Boolean(
+    snapshot
+    && Number.isFinite(snapshot.holders)
+    && Array.isArray(snapshot.topHolders)
+    && typeof snapshot.indexedBlock === "string"
+    && typeof snapshot.generatedAt === "string",
+  );
+}
+
+async function loadPersistedHolderSnapshot(tokenAddress: Address) {
+  const cache = getTokenCache(tokenAddress);
+  if (cache.snapshot) return cache.snapshot;
+  const persisted = await readPersistentSnapshot<HolderSnapshot>(holderPersistentKey(tokenAddress));
+  return isUsableHolderSnapshot(persisted) ? persisted : null;
+}
+
+/**
+ * Returns the last confirmed Redis snapshot without making an RPC request.
+ * The client revalidates it in the background after rendering.
+ */
+export async function getCachedHolderSnapshot(tokenAddress: Address) {
+  return loadPersistedHolderSnapshot(tokenAddress);
+}
+
+export async function prewarmHolderSnapshots(tokenAddresses: Address[]) {
+  const uniqueAddresses = [...new Set(tokenAddresses.map((address) => address.toLowerCase()))]
+    .slice(0, MAX_PREWARM_TOKENS) as Address[];
+  await Promise.allSettled(uniqueAddresses.map((address) => getHolderSnapshot(address)));
+}
+
 export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = false, hint?: HolderLaunchHint) {
   const cache = getTokenCache(tokenAddress);
-  const persistentKey =
-    `arcorigin:${ARCORIGIN_NETWORK}:v${ARCORIGIN_PROTOCOL_VERSION}:holders:${tokenAddress.toLowerCase()}`;
+  const persistentKey = holderPersistentKey(tokenAddress);
   if (!cache.snapshot) {
-    let persisted = await readPersistentSnapshot<HolderSnapshot>(persistentKey);
+    let persisted = await loadPersistedHolderSnapshot(tokenAddress);
     const upgraded = await upgradeLegacyCanonicalCheckpoint(persisted, readCanonicalBlock);
     if (upgraded) {
       persisted = upgraded;
@@ -498,8 +533,7 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
       ? await getCanonicalCheckpointStatus(persisted, readCanonicalBlock)
       : "invalid";
     if (
-      persisted?.indexedBlock
-      && Array.isArray(persisted.topHolders)
+      isUsableHolderSnapshot(persisted)
       && (checkpointStatus === "canonical" || checkpointStatus === "unavailable")
     ) {
       cache.snapshot = persisted;
