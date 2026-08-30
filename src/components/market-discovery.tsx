@@ -260,14 +260,14 @@ function Pagination({ page, totalPages, onPage }: { page: number; totalPages: nu
     .filter((item) => item === 1 || item === totalPages || Math.abs(item - page) <= 1);
 
   return <nav aria-label="Token pages" className="flex items-center justify-center gap-1 border-t border-line px-4 py-5">
-    <button type="button" aria-label="Previous page" disabled={page === 1} onClick={() => onPage(page - 1)} className="grid size-9 place-items-center rounded-lg border border-line text-slate-400 transition hover:border-cyan/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"><ChevronLeft className="size-4"/></button>
+    <button type="button" aria-label="Previous page" disabled={page === 1} onClick={() => onPage(page - 1)} className="grid size-9 place-items-center rounded-lg border border-line text-slate-400 transition hover:border-cyan/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"><ChevronLeft className="size-4"/></button>
     {pages.map((item, index) => {
       const previous = pages[index - 1];
       return <span key={item} className="contents">
         {previous && item - previous > 1 && <span className="px-2 text-sm text-slate-600">…</span>}
-        <button type="button" aria-current={item === page ? "page" : undefined} onClick={() => onPage(item)} className={item === page ? "grid size-9 place-items-center rounded-lg bg-cyan text-sm font-semibold text-ink" : "grid size-9 place-items-center rounded-lg text-sm text-slate-400 transition hover:bg-white/[.04] hover:text-white"}>{item}</button>
+        <button type="button" aria-current={item === page ? "page" : undefined} onClick={() => onPage(item)} className={item === page ? "grid size-9 place-items-center rounded-lg bg-cyan text-sm font-semibold text-[#041018]" : "grid size-9 place-items-center rounded-lg text-sm text-slate-400 transition hover:bg-white/[.04] hover:text-white"}>{item}</button>
       </span>;
     })}
-    <button type="button" aria-label="Next page" disabled={page === totalPages} onClick={() => onPage(page + 1)} className="grid size-9 place-items-center rounded-lg border border-line text-slate-400 transition hover:border-cyan/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"><ChevronRight className="size-4"/></button>
+    <button type="button" aria-label="Next page" disabled={page === totalPages} onClick={() => onPage(page + 1)} className="grid size-9 place-items-center rounded-lg border border-line text-slate-400 transition hover:border-cyan/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"><ChevronRight className="size-4"/></button>
   </nav>;
 }

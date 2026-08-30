@@ -131,7 +131,7 @@ export function FeeVaultWithdrawal() {
       </dl>
       {!isConnected && <WarningBox>Connect the Vault owner wallet in the header. No seed phrase or private key is required.</WarningBox>}
       {isConnected && vault && !authorized && <WarningBox>The connected wallet is not authorized to withdraw this Vault.</WarningBox>}
-      {error && <p className="rounded-xl border border-red-400/20 bg-red-400/[.06] p-3 text-sm text-red-200">{error}</p>}
+      {error && <p className="rounded-xl border border-rose-400/20 bg-rose-400/[.06] p-3 text-sm text-rose-200">{error}</p>}
       {hash && <a href={`${EXPLORER_URL}/tx/${hash}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-medium text-cyan">
         Withdrawal confirmed · {shortAddress(hash)} <ExternalLink className="size-4" />
       </a>}

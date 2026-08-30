@@ -667,7 +667,7 @@ function ProfileEditor({
     <div className="w-full max-w-md overflow-hidden rounded-[24px] border border-line bg-[#0b101a] shadow-[0_30px_100px_rgba(0,0,0,.6)]">
       <div className="relative h-28 overflow-hidden border-b border-line bg-[radial-gradient(circle_at_50%_0%,rgba(57,189,248,.22),transparent_68%)]">
         <div className="absolute inset-0 grid-line opacity-50" />
-        <button type="button" aria-label="Close profile editor" onClick={onClose} disabled={saving} className="absolute right-4 top-4 grid size-9 place-items-center rounded-xl border border-line bg-black/25 text-slate-300 transition hover:bg-white/[.06] hover:text-white disabled:opacity-40"><X className="size-4" /></button>
+        <button type="button" aria-label="Close profile editor" onClick={onClose} disabled={saving} className="absolute right-4 top-4 grid size-9 place-items-center rounded-xl border border-line bg-black/25 text-slate-300 transition hover:bg-white/[.06] hover:text-white disabled:opacity-60"><X className="size-4" /></button>
       </div>
       <div className="p-6">
         <div className="-mt-14 mb-6 flex items-end gap-3">
@@ -676,7 +676,7 @@ function ProfileEditor({
             <ImagePlus className="size-4" />Choose picture
             <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={onChoose} disabled={saving} />
           </label>
-          {(preview || hasSavedAvatar) && <button type="button" aria-label="Remove profile picture" onClick={onRemove} disabled={saving} className="mb-1 grid size-10 place-items-center rounded-[10px] border border-rose-400/15 bg-rose-400/[.06] text-rose-300 transition hover:bg-rose-400/10 disabled:opacity-40"><Trash2 className="size-4" /></button>}
+          {(preview || hasSavedAvatar) && <button type="button" aria-label="Remove profile picture" onClick={onRemove} disabled={saving} className="mb-1 grid size-10 place-items-center rounded-[10px] border border-rose-400/15 bg-rose-400/[.06] text-rose-300 transition hover:bg-rose-400/10 disabled:opacity-60"><Trash2 className="size-4" /></button>}
         </div>
         <div className="flex items-center gap-2">
           <h2 id="edit-profile-title" className="text-2xl font-semibold tracking-[-.04em] text-white">Edit profile</h2>

@@ -875,7 +875,7 @@ function ChartIconButton({
     aria-pressed={active}
     disabled={disabled}
     onClick={onClick}
-    className={`grid size-8 shrink-0 place-items-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-25 ${active ? "bg-cyan/10 text-cyan" : "text-slate-500 hover:bg-white/[.05] hover:text-slate-200"}`}
+    className="control-button grid size-8 shrink-0 place-items-center rounded-md transition disabled:cursor-not-allowed"
   >{children}</button>;
 }
 
@@ -892,7 +892,7 @@ function ChartTextButton({
     type="button"
     aria-pressed={active}
     onClick={onClick}
-    className={`flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs transition ${active ? "bg-cyan/10 text-cyan" : "text-slate-500 hover:bg-white/[.05] hover:text-slate-200"}`}
+    className="control-button flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs transition"
   >{children}</button>;
 }
 
@@ -911,7 +911,7 @@ function MenuToggle({
   active: boolean;
   onClick: () => void;
 }) {
-  return <button type="button" onClick={onClick} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[.04]">
+  return <button type="button" aria-pressed={active} onClick={onClick} className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/[.04]">
     <span><span className="block text-xs font-medium text-slate-200">{label}</span><span className="mt-0.5 block text-[10px] text-slate-600">{detail}</span></span>
     <span className={`h-4 w-7 rounded-full p-0.5 transition ${active ? "bg-cyan" : "bg-white/10"}`}><span className={`block size-3 rounded-full bg-[#08100e] transition-transform ${active ? "translate-x-3" : ""}`}/></span>
   </button>;
