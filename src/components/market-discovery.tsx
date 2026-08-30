@@ -8,6 +8,7 @@ import { calculateMomentumScore } from "@/lib/scoring";
 import type { LatestBuyRecord, TokenData, Trade } from "@/lib/types";
 import { money, number, tickerLabel, utcDateTime } from "@/lib/utils";
 import { TokenIcon } from "@/components/ui";
+import { TokenLabels } from "@/components/token-labels";
 
 type DiscoveryTab = "new" | "old" | "trending" | "crossed" | "marketCap" | "volume" | "watchlist";
 
@@ -184,6 +185,7 @@ export function LatestBuys({
             <ArrowUpRight className="size-4 shrink-0 text-slate-600 transition group-hover:text-cyan" />
           </div>
           <p className="mt-1.5 truncate text-sm font-semibold text-emerald-300">+{number(trade.tokens)} {tickerLabel(token.ticker)}</p>
+          <div className="mt-2"><TokenLabels token={token} compact /></div>
           <div className="mt-2 flex items-center justify-between gap-2 border-t border-line/70 pt-2 text-[11px] font-medium text-slate-500">
             <span>{money(trade.usdc)}</span>
             <span className="truncate">{utcDateTime(trade.timestamp).replace(" UTC", "")}</span>
@@ -233,6 +235,7 @@ function TokenMarketCard({ token, rank }: { token: TokenData; rank?: number }) {
       <div className="min-w-0">
         <p className="truncate text-base font-semibold tracking-[-.02em] text-white">{token.name}</p>
         <p className="mt-1.5 font-mono text-xs text-slate-400">{tickerLabel(token.ticker)}</p>
+        <div className="mt-2"><TokenLabels token={token} compact /></div>
       </div>
       <ArrowUpRight className="mt-0.5 size-[18px] shrink-0 text-slate-600 transition group-hover:text-cyan"/>
     </div>

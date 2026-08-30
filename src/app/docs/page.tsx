@@ -5,6 +5,7 @@ import {
   ARCORIGIN_START_MARKET_CAP_USDC,
   ARC_ACTIVE_CONTRACTS,
   ARC_ACTIVE_FACTORY_BLOCK,
+  ARC_OFFICIAL_ORIGIN_TOKEN,
   ARC_UNISWAP_V3,
   EXPLORER_URL,
   arcChain,
@@ -52,6 +53,7 @@ export default function DocsPage() {
         <Section id="overview" title="Overview">
           <p>ArcOrigin is non-custodial. Every launch creates a one-billion-token fixed supply and immediately initializes its canonical token/USDC pool at a 5,000 USDC market cap. The LP NFT is sent to an immutable locker and cannot be withdrawn.</p>
           <p>There is no separate pricing contract and no migration lifecycle. The 50,000 USDC mark changes only the token status to Crossed; trading and liquidity stay in the same pool.</p>
+          <p>The Official ORIGIN label is address-bound to <code className="break-all text-xs text-cyan">{ARC_OFFICIAL_ORIGIN_TOKEN ?? "the canonical mainnet ORIGIN contract"}</code>; a copied name, symbol, or image cannot receive it. The Auto Buyback label is shown only when the immutable <code className="text-xs text-cyan">automaticBuyback</code> flag in the Factory token record is enabled.</p>
         </Section>
         <Section id="launch" title="Create a token">
           <ol className="grid gap-3">

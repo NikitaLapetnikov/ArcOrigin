@@ -34,6 +34,9 @@ export const EXPLORER_API_URL = ARCORIGIN_NETWORK === "mainnet"
   : process.env.NEXT_PUBLIC_ARC_TESTNET_EXPLORER_API_URL?.trim() || "https://testnet.arcscan.app/api";
 
 export const ARC_OFFICIAL_USDC = "0x3600000000000000000000000000000000000000" as Address;
+export const ARC_OFFICIAL_ORIGIN_TOKEN = ARCORIGIN_NETWORK === "mainnet"
+  ? "0xce9C0e29f8D5904bFAc3C8a79A0c9af00e6bDCcB" as Address
+  : null;
 export const ARC_MAINNET_UNISWAP_V3_FACTORY = "0xf0db7b58379503491d857db50ac9ece64c653918" as Address;
 export const ARC_MAINNET_UNISWAP_V3_POSITION_MANAGER = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377" as Address;
 export const ARC_MAINNET_UNISWAP_V3_QUOTER = "0x7dfd4f31be6814d2906bde155c3e1b146eac1468" as Address;
@@ -105,3 +108,7 @@ export const ARC_UNISWAP_V3 = {
 } as const;
 export const ARC_ACTIVE_FACTORY_INDEXES = [{ address: ARC_ACTIVE_FACTORY, fromBlock: ARC_ACTIVE_FACTORY_BLOCK }] as const;
 export function factoryForLaunchBlock() { return ARC_ACTIVE_FACTORY; }
+
+export function isOfficialOriginToken(address: string) {
+  return ARC_OFFICIAL_ORIGIN_TOKEN?.toLowerCase() === address.toLowerCase();
+}

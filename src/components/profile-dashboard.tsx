@@ -18,6 +18,7 @@ import {
   useWalletClient,
 } from "wagmi";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
+import { TokenLabels } from "@/components/token-labels";
 import { arcChain, EXPLORER_URL } from "@/lib/chains";
 import { erc20Abi } from "@/lib/contracts";
 import type { TokenData, Trade } from "@/lib/types";
@@ -614,13 +615,13 @@ function ActivityFeed({ trades, launches }: { trades: WalletTrade[]; launches: T
 function LaunchGrid({ tokens }: { tokens: TokenData[] }) {
   if (tokens.length === 0) return <EmptyPanel title="No launches from this wallet" body="Tokens created from this address will appear here after the factory transaction is confirmed." />;
   return <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">{tokens.map((token) => <Link key={token.address} href={`/tokens/${token.address}`} className="rounded-2xl border border-line bg-black/15 p-4 transition hover:border-cyan/25 hover:bg-white/[.025]">
-    <div className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image} className="size-12 rounded-xl" /><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><p className="mt-1 font-mono text-xs text-slate-500">{tickerLabel(token.ticker)}</p></div></div>
+    <div className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image} className="size-12 rounded-xl" /><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><p className="mt-1 font-mono text-xs text-slate-500">{tickerLabel(token.ticker)}</p><div className="mt-1.5"><TokenLabels token={token} compact /></div></div></div>
     <div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-xs"><span className="text-slate-500">{utcDateTime(token.launchedAt)}</span><span className="text-slate-300">{money(token.marketCap, true)} MC</span></div>
   </Link>)}</div>;
 }
 
 function TokenLabel({ token, compact = false }: { token: TokenData; compact?: boolean }) {
-  return <div className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image} className={compact ? "size-8 rounded-lg" : "size-10 rounded-xl"} /><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><p className="mt-0.5 font-mono text-[10px] text-slate-500">{tickerLabel(token.ticker)}</p></div></div>;
+  return <div className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image} className={compact ? "size-8 rounded-lg" : "size-10 rounded-xl"} /><div className="min-w-0"><p className="truncate font-semibold text-white">{token.name}</p><p className="mt-0.5 font-mono text-[10px] text-slate-500">{tickerLabel(token.ticker)}</p><div className="mt-1.5"><TokenLabels token={token} compact /></div></div></div>;
 }
 
 function EmptyPanel({ title, body, action = false }: { title: string; body: string; action?: boolean }) {

@@ -6,6 +6,7 @@ import { ArrowLeft, Check, Copy, ExternalLink } from "lucide-react";
 import { BuySellPanel } from "@/components/buy-sell-panel";
 import { OnchainTokenDashboard } from "@/components/onchain-token-dashboard";
 import { TokenInfoPanel } from "@/components/token-info-panel";
+import { TokenLabels } from "@/components/token-labels";
 import { Button, Panel, TokenIcon, WarningBox } from "@/components/ui";
 import { WatchlistButton } from "@/components/watchlist-button";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
@@ -79,6 +80,7 @@ export function IndexedTokenDetail({
               <h1 className="min-w-0 truncate pb-0.5 text-[27px] font-semibold leading-[1.15] tracking-[-.04em] text-white sm:text-[30px]">{token.name}</h1>
               <span className="shrink-0 text-sm font-medium text-slate-400">{tickerLabel(token.ticker)}</span>
             </div>
+            <div className="mt-2"><TokenLabels token={token} /></div>
             <button
               type="button"
               onClick={() => void copyContract(token.address)}

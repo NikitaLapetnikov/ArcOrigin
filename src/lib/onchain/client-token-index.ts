@@ -9,6 +9,7 @@ import {
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { calculateRiskScore } from "@/lib/scoring";
+import { factoryAbi } from "@/lib/contracts";
 import { normalizeTelegramUrl, normalizeWebsiteUrl, normalizeXUrl } from "@/lib/token-metadata";
 import type { TokenData } from "@/lib/types";
 
@@ -125,6 +126,7 @@ function createPendingToken(launch: ClientLaunch, creatorLaunches: number): Toke
     poolAddress: launch.pool,
     positionId: launch.positionId.toString(),
     factoryAddress: launch.factory,
+    automaticBuyback: false,
     creator: launch.creator,
     source: "onchain",
     creatorAllocationPercent: 0,
@@ -204,14 +206,18 @@ async function loadMetadata(metadataURI: string): Promise<ClientMetadata | null>
 }
 
 async function hydrateLaunch(launch: ClientLaunch, creatorLaunches: number): Promise<TokenData> {
-  const [totalSupplyRaw, metadataURI] = await publicClient.multicall({
+  const [totalSupplyRaw, metadataURI, tokenInfo] = await publicClient.multicall({
     allowFailure: false,
     multicallAddress: MULTICALL3_ADDRESS,
     contracts: [
       { address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" },
       { address: launch.token, abi: tokenConfigAbi, functionName: "metadataURI" },
+      { address: launch.factory, abi: factoryAbi, functionName: "getTokenInfo", args: [launch.token] },
     ],
   });
+  if (tokenInfo.token.toLowerCase() !== launch.token.toLowerCase() || tokenInfo.pool.toLowerCase() !== launch.pool.toLowerCase()) {
+    throw new Error("Factory token record does not match the indexed launch.");
+  }
   const metadata = await loadMetadata(metadataURI);
   const totalSupply = Number(formatUnits(totalSupplyRaw, 18));
   if (totalSupply <= 0) throw new Error("Factory token supply is invalid.");
@@ -230,6 +236,7 @@ async function hydrateLaunch(launch: ClientLaunch, creatorLaunches: number): Pro
   });
   return {
     ...createPendingToken(launch, creatorLaunches),
+    automaticBuyback: tokenInfo.automaticBuyback,
     image: metadata?.image,
     metadataURI,
     totalSupply,

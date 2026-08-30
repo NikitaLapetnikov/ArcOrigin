@@ -16,6 +16,7 @@ import {
 } from "@/lib/onchain/canonical-checkpoint";
 import { getFactoryLaunchIndex, type FactoryLaunch } from "@/lib/onchain/holder-snapshot";
 import { calculateRiskScore } from "@/lib/scoring";
+import { factoryAbi } from "@/lib/contracts";
 import { resolveTokenMetadata } from "@/lib/server/token-metadata-resolver";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 import type { CreatorProfile, TokenData } from "@/lib/types";
@@ -30,8 +31,10 @@ const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const REQUEST_WAIT_TIMEOUT_MS = 10_000;
 const PERSISTENT_CACHE_KEY = `arcorigin:${ARCORIGIN_NETWORK}:token-index:${ARC_ACTIVE_FACTORY.toLowerCase()}`;
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
+const TOKEN_INDEX_SCHEMA_VERSION = 2;
 
 type TokenIndexSnapshot = {
+  schemaVersion: number;
   tokens: TokenData[];
   indexedBlock: string;
   indexedBlockHash?: Hash;
@@ -71,7 +74,13 @@ function readCanonicalBlock(blockNumber: bigint) {
 }
 
 function isUsableSnapshot(snapshot: TokenIndexSnapshot | null): snapshot is TokenIndexSnapshot {
-  return Boolean(snapshot && Array.isArray(snapshot.tokens) && typeof snapshot.generatedAt === "string");
+  return Boolean(
+    snapshot
+    && snapshot.schemaVersion === TOKEN_INDEX_SCHEMA_VERSION
+    && Array.isArray(snapshot.tokens)
+    && snapshot.tokens.every((token) => typeof token.automaticBuyback === "boolean")
+    && typeof snapshot.generatedAt === "string",
+  );
 }
 
 export async function getCachedTokenIndexSnapshot() {
@@ -142,14 +151,18 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     return refreshed;
   }
 
-  const [totalSupplyRaw, metadataURI] = await withRpcRetry(() => publicClient.multicall({
+  const [totalSupplyRaw, metadataURI, tokenInfo] = await withRpcRetry(() => publicClient.multicall({
     allowFailure: false,
     multicallAddress: MULTICALL3_ADDRESS,
     contracts: [
       { address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" },
       { address: launch.token, abi: tokenConfigAbi, functionName: "metadataURI" },
+      { address: launch.factory, abi: factoryAbi, functionName: "getTokenInfo", args: [launch.token] },
     ],
   }));
+  if (tokenInfo.token.toLowerCase() !== launch.token.toLowerCase() || tokenInfo.pool.toLowerCase() !== launch.pool.toLowerCase()) {
+    throw new Error("Factory token record does not match the indexed launch.");
+  }
   const metadata = await resolveTokenMetadata(metadataURI);
   const totalSupply = Number(formatUnits(totalSupplyRaw, 18));
   if (totalSupply <= 0) throw new Error("Factory token supply is invalid.");
@@ -186,6 +199,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     poolAddress: launch.pool,
     positionId: launch.positionId.toString(),
     factoryAddress: launch.factory,
+    automaticBuyback: tokenInfo.automaticBuyback,
     creator: launch.creator,
     source: "onchain",
     creatorAllocationPercent: 0,
@@ -237,7 +251,7 @@ async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot
       creatorCounts.get(launch.creator.toLowerCase()) ?? 1,
     ))));
   }
-  return { tokens, ...checkpoint, generatedAt: new Date().toISOString() };
+  return { schemaVersion: TOKEN_INDEX_SCHEMA_VERSION, tokens, ...checkpoint, generatedAt: new Date().toISOString() };
 }
 
 export async function getTokenIndexSnapshot(forceRefresh = false) {

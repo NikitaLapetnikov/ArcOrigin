@@ -62,6 +62,8 @@ export type TokenData = {
   poolAddress?: string;
   positionId?: string;
   factoryAddress?: string;
+  /** Immutable Factory launch option, read directly from getTokenInfo. */
+  automaticBuyback?: boolean;
   source: "onchain";
   creatorAllocationPercent?: number;
   launchTxHash?: string;

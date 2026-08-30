@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowUpRight, Flame } from "lucide-react";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
+import { TokenLabels } from "@/components/token-labels";
 import { arcChain } from "@/lib/chains";
 import { calculateMomentumScore } from "@/lib/scoring";
 import { money, tickerLabel } from "@/lib/utils";
@@ -20,7 +21,7 @@ export function TrendingMarket() {
       const onchainUnavailable = isPartial || (loading && indexedTokens.length === 0);
       return <Link href={`/tokens/${token.address}`} key={token.address} className="grid items-center gap-4 border-b border-line/70 p-4 transition last:border-0 hover:bg-white/[.025] md:grid-cols-[56px_1.3fr_1fr_1fr_1fr_auto]">
         <div className="flex items-center gap-2"><span className="font-mono text-lg text-slate-600">{String(index + 1).padStart(2,"0")}</span>{index < 3 && <Flame className="size-4 text-amber-300"/>}</div>
-        <div className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div><p className="font-semibold text-white">{token.name}</p><p className="text-[10px] text-slate-500">{tickerLabel(token.ticker)}</p></div></div>
+        <div className="flex items-center gap-3"><TokenIcon label={token.icon} image={token.image}/><div><p className="font-semibold text-white">{token.name}</p><p className="text-[10px] text-slate-500">{tickerLabel(token.ticker)}</p><div className="mt-1.5"><TokenLabels token={token} compact /></div></div></div>
         <div><p className="text-[10px] font-medium uppercase tracking-[.08em] text-slate-600">Market cap</p><p className="mt-1 text-lg font-semibold text-white">{onchainUnavailable ? "—" : money(token.marketCap,true)}</p></div>
         <div><p className="font-mono text-[9px] uppercase tracking-wider text-slate-600">Volume</p><p className="mt-1 text-sm text-slate-200">{onchainUnavailable ? "RPC unavailable" : money(token.volume24h,true)}</p></div>
         <div><div className="mb-2 flex justify-between text-[10px] text-slate-500"><span>Crossed</span><span>{onchainUnavailable ? "—" : `${token.crossProgress.toFixed(2)}%`}</span></div><Progress value={onchainUnavailable ? 0 : token.crossProgress}/></div>
