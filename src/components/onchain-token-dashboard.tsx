@@ -304,7 +304,7 @@ export function OnchainTokenDashboard({
       </div>
       <KLineTokenChart
         data={snapshot.chart}
-        trades={snapshot.trades}
+        trades={walletTrades}
         tokenName={token.name}
         ticker={token.ticker}
         tokenAddress={token.address}

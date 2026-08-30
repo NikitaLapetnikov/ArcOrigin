@@ -511,7 +511,7 @@ export function KLineTokenChart({
         <IconButton label="Zoom out" onClick={() => zoom(.8)}><ZoomOut className="size-4" /></IconButton>
         <IconButton label="Undo drawing" active={drawingHistory.length > 0} onClick={undoDrawing}><Undo2 className="size-4" /></IconButton>
         <IconButton label="Redo drawing" active={redoHistory.length > 0} onClick={redoDrawing}><Redo2 className="size-4" /></IconButton>
-        <div className="relative"><IconButton label="Chart settings" active={settingsOpen} onClick={() => { setSettingsOpen((value) => !value); setIndicatorsOpen(false); setChartTypeOpen(false); }}><Settings2 className="size-4" /></IconButton>{settingsOpen && <ChartMenu right><Toggle label="Grid" value="Chart grid" active={showGrid} onClick={() => setShowGrid((value) => !value)} /><Toggle label="Trade markers" value="Verified trades" active={showMarkers} onClick={() => setShowMarkers((value) => !value)} /></ChartMenu>}</div>
+        <div className="relative"><IconButton label="Chart settings" active={settingsOpen} onClick={() => { setSettingsOpen((value) => !value); setIndicatorsOpen(false); setChartTypeOpen(false); }}><Settings2 className="size-4" /></IconButton>{settingsOpen && <ChartMenu right><Toggle label="Grid" value="Chart grid" active={showGrid} onClick={() => setShowGrid((value) => !value)} /><Toggle label="My trade markers" value="Connected wallet only" active={showMarkers} onClick={() => setShowMarkers((value) => !value)} /></ChartMenu>}</div>
         <IconButton label={isFullscreen ? "Exit fullscreen" : "Fullscreen"} active={isFullscreen} onClick={() => void toggleFullscreen()}><Expand className="size-4" /></IconButton>
         <IconButton label="Capture chart screenshot" onClick={capture}><Camera className="size-4" /></IconButton>
       </div>
@@ -528,7 +528,7 @@ export function KLineTokenChart({
         <IconButton label="Freehand brush" active={tool === "brush"} onClick={() => chooseTool("brush")}><Brush className="size-4" /></IconButton>
         <IconButton label="Measure price and time" active={tool === "arcMeasure"} onClick={() => chooseTool("arcMeasure")}><Ruler className="size-4" /></IconButton>
         <span className="my-1 h-px w-6 bg-line" />
-        <IconButton label="Show trade markers" active={showMarkers} onClick={() => setShowMarkers((value) => !value)}>{showMarkers ? <Eye className="size-4" /> : <EyeOff className="size-4" />}</IconButton>
+        <IconButton label="Show my trade markers" active={showMarkers} onClick={() => setShowMarkers((value) => !value)}>{showMarkers ? <Eye className="size-4" /> : <EyeOff className="size-4" />}</IconButton>
         <IconButton label="Clear drawings" onClick={clearDrawings}><Trash2 className="size-4" /></IconButton>
       </aside>
       <div className="relative w-full min-w-0 overflow-hidden">
