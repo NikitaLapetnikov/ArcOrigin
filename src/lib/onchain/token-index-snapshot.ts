@@ -4,6 +4,8 @@ import { formatUnits, type Address, type Hash } from "viem";
 import {
   ARCORIGIN_NETWORK,
   ARCORIGIN_PROTOCOL_VERSION,
+  ARCORIGIN_V7_CROSS_MARKET_CAP_USDC,
+  ARCORIGIN_V7_START_MARKET_CAP_USDC,
   ARC_ACTIVE_FACTORY,
   arcChain,
 } from "@/lib/chains";
@@ -181,6 +183,88 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     return token;
   }
 
+  if (launch.venue === "uniswap-v3") {
+    const [totalSupplyRaw, metadataURI] = await withRpcRetry(
+      () => publicClient.multicall({
+        allowFailure: false,
+        multicallAddress: MULTICALL3_ADDRESS,
+        contracts: [
+          { address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" },
+          { address: launch.token, abi: tokenConfigAbi, functionName: "metadataURI" },
+        ],
+      }),
+    );
+    const metadata = await resolveTokenMetadata(metadataURI);
+    const totalSupply = Number(formatUnits(totalSupplyRaw, 18));
+    if (totalSupply <= 0) throw new Error("Factory V7 token supply is invalid.");
+    const launchPrice = ARCORIGIN_V7_START_MARKET_CAP_USDC / totalSupply;
+    const risk = calculateRiskScore({
+      fixedSupply: true,
+      standardTemplate: true,
+      noBlacklist: true,
+      noHiddenMint: true,
+      creatorAllocationPercent: 0,
+      socialsPresent: Boolean(metadata?.website || metadata?.x),
+      verifiedTemplate: true,
+      holderConcentrationKnown: true,
+      topTenHolderPercent: 0,
+      previousCleanLaunches: 0,
+    });
+    const creatorProfile: CreatorProfile = {
+      address: launch.creator,
+      reputation: creatorLaunches > 1 ? 55 : 50,
+      launches: creatorLaunches,
+      graduated: 0,
+      flagged: 0,
+      totalVolume: 0,
+      totalFees: 10,
+      verified: false,
+    };
+    const token: TokenData = {
+      name: launch.name,
+      ticker: launch.symbol,
+      icon: iconFor(launch.name, launch.symbol),
+      image: metadata?.image,
+      metadataURI,
+      address: launch.token,
+      poolAddress: launch.curve,
+      positionId: launch.positionId?.toString(),
+      venue: "uniswap-v3",
+      factoryAddress: launch.factory,
+      creator: launch.creator,
+      source: "onchain",
+      creatorAllocationPercent: 0,
+      launchTxHash: launch.transactionHash,
+      launchBlock: Number(launch.launchBlock),
+      launchedAt: launch.launchedAt,
+      totalSupply,
+      description: metadata?.description ?? `ArcOrigin V7 launch indexed from ${arcChain.name} Uniswap V3 events.`,
+      ageMinutes: Math.max(0, Math.floor((Date.now() / 1_000 - launch.launchedAt) / 60)),
+      price: launchPrice,
+      priceChange24h: 0,
+      marketCap: ARCORIGIN_V7_START_MARKET_CAP_USDC,
+      raisedUSDC: ARCORIGIN_V7_START_MARKET_CAP_USDC,
+      targetUSDC: ARCORIGIN_V7_CROSS_MARKET_CAP_USDC,
+      volume5m: 0,
+      volume1h: 0,
+      volume24h: 0,
+      buyers: 0,
+      sellers: 0,
+      trades: 0,
+      holders: 0,
+      curveProgress: ARCORIGIN_V7_START_MARKET_CAP_USDC / ARCORIGIN_V7_CROSS_MARKET_CAP_USDC * 100,
+      riskScore: risk.score,
+      status: "Live on V3",
+      chartData: [{ time: "Launch", timestamp: launch.launchedAt, price: launchPrice, volume: 0 }],
+      recentTrades: [],
+      riskLabels: risk.labels,
+      creatorProfile,
+      socials: { website: metadata?.website, x: metadata?.x, telegram: metadata?.telegram },
+    };
+    state.hydratedTokens.set(cacheKey, token);
+    return token;
+  }
+
   const [totalSupplyRaw, metadataURI, initialReserveRaw, virtualUsdcRaw, graduationRaw] = await withRpcRetry(
     () => publicClient.multicall({
       allowFailure: false,
@@ -232,6 +316,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     metadataURI,
     address: launch.token,
     curveAddress: launch.curve,
+    venue: "curve",
     factoryAddress: launch.factory,
     creator: launch.creator,
     source: "onchain",

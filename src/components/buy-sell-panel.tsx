@@ -7,6 +7,7 @@ import {
   formatUnits,
   parseUnits,
   publicActions,
+  zeroAddress,
   type Address,
   type Hash,
   type PublicClient,
@@ -29,7 +30,9 @@ import {
   bondingCurveAbi,
   erc20Abi,
   factoryAbi,
+  uniswapV3FactoryAbi,
   uniswapV3PoolAbi,
+  uniswapV3QuoterAbi,
   uniswapV3RouterAbi,
 } from "@/lib/contracts";
 import type { TokenData } from "@/lib/types";
@@ -116,16 +119,51 @@ async function readCurveQuoteFallback({
   curveAddress,
   side,
   input,
+  poolAddress,
 }: {
   clients: PublicClient[];
   tokenAddress: Address;
   curveAddress: Address;
   side: Side;
   input: bigint;
+  poolAddress?: Address;
 }): Promise<QuoteResponse> {
   let lastError: unknown = new Error(`No ${arcChain.name} fallback client is available.`);
   for (const client of clients) {
     try {
+      if (poolAddress) {
+        const uniswap = ARC_UNISWAP_V3;
+        if (!uniswap) throw new Error("The Uniswap V3 route is unavailable.");
+        const canonicalPool = await withRpcRetry(() => client.readContract({
+          address: uniswap.factory,
+          abi: uniswapV3FactoryAbi,
+          functionName: "getPool",
+          args: [tokenAddress, ARC_ACTIVE_CONTRACTS.usdc, uniswap.fee],
+        }), 2);
+        if (
+          canonicalPool === zeroAddress ||
+          canonicalPool.toLowerCase() !== poolAddress.toLowerCase()
+        ) throw new Error("The launch pool is not canonical.");
+        const { result } = await withRpcRetry(() => client.simulateContract({
+          address: uniswap.quoter,
+          abi: uniswapV3QuoterAbi,
+          functionName: "quoteExactInputSingle",
+          args: [{
+            tokenIn: side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : tokenAddress,
+            tokenOut: side === "Buy" ? tokenAddress : ARC_ACTIVE_CONTRACTS.usdc,
+            amountIn: input,
+            fee: uniswap.fee,
+            sqrtPriceLimitX96: 0n,
+          }],
+        }), 2);
+        return {
+          output: result[0].toString(),
+          fee: (input * BigInt(uniswap.fee) / 1_000_000n).toString(),
+          venue: "uniswap-v3",
+          spender: uniswap.router,
+          pool: canonicalPool,
+        };
+      }
       const tokenInfo = await withRpcRetry(() => client.readContract({
         address: ARC_ACTIVE_CONTRACTS.factory,
         abi: factoryAbi,
@@ -182,10 +220,13 @@ async function estimatePriorityFees(client: PublicClient, priority: Priority): P
 }
 
 export function BuySellPanel({ token }: { token: TokenData }) {
+  if (token.poolAddress) {
+    return <LiveBuySellPanel token={token} curveAddress={token.poolAddress as Address} />;
+  }
   if (token.curveAddress) {
     return <LiveBuySellPanel token={token} curveAddress={token.curveAddress as Address} />;
   }
-  return <div id="trade-panel" className="panel scroll-mt-28 p-5"><Badge tone="warn">Onchain data unavailable</Badge><p className="mt-4 text-sm leading-6 text-slate-400">The indexed Factory event did not include a usable bonding-curve address. Trading is disabled.</p></div>;
+  return <div id="trade-panel" className="panel scroll-mt-28 p-5"><Badge tone="warn">Onchain data unavailable</Badge><p className="mt-4 text-sm leading-6 text-slate-400">The indexed Factory event did not include a usable market address. Trading is disabled.</p></div>;
 }
 
 function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddress: Address }) {
@@ -335,6 +376,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
         curveAddress,
         side,
         input,
+        poolAddress: token.poolAddress as Address | undefined,
       });
     }
     if (
@@ -363,7 +405,9 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
         }));
         throw new Error(`This input exceeds the remaining curve capacity. Maximum buy: ${displayUnits(maximum, 6)} USDC.`);
       }
-      throw new Error(side === "Sell" ? "The curve has insufficient USDC reserves for this sale." : "The curve returned zero tokens.");
+      throw new Error(side === "Sell"
+        ? `The ${token.poolAddress ? "pool" : "curve"} has insufficient USDC reserves for this sale.`
+        : `The ${token.poolAddress ? "pool" : "curve"} returned zero tokens.`);
     }
     const slippageBps = BigInt(Math.round(slippage * 100));
     return {
@@ -387,6 +431,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
     slippageValid,
     token.status,
     token.address,
+    token.poolAddress,
     walletClient,
   ]);
 
@@ -579,7 +624,7 @@ function LiveBuySellPanel({ token, curveAddress }: { token: TokenData; curveAddr
           // Receipts also contain ERC-20 transfers and fee-vault events.
         }
       }
-      if (!confirmedTrade) throw new Error("Trade confirmed, but its curve event was not found.");
+      if (!confirmedTrade) throw new Error("Trade confirmed, but its market event was not found.");
       let confirmedAt = Math.floor(Date.now() / 1_000);
       try {
         const block = await withRpcRetry(

@@ -5,7 +5,9 @@ export type ArcNetworkKey = "testnet" | "mainnet";
 export const ARCORIGIN_NETWORK: ArcNetworkKey =
   process.env.NEXT_PUBLIC_ARC_NETWORK === "mainnet" ? "mainnet" : "testnet";
 export const ARCORIGIN_PROTOCOL_VERSION =
-  process.env.NEXT_PUBLIC_PROTOCOL_VERSION === "6" ? 6 : 5;
+  process.env.NEXT_PUBLIC_PROTOCOL_VERSION === "7"
+    ? 7
+    : process.env.NEXT_PUBLIC_PROTOCOL_VERSION === "6" ? 6 : 5;
 
 const mainnetRpcUrl = process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL?.trim() || "https://invalid.invalid";
 const mainnetExplorerUrl =
@@ -130,8 +132,8 @@ function configuredFactoryBlock(value: string | undefined) {
 }
 
 if (ARCORIGIN_NETWORK === "mainnet") {
-  if (ARCORIGIN_PROTOCOL_VERSION !== 6) {
-    throw new Error("Arc mainnet can only be built with Protocol V6.");
+  if (ARCORIGIN_PROTOCOL_VERSION !== 6 && ARCORIGIN_PROTOCOL_VERSION !== 7) {
+    throw new Error("Arc mainnet can only be built with Protocol V6 or V7.");
   }
   if (!process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL || !process.env.NEXT_PUBLIC_ARC_MAINNET_EXPLORER_URL) {
     throw new Error("Arc mainnet RPC and explorer URLs must be explicitly configured.");
@@ -250,7 +252,7 @@ export const ARC_ACTIVE_FACTORY_INDEXES = [
 ] as const;
 
 export function factoryForLaunchBlock(launchBlock?: number) {
-  if (ARCORIGIN_NETWORK === "mainnet" || ARCORIGIN_PROTOCOL_VERSION === 6) {
+  if (ARCORIGIN_NETWORK === "mainnet" || ARCORIGIN_PROTOCOL_VERSION >= 6) {
     return ARC_ACTIVE_FACTORY;
   }
   if (launchBlock === undefined) return ARC_ACTIVE_FACTORY;
@@ -271,3 +273,14 @@ export function usesV6Transactions(factoryAddress?: string) {
     factoryAddress?.toLowerCase() === ARC_ACTIVE_FACTORY.toLowerCase()
   );
 }
+
+export function usesV7Transactions(factoryAddress?: string) {
+  return (
+    ARCORIGIN_PROTOCOL_VERSION === 7 &&
+    Boolean(factoryAddress) &&
+    factoryAddress?.toLowerCase() === ARC_ACTIVE_FACTORY.toLowerCase()
+  );
+}
+
+export const ARCORIGIN_V7_START_MARKET_CAP_USDC = 5_000;
+export const ARCORIGIN_V7_CROSS_MARKET_CAP_USDC = 50_000;

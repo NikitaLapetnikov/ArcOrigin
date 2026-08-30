@@ -58,6 +58,8 @@ The deployed contracts retain their original `ArcForge*` Solidity names. The Arc
 
 V6 adds authorized FeeVault collectors, pull-based creator fee claims, transaction deadlines, exact-transfer accounting, bounded pagination, two-step governance ownership, a pause-only emergency guardian, and graduation that cannot be blocked by optional DEX migration. See [`docs/V6_SECURITY_ARCHITECTURE.md`](./docs/V6_SECURITY_ARCHITECTURE.md).
 
+V7 is the opt-in successor architecture for new launches: the token/USDC Uniswap V3 pool and single-sided LP position are created in the launch transaction, the LP NFT is held forever by an immutable locker, and `$50,000 crossed` is only a status mark. Existing V6 tokens and curves are unchanged. See [`docs/PROTOCOL_V7_DIRECT_UNISWAP.md`](./docs/PROTOCOL_V7_DIRECT_UNISWAP.md).
+
 The ArcOrigin launch flow uses zero free creator allocation, a 10 USDC launch fee, and 1% buy/sell fees. Creators can acquire tokens only through an optional paid developer buy capped at 5% of supply. V6 accrues 70% of each trading fee for creator claims and sends 30% to the protocol FeeVault. Current launches use a 2,500 virtual-USDC reserve and graduate after raising 10,000 real USDC. V6 adds a three-block launch-protection window and fail-safe DEX migration. Mainnet launches snapshot the activated, verified Arc Uniswap V3 adapter/locker/verifier tuple; testnet graduation continues in the permanent internal AMM.
 
 The canonical ORIGIN token is `0xB65Fd34cc428492DdF000A2Ae100Dbfea62E4802`.
@@ -106,6 +108,15 @@ pnpm deploy:arc-mainnet:v6
 pnpm verify:arc-mainnet:v6
 pnpm deploy:migration:arc-mainnet:v6
 ```
+
+A V7 deployment is deliberately separate and produces only a paused candidate plus an unsigned 2-of-3 Safe activation batch:
+
+```bash
+pnpm preflight:arc-mainnet:v7
+pnpm deploy:arc-mainnet:v7
+```
+
+Do not run the V7 deployment or activation path without an independent contract review, source verification, a fork/testnet launch, and a coordinated web/indexer release.
 
 These deployment commands create a paused candidate. The canonical deployment
 has since completed runtime code-hash checks, source publication, direct 2-of-3

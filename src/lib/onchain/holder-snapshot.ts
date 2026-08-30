@@ -17,7 +17,11 @@ import {
 import { hasCompleteFactoryLaunchSet } from "@/lib/onchain/factory-index-validation";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 
-const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
+const tokenLaunchedV6Event = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
+const tokenLaunchedV7Event = parseAbiItem("event TokenLaunched(address indexed token, address indexed pool, address indexed creator, string name, string symbol, uint256 positionId)");
+const tokenLaunchedEvent = ARCORIGIN_PROTOCOL_VERSION === 7
+  ? tokenLaunchedV7Event
+  : tokenLaunchedV6Event;
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const PERMANENT_LIQUIDITY_LOCK = "0x000000000000000000000000000000000000dead";
@@ -45,6 +49,8 @@ export type FactoryLaunch = {
   factory: Address;
   token: Address;
   curve: Address;
+  venue: "curve" | "uniswap-v3";
+  positionId?: bigint;
   creator: Address;
   name: string;
   symbol: string;
@@ -69,7 +75,7 @@ export type HolderEntry = {
   address: Address;
   balance: string;
   percent: number;
-  role: "Creator" | "Curve" | "Holder";
+  role: "Creator" | "Curve" | "Pool" | "Holder";
 };
 
 export type HolderLaunchHint = {
@@ -154,6 +160,39 @@ function loadLaunchLogs(address: Address, fromBlock: bigint, toBlock: bigint) {
   }));
 }
 
+function decodeLaunch(data: `0x${string}`, topics: readonly `0x${string}`[]) {
+  if (ARCORIGIN_PROTOCOL_VERSION === 7) {
+    const decoded = decodeEventLog({
+      abi: [tokenLaunchedV7Event],
+      data,
+      topics: topics as [`0x${string}`, ...`0x${string}`[]],
+    });
+    return {
+      token: decoded.args.token,
+      curve: decoded.args.pool,
+      creator: decoded.args.creator,
+      name: decoded.args.name,
+      symbol: decoded.args.symbol,
+      venue: "uniswap-v3" as const,
+      positionId: decoded.args.positionId,
+    };
+  }
+  const decoded = decodeEventLog({
+    abi: [tokenLaunchedV6Event],
+    data,
+    topics: topics as [`0x${string}`, ...`0x${string}`[]],
+  });
+  return {
+    token: decoded.args.token,
+    curve: decoded.args.curve,
+    creator: decoded.args.creator,
+    name: decoded.args.name,
+    symbol: decoded.args.symbol,
+    venue: "curve" as const,
+    positionId: undefined,
+  };
+}
+
 async function loadFactoryLaunches(indexedBlock: bigint) {
   try {
     const logGroups = await Promise.all(ACTIVE_FACTORY_INDEXES.map(async (factory) => {
@@ -179,19 +218,17 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
     const launches = new Map<string, FactoryLaunch>();
     for (const [factoryIndex, logs] of logGroups.entries()) {
       for (const log of logs) {
-        const decoded = decodeEventLog({
-          abi: [tokenLaunchedEvent],
-          data: log.data,
-          topics: log.topics,
-        });
-        const token = decoded.args.token;
+        const decoded = decodeLaunch(log.data, log.topics);
+        const token = decoded.token;
         launches.set(token.toLowerCase(), {
           factory: ACTIVE_FACTORY_INDEXES[factoryIndex].address,
           token,
-          curve: decoded.args.curve,
-          creator: decoded.args.creator,
-          name: decoded.args.name,
-          symbol: decoded.args.symbol,
+          curve: decoded.curve,
+          venue: decoded.venue,
+          positionId: decoded.positionId,
+          creator: decoded.creator,
+          name: decoded.name,
+          symbol: decoded.symbol,
           launchBlock: log.blockNumber,
           launchedAt: log.timestamp,
           transactionHash: log.transactionHash,
@@ -220,14 +257,17 @@ async function loadFactoryLaunches(indexedBlock: bigint) {
       const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
       const logs = await loadLaunchLogs(factory.address, fromBlock, toBlock);
       for (const log of logs) {
-        const token = log.args.token as Address;
+        const decoded = decodeLaunch(log.data, log.topics);
+        const token = decoded.token as Address;
         launches.set(token.toLowerCase(), {
           factory: factory.address,
           token,
-          curve: log.args.curve as Address,
-          creator: log.args.creator as Address,
-          name: log.args.name ?? "Indexed token",
-          symbol: log.args.symbol ?? "TOKEN",
+          curve: decoded.curve as Address,
+          venue: decoded.venue,
+          positionId: decoded.positionId,
+          creator: decoded.creator as Address,
+          name: decoded.name ?? "Indexed token",
+          symbol: decoded.symbol ?? "TOKEN",
           launchBlock: log.blockNumber ?? 0n,
           launchedAt: 0,
           transactionHash: log.transactionHash as Hash,
@@ -316,15 +356,7 @@ async function verifyLaunchHint(tokenAddress: Address, hint: HolderLaunchHint) {
     logs = await loadLaunchLogs(hint.factory, hint.launchBlock, hint.launchBlock);
   }
   for (const log of logs) {
-    const decoded = "args" in log
-      ? {
-          token: log.args.token as Address,
-          curve: log.args.curve as Address,
-          creator: log.args.creator as Address,
-          name: log.args.name ?? "Factory token",
-          symbol: log.args.symbol ?? "TOKEN",
-        }
-      : decodeEventLog({ abi: [tokenLaunchedEvent], data: log.data, topics: log.topics }).args;
+    const decoded = decodeLaunch(log.data, log.topics);
     if (decoded.token.toLowerCase() !== tokenAddress.toLowerCase()
       || decoded.curve.toLowerCase() !== hint.curve.toLowerCase()
       || decoded.creator.toLowerCase() !== hint.creator.toLowerCase()) continue;
@@ -336,6 +368,8 @@ async function verifyLaunchHint(tokenAddress: Address, hint: HolderLaunchHint) {
         factory: hint.factory,
         token: decoded.token,
         curve: decoded.curve,
+        venue: decoded.venue,
+        positionId: decoded.positionId,
         creator: decoded.creator,
         name: decoded.name,
         symbol: decoded.symbol,
@@ -443,7 +477,7 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
       balance: formatUnits(balance, 18),
       percent: percentOf(balance, totalSupply),
       role: address === curveAddress
-        ? "Curve"
+        ? launch.venue === "uniswap-v3" ? "Pool" : "Curve"
         : address === launch.creator.toLowerCase()
           ? "Creator"
           : "Holder",
@@ -455,7 +489,9 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
     topHolders,
     creatorPercent: percentOf(creatorBalance, totalSupply),
     curvePercent: percentOf(curveBalance, totalSupply),
-    permanentLiquidityLockPercent: percentOf(permanentLiquidityLockBalance, totalSupply),
+    permanentLiquidityLockPercent: launch.venue === "uniswap-v3"
+      ? percentOf(curveBalance, totalSupply)
+      : percentOf(permanentLiquidityLockBalance, totalSupply),
     topTenExcludingCurvePercent: percentOf(topTenExcludingCurve, totalSupply),
     ...checkpoint,
     generatedAt: new Date().toISOString(),

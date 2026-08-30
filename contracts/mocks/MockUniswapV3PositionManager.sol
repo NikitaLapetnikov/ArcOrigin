@@ -76,14 +76,18 @@ contract MockUniswapV3PositionManager is INonfungiblePositionManagerMinimal {
         if (amount0 < params.amount0Min || amount1 < params.amount1Min) {
             revert InsufficientAmount();
         }
-        uint256 rawLiquidity = amount0 < amount1 ? amount0 : amount1;
+        uint256 rawLiquidity = amount0 == 0
+            ? amount1
+            : amount1 == 0
+                ? amount0
+                : amount0 < amount1 ? amount0 : amount1;
         if (rawLiquidity == 0 || rawLiquidity > type(uint128).max) {
             revert AmountOverflow();
         }
         liquidity = uint128(rawLiquidity);
 
-        IERC20(params.token0).safeTransferFrom(msg.sender, pool, amount0);
-        IERC20(params.token1).safeTransferFrom(msg.sender, pool, amount1);
+        if (amount0 != 0) IERC20(params.token0).safeTransferFrom(msg.sender, pool, amount0);
+        if (amount1 != 0) IERC20(params.token1).safeTransferFrom(msg.sender, pool, amount1);
         MockUniswapV3Pool(pool).addLiquidity(liquidity);
 
         tokenId = _nextTokenId++;

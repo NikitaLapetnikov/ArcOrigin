@@ -23,6 +23,8 @@
     "network:verify:arc-mainnet": "node scripts/verify-mainnet-network.cjs",
     "preflight:arc-mainnet:v6": "DEPLOY_PREFLIGHT_ONLY=true hardhat run scripts/deploy-mainnet-v6.cjs --network arcMainnet --config hardhat.config.cjs",
     "deploy:arc-mainnet:v6": "hardhat run scripts/deploy-mainnet-v6.cjs --network arcMainnet --config hardhat.config.cjs",
+    "preflight:arc-mainnet:v7": "DEPLOY_PREFLIGHT_ONLY=true hardhat run scripts/deploy-mainnet-v7.cjs --network arcMainnet --config hardhat.config.cjs",
+    "deploy:arc-mainnet:v7": "hardhat run scripts/deploy-mainnet-v7.cjs --network arcMainnet --config hardhat.config.cjs",
     "deploy:migration:arc-mainnet:v6": "hardhat run scripts/deploy-mainnet-v3-migration.cjs --network arcMainnet --config hardhat.config.cjs",
     "verify:arc-mainnet:v6": "V6_MANIFEST=deployment/arc-mainnet-v6.local.json hardhat run scripts/verify-v6-candidate.cjs --network arcMainnet --config hardhat.config.cjs",
     "verify:sources:arc-mainnet:v6": "V6_MANIFEST=deployment/arc-mainnet-v6.local.json hardhat run scripts/verify-mainnet-sources.cjs --network arcMainnet --config hardhat.config.cjs",

@@ -47,6 +47,60 @@ export const factoryAbi = [
   },
 ] as const;
 
+export const factoryV7Abi = [
+  {
+    type: "event",
+    name: "TokenLaunched",
+    anonymous: false,
+    inputs: [
+      { name: "token", type: "address", indexed: true },
+      { name: "pool", type: "address", indexed: true },
+      { name: "creator", type: "address", indexed: true },
+      { name: "name", type: "string", indexed: false },
+      { name: "symbol", type: "string", indexed: false },
+      { name: "positionId", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "function",
+    name: "launchToken",
+    stateMutability: "nonpayable",
+    inputs: [{
+      name: "params",
+      type: "tuple",
+      components: [
+        { name: "name", type: "string" },
+        { name: "symbol", type: "string" },
+        { name: "metadataURI", type: "string" },
+      ],
+    }],
+    outputs: [{ name: "token", type: "address" }, { name: "pool", type: "address" }],
+  },
+  { type: "function", name: "launchFee", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "uint256" }] },
+  {
+    type: "function",
+    name: "getTokenInfo",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{
+      name: "",
+      type: "tuple",
+      components: [
+        { name: "token", type: "address" },
+        { name: "pool", type: "address" },
+        { name: "creator", type: "address" },
+        { name: "positionId", type: "uint256" },
+        { name: "launchedAt", type: "uint64" },
+        { name: "tokenIsToken0", type: "bool" },
+        { name: "crossed", type: "bool" },
+        { name: "metadataURI", type: "string" },
+      ],
+    }],
+  },
+  { type: "function", name: "isCrossed", stateMutability: "view", inputs: [{ name: "token", type: "address" }], outputs: [{ name: "", type: "bool" }] },
+  { type: "function", name: "currentMarketCap", stateMutability: "view", inputs: [{ name: "token", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+] as const;
+
 export const erc20Abi = [
   {
     type: "function",

@@ -13,7 +13,13 @@ export type RiskLabel =
   | "new_creator"
   | "high_risk";
 
-export type TokenStatus = "Live on curve" | "Graduating soon" | "Graduated" | "Flagged";
+export type TokenStatus =
+  | "Live on curve"
+  | "Graduating soon"
+  | "Graduated"
+  | "Live on V3"
+  | "Crossed"
+  | "Flagged";
 export type ChartPoint = {
   time: string;
   price: number;
@@ -60,6 +66,9 @@ export type TokenData = {
   image?: string;
   metadataURI?: string;
   curveAddress?: string;
+  poolAddress?: string;
+  positionId?: string;
+  venue?: "curve" | "uniswap-v3";
   factoryAddress?: string;
   source: "onchain";
   creatorAllocationPercent?: number;

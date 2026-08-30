@@ -4,10 +4,12 @@ import {
   ARC_ACTIVE_CONTRACTS,
   ARC_UNISWAP_V3,
   ARCORIGIN_NETWORK,
+  ARCORIGIN_PROTOCOL_VERSION,
 } from "@/lib/chains";
 import {
   bondingCurveAbi,
   factoryAbi,
+  factoryV7Abi,
   uniswapV3FactoryAbi,
   uniswapV3QuoterAbi,
 } from "@/lib/contracts";
@@ -91,10 +93,14 @@ async function readVerifiedQuote(
   amount: bigint,
 ): Promise<QuotePayload> {
   const index = await getTokenIndexSnapshot();
-  let verifiedCurve = index.snapshot?.tokens.some(
-    (indexedToken) => indexedToken.address.toLowerCase() === normalizedToken.toLowerCase()
-      && indexedToken.curveAddress?.toLowerCase() === normalizedCurve.toLowerCase(),
+  const indexedToken = index.snapshot?.tokens.find(
+    (candidate) => candidate.address.toLowerCase() === normalizedToken.toLowerCase(),
   );
+  let verifiedVenue: "curve" | "uniswap-v3" | null = indexedToken?.poolAddress?.toLowerCase() === normalizedCurve.toLowerCase()
+    ? "uniswap-v3"
+    : indexedToken?.curveAddress?.toLowerCase() === normalizedCurve.toLowerCase()
+      ? "curve"
+      : null;
 
   const client = createArcPublicClient(
     ARCORIGIN_NETWORK === "mainnet"
@@ -102,21 +108,72 @@ async function readVerifiedQuote(
       : process.env.ARC_TESTNET_RPC_URL,
     4_000,
   );
-  if (!verifiedCurve) {
-    const tokenInfo = await withRpcRetry(() => client.readContract({
-      address: ARC_ACTIVE_CONTRACTS.factory,
-      abi: factoryAbi,
-      functionName: "getTokenInfo",
-      args: [normalizedToken],
-    }));
-    verifiedCurve = tokenInfo.token.toLowerCase() === normalizedToken.toLowerCase()
-      && tokenInfo.curve.toLowerCase() === normalizedCurve.toLowerCase();
+  if (!verifiedVenue) {
+    if (ARCORIGIN_PROTOCOL_VERSION === 7) {
+      const tokenInfo = await withRpcRetry(() => client.readContract({
+        address: ARC_ACTIVE_CONTRACTS.factory,
+        abi: factoryV7Abi,
+        functionName: "getTokenInfo",
+        args: [normalizedToken],
+      }));
+      if (
+        tokenInfo.token.toLowerCase() === normalizedToken.toLowerCase() &&
+        tokenInfo.pool.toLowerCase() === normalizedCurve.toLowerCase()
+      ) verifiedVenue = "uniswap-v3";
+    } else {
+      const tokenInfo = await withRpcRetry(() => client.readContract({
+        address: ARC_ACTIVE_CONTRACTS.factory,
+        abi: factoryAbi,
+        functionName: "getTokenInfo",
+        args: [normalizedToken],
+      }));
+      if (
+        tokenInfo.token.toLowerCase() === normalizedToken.toLowerCase() &&
+        tokenInfo.curve.toLowerCase() === normalizedCurve.toLowerCase()
+      ) verifiedVenue = "curve";
+    }
   }
-  if (!verifiedCurve) {
-    throw new QuoteRequestError("Token and curve are not a verified ArcOrigin market.", 404, "validate-market");
+  if (!verifiedVenue) {
+    throw new QuoteRequestError("Token market is not a verified ArcOrigin market.", 404, "validate-market");
   }
 
   const uniswap = ARC_UNISWAP_V3;
+  if (verifiedVenue === "uniswap-v3") {
+    if (!uniswap) throw new QuoteRequestError("The Uniswap V3 route is unavailable.", 503, "uniswap-config");
+    const canonicalPool = await withRpcRetry(() => client.readContract({
+      address: uniswap.factory,
+      abi: uniswapV3FactoryAbi,
+      functionName: "getPool",
+      args: [normalizedToken, ARC_ACTIVE_CONTRACTS.usdc, uniswap.fee],
+    }));
+    if (
+      canonicalPool === zeroAddress ||
+      canonicalPool.toLowerCase() !== normalizedCurve.toLowerCase()
+    ) throw new QuoteRequestError("The launch pool could not be verified.", 409, "verify-launch-pool");
+    const tokenIn = side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : normalizedToken;
+    const tokenOut = side === "Buy" ? normalizedToken : ARC_ACTIVE_CONTRACTS.usdc;
+    const { result } = await withRpcRetry(() => client.simulateContract({
+      address: uniswap.quoter,
+      abi: uniswapV3QuoterAbi,
+      functionName: "quoteExactInputSingle",
+      args: [{
+        tokenIn,
+        tokenOut,
+        amountIn: amount,
+        fee: uniswap.fee,
+        sqrtPriceLimitX96: 0n,
+      }],
+    }));
+    return {
+      input: amount.toString(),
+      output: result[0].toString(),
+      fee: (amount * BigInt(uniswap.fee) / 1_000_000n).toString(),
+      venue: "uniswap-v3",
+      spender: uniswap.router,
+      pool: canonicalPool,
+    };
+  }
+
   if (ARCORIGIN_NETWORK === "mainnet" && uniswap) {
     const migrated = await withRpcRetry(() => client.readContract({
       address: normalizedCurve,

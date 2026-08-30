@@ -2,8 +2,13 @@ import "server-only";
 
 import { decodeEventLog, formatUnits, parseAbiItem, type Address, type Hash } from "viem";
 import { usesPermanentLiquidityMode } from "@/lib/bonding-curve";
-import { ARCORIGIN_NETWORK, ARCORIGIN_PROTOCOL_VERSION } from "@/lib/chains";
-import { bondingCurveAbi, uniswapV3PoolAbi } from "@/lib/contracts";
+import {
+  ARCORIGIN_NETWORK,
+  ARCORIGIN_PROTOCOL_VERSION,
+  ARCORIGIN_V7_CROSS_MARKET_CAP_USDC,
+  ARCORIGIN_V7_START_MARKET_CAP_USDC,
+} from "@/lib/chains";
+import { bondingCurveAbi, erc20Abi, uniswapV3PoolAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import {
@@ -14,7 +19,7 @@ import {
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshotForToken } from "@/lib/onchain/token-index-snapshot";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
-import type { ChartPoint, Trade } from "@/lib/types";
+import type { ChartPoint, TokenData, Trade } from "@/lib/types";
 
 const tokenBoughtEvent = parseAbiItem("event TokenBought(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 fee)");
 const tokenSoldEvent = parseAbiItem("event TokenSold(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 fee)");
@@ -176,12 +181,163 @@ async function loadBlockTimestamps(blockNumbers: bigint[]) {
   return timestamps;
 }
 
+async function loadV7MarketSnapshot(
+  baseToken: TokenData,
+  indexedBlock: bigint,
+): Promise<MarketSnapshot> {
+  if (
+    !baseToken.poolAddress ||
+    baseToken.launchBlock === undefined ||
+    baseToken.launchedAt === undefined ||
+    baseToken.totalSupply === undefined
+  ) throw new Error("Factory V7 token configuration is incomplete.");
+
+  const tokenAddress = baseToken.address as Address;
+  const pool = baseToken.poolAddress as Address;
+  const launchBlock = BigInt(baseToken.launchBlock);
+  const [poolToken0, slot0, tokenReserveRaw] = await Promise.all([
+    withRpcRetry(() => publicClient.readContract({
+      address: pool,
+      abi: uniswapV3PoolAbi,
+      functionName: "token0",
+      blockNumber: indexedBlock,
+    }), 2),
+    withRpcRetry(() => publicClient.readContract({
+      address: pool,
+      abi: uniswapV3PoolAbi,
+      functionName: "slot0",
+      blockNumber: indexedBlock,
+    }), 2),
+    withRpcRetry(() => publicClient.readContract({
+      address: tokenAddress,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [pool],
+      blockNumber: indexedBlock,
+    }), 2),
+  ]);
+  const tokenIsToken0 = poolToken0.toLowerCase() === tokenAddress.toLowerCase();
+  const currentPrice = uniswapPriceFromSqrt(slot0[0], tokenIsToken0);
+  const events: IndexedTrade[] = [];
+  for (let fromBlock = launchBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
+    const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock
+      ? fromBlock + LOG_BLOCK_RANGE
+      : indexedBlock;
+    const logs = await withRpcRetry(() => publicClient.getLogs({
+      address: pool,
+      event: uniswapSwapEvent,
+      fromBlock,
+      toBlock,
+    }));
+    for (const log of logs) {
+      const amount0 = log.args.amount0 ?? 0n;
+      const amount1 = log.args.amount1 ?? 0n;
+      const tokenDelta = tokenIsToken0 ? amount0 : amount1;
+      const usdcDelta = tokenIsToken0 ? amount1 : amount0;
+      if (
+        tokenDelta === 0n ||
+        usdcDelta === 0n ||
+        (tokenDelta < 0n) === (usdcDelta < 0n)
+      ) continue;
+      const usdcAmount = Number(formatUnits(usdcDelta < 0n ? -usdcDelta : usdcDelta, 6));
+      const tokenAmount = Number(formatUnits(tokenDelta < 0n ? -tokenDelta : tokenDelta, 18));
+      events.push({
+        blockNumber: log.blockNumber ?? 0n,
+        logIndex: log.logIndex ?? 0,
+        hash: log.transactionHash as Hash,
+        wallet: (log.args.recipient ?? log.args.sender) as Address,
+        type: tokenDelta < 0n ? "Buy" : "Sell",
+        usdc: usdcAmount,
+        notional: usdcAmount,
+        reserveUsdcDelta: 0,
+        tokens: tokenAmount,
+        executionPrice: uniswapPriceFromSqrt(log.args.sqrtPriceX96 ?? slot0[0], tokenIsToken0),
+      });
+    }
+    await wait(180);
+  }
+
+  const uniqueEvents = new Map<string, IndexedTrade>();
+  for (const event of events) uniqueEvents.set(`${event.hash.toLowerCase()}:${event.logIndex}`, event);
+  const validEvents = [...uniqueEvents.values()]
+    .filter((event) => event.tokens > 0)
+    .sort((left, right) => left.blockNumber === right.blockNumber
+      ? left.logIndex - right.logIndex
+      : left.blockNumber < right.blockNumber ? -1 : 1);
+  const blockTimestamps = await loadBlockTimestamps(validEvents.map((event) => event.blockNumber));
+  for (const event of validEvents) {
+    event.timestamp = blockTimestamps.get(event.blockNumber.toString());
+  }
+
+  const totalSupply = baseToken.totalSupply;
+  const launchPrice = ARCORIGIN_V7_START_MARKET_CAP_USDC / totalSupply;
+  const marketCap = currentPrice * totalSupply;
+  const targetUsdc = ARCORIGIN_V7_CROSS_MARKET_CAP_USDC;
+  const priceTicks = validEvents.map((event) => ({
+    event,
+    price: event.executionPrice ?? launchPrice,
+  }));
+  const cutoff24h = Math.floor(Date.now() / 1_000) - 24 * 60 * 60;
+  const recentEvents = validEvents.filter((event) => (event.timestamp ?? 0) >= cutoff24h);
+  const firstTickInWindow = priceTicks.findIndex(({ event }) => (event.timestamp ?? 0) >= cutoff24h);
+  const comparisonPrice = firstTickInWindow < 0
+    ? currentPrice
+    : firstTickInWindow > 0
+      ? priceTicks[firstTickInWindow - 1].price
+      : launchPrice;
+  const tokenReserve = Number(formatUnits(tokenReserveRaw, 18));
+  const trades: Trade[] = validEvents.slice(-TRADE_FEED_LIMIT).reverse().map((event) => ({
+    time: `Block ${event.blockNumber.toString()}`,
+    timestamp: event.timestamp,
+    type: event.type,
+    wallet: event.wallet,
+    usdc: event.usdc,
+    tokens: event.tokens,
+    price: event.notional / event.tokens,
+    txHash: event.hash,
+  }));
+  const chart: ChartPoint[] = [
+    { time: "Launch", timestamp: baseToken.launchedAt, price: launchPrice, volume: 0 },
+    ...priceTicks.slice(-CHART_TRADE_LIMIT).map(({ event, price }) => ({
+      time: `#${(event.blockNumber % 100_000n).toString()}`,
+      timestamp: event.timestamp,
+      price,
+      volume: event.notional,
+    })),
+  ];
+  const checkpoint = await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
+  return {
+    price: currentPrice,
+    priceChange: comparisonPrice > 0 ? (currentPrice / comparisonPrice - 1) * 100 : 0,
+    marketCap,
+    volume: recentEvents.reduce((sum, event) => roundUsdc(sum + event.notional), 0),
+    buyers: recentEvents.filter((event) => event.type === "Buy").length,
+    sellers: recentEvents.filter((event) => event.type === "Sell").length,
+    raisedUsdc: marketCap,
+    targetUsdc,
+    progress: Math.min(100, marketCap / targetUsdc * 100),
+    graduated: marketCap >= targetUsdc,
+    tokensSold: Math.max(0, totalSupply - tokenReserve),
+    tokenReserve,
+    chart,
+    trades,
+    ...checkpoint,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean): Promise<MarketSnapshot> {
   const indexResult = await getTokenIndexSnapshotForToken(tokenAddress, forceRefresh);
   const indexSnapshot = indexResult.snapshot;
   if (!indexSnapshot) throw new Error("Factory token index is unavailable.");
   const baseToken = indexSnapshot.tokens.find((token) => token.address.toLowerCase() === tokenAddress.toLowerCase());
   if (!baseToken) throw new FactoryTokenNotFoundError("Token was not launched by the configured ArcOrigin factory.");
+  const indexedBlock = forceRefresh
+    ? await withRpcRetry(() => publicClient.getBlockNumber(), 2)
+    : BigInt(indexSnapshot.indexedBlock);
+  if (baseToken.venue === "uniswap-v3") {
+    return loadV7MarketSnapshot(baseToken, indexedBlock);
+  }
   if (!baseToken.curveAddress
     || baseToken.launchBlock === undefined
     || baseToken.launchedAt === undefined
@@ -190,9 +346,6 @@ async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean):
     || baseToken.virtualUsdcReserve === undefined) {
     throw new Error("Factory token configuration is incomplete.");
   }
-  const indexedBlock = forceRefresh
-    ? await withRpcRetry(() => publicClient.getBlockNumber(), 2)
-    : BigInt(indexSnapshot.indexedBlock);
   const launch = {
     curve: baseToken.curveAddress as Address,
     launchBlock: BigInt(baseToken.launchBlock),

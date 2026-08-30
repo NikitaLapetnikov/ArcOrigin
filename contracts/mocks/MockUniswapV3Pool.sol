@@ -12,7 +12,6 @@ contract MockUniswapV3Pool is IUniswapV3PoolMinimal {
     uint128 public override liquidity;
     uint160 private _sqrtPriceX96;
 
-    error Unauthorized();
     error AlreadyInitialized();
     error InvalidPrice();
 
@@ -37,8 +36,12 @@ contract MockUniswapV3Pool is IUniswapV3PoolMinimal {
     }
 
     function addLiquidity(uint128 amount) external {
-        if (msg.sender != positionManager) revert Unauthorized();
         liquidity += amount;
+    }
+
+    function setSqrtPriceX96ForTest(uint160 sqrtPriceX96_) external {
+        if (sqrtPriceX96_ == 0) revert InvalidPrice();
+        _sqrtPriceX96 = sqrtPriceX96_;
     }
 
     function slot0()

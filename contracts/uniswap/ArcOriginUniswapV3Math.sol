@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 library ArcOriginUniswapV3Math {
+    uint256 internal constant Q64 = 1 << 64;
+    uint256 internal constant Q128 = 1 << 128;
     uint256 internal constant Q192 = 1 << 192;
     int24 internal constant MIN_TICK = -887272;
     int24 internal constant MAX_TICK = 887272;
@@ -52,5 +54,48 @@ library ArcOriginUniswapV3Math {
         tickLower = (MIN_TICK / tickSpacing) * tickSpacing;
         tickUpper = (MAX_TICK / tickSpacing) * tickSpacing;
         if (tickLower >= tickUpper) revert InvalidTickSpacing();
+    }
+
+    /// @notice Returns a range that requires only the launch token at the current price.
+    function singleSidedTicks(
+        int24 currentTick,
+        int24 tickSpacing,
+        bool launchTokenIsToken0
+    ) internal pure returns (int24 tickLower, int24 tickUpper) {
+        (int24 minUsableTick, int24 maxUsableTick) = usableTicks(tickSpacing);
+        int24 tickFloor = (currentTick / tickSpacing) * tickSpacing;
+        if (currentTick < 0 && currentTick % tickSpacing != 0) {
+            tickFloor -= tickSpacing;
+        }
+
+        if (launchTokenIsToken0) {
+            tickLower = tickFloor + tickSpacing;
+            tickUpper = maxUsableTick;
+        } else {
+            tickLower = minUsableTick;
+            tickUpper = tickFloor;
+        }
+        if (tickLower >= tickUpper) revert PriceOutOfRange();
+    }
+
+    /// @notice Market cap in raw quote-token units for a fixed raw token supply.
+    function marketCapFromSqrtPriceX96(
+        uint160 sqrtPriceX96,
+        uint256 tokenSupply,
+        bool launchTokenIsToken0
+    ) internal pure returns (uint256 marketCap) {
+        if (sqrtPriceX96 == 0 || tokenSupply == 0) revert InvalidAmounts();
+        uint256 sqrtPrice = uint256(sqrtPriceX96);
+        if (sqrtPrice <= type(uint128).max) {
+            uint256 ratioX192 = sqrtPrice * sqrtPrice;
+            return launchTokenIsToken0
+                ? Math.mulDiv(ratioX192, tokenSupply, Q192)
+                : Math.mulDiv(Q192, tokenSupply, ratioX192);
+        }
+
+        uint256 ratioX128 = Math.mulDiv(sqrtPrice, sqrtPrice, Q64);
+        return launchTokenIsToken0
+            ? Math.mulDiv(ratioX128, tokenSupply, Q128)
+            : Math.mulDiv(Q128, tokenSupply, ratioX128);
     }
 }

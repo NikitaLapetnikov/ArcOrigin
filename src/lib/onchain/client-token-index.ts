@@ -1,5 +1,12 @@
 import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector, type Address } from "viem";
-import { ARC_ACTIVE_FACTORY, ARC_ACTIVE_FACTORY_INDEXES, arcChain } from "@/lib/chains";
+import {
+  ARCORIGIN_PROTOCOL_VERSION,
+  ARCORIGIN_V7_CROSS_MARKET_CAP_USDC,
+  ARCORIGIN_V7_START_MARKET_CAP_USDC,
+  ARC_ACTIVE_FACTORY,
+  ARC_ACTIVE_FACTORY_INDEXES,
+  arcChain,
+} from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import { legacyGenesisToken } from "@/lib/onchain/legacy-genesis";
@@ -8,7 +15,9 @@ import { calculateRiskScore } from "@/lib/scoring";
 import { normalizeTelegramUrl, normalizeWebsiteUrl, normalizeXUrl } from "@/lib/token-metadata";
 import type { CreatorProfile, TokenData } from "@/lib/types";
 
-const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
+const tokenLaunchedV6Event = parseAbiItem("event TokenLaunched(address indexed token, address indexed curve, address indexed creator, string name, string symbol)");
+const tokenLaunchedV7Event = parseAbiItem("event TokenLaunched(address indexed token, address indexed pool, address indexed creator, string name, string symbol, uint256 positionId)");
+const tokenLaunchedEvent = ARCORIGIN_PROTOCOL_VERSION === 7 ? tokenLaunchedV7Event : tokenLaunchedV6Event;
 const tokenConfigAbi = [
   { type: "function", name: "totalSupply", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "metadataURI", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
@@ -33,6 +42,8 @@ type ClientLaunch = {
   factory: `0x${string}`;
   token: `0x${string}`;
   curve: `0x${string}`;
+  venue: "curve" | "uniswap-v3";
+  positionId?: bigint;
   creator: `0x${string}`;
   name: string;
   symbol: string;
@@ -40,6 +51,39 @@ type ClientLaunch = {
   launchedAt: number;
   transactionHash: `0x${string}`;
 };
+
+function decodeLaunch(data: `0x${string}`, topics: readonly `0x${string}`[]) {
+  if (ARCORIGIN_PROTOCOL_VERSION === 7) {
+    const decoded = decodeEventLog({
+      abi: [tokenLaunchedV7Event],
+      data,
+      topics: topics as [`0x${string}`, ...`0x${string}`[]],
+    });
+    return {
+      token: decoded.args.token,
+      curve: decoded.args.pool,
+      creator: decoded.args.creator,
+      name: decoded.args.name,
+      symbol: decoded.args.symbol,
+      venue: "uniswap-v3" as const,
+      positionId: decoded.args.positionId,
+    };
+  }
+  const decoded = decodeEventLog({
+    abi: [tokenLaunchedV6Event],
+    data,
+    topics: topics as [`0x${string}`, ...`0x${string}`[]],
+  });
+  return {
+    token: decoded.args.token,
+    curve: decoded.args.curve,
+    creator: decoded.args.creator,
+    name: decoded.args.name,
+    symbol: decoded.args.symbol,
+    venue: "curve" as const,
+    positionId: undefined,
+  };
+}
 
 type ClientMetadata = {
   description?: string;
@@ -63,14 +107,16 @@ async function loadFactoryLaunches(
       topic0: toEventSelector(tokenLaunchedEvent),
     });
     return logs.map((log) => {
-      const decoded = decodeEventLog({ abi: [tokenLaunchedEvent], data: log.data, topics: log.topics });
+      const decoded = decodeLaunch(log.data, log.topics);
       return {
         factory: factory.address,
-        token: decoded.args.token,
-        curve: decoded.args.curve,
-        creator: decoded.args.creator,
-        name: decoded.args.name,
-        symbol: decoded.args.symbol,
+        token: decoded.token,
+        curve: decoded.curve,
+        venue: decoded.venue,
+        positionId: decoded.positionId,
+        creator: decoded.creator,
+        name: decoded.name,
+        symbol: decoded.symbol,
         launchBlock: log.blockNumber,
         launchedAt: log.timestamp,
         transactionHash: log.transactionHash,
@@ -96,13 +142,16 @@ async function loadFactoryLaunches(
       toBlock,
     });
     for (const log of logs) {
+      const decoded = decodeLaunch(log.data, log.topics);
       launches.push({
         factory: factory.address,
-        token: log.args.token as Address,
-        curve: log.args.curve as Address,
-        creator: log.args.creator as Address,
-        name: log.args.name ?? "Indexed token",
-        symbol: log.args.symbol ?? "TOKEN",
+        token: decoded.token as Address,
+        curve: decoded.curve as Address,
+        venue: decoded.venue,
+        positionId: decoded.positionId,
+        creator: decoded.creator as Address,
+        name: decoded.name ?? "Indexed token",
+        symbol: decoded.symbol ?? "TOKEN",
         launchBlock: log.blockNumber,
         launchedAt: 0,
         transactionHash: log.transactionHash,
@@ -153,6 +202,8 @@ function createPendingToken(launch: ClientLaunch, creatorLaunches: number): Toke
     icon: iconFor(launch.name, launch.symbol),
     address: launch.token,
     curveAddress: launch.curve,
+    poolAddress: launch.venue === "uniswap-v3" ? launch.curve : undefined,
+    venue: launch.venue,
     factoryAddress: launch.factory,
     creator: launch.creator,
     source: "onchain",
@@ -175,7 +226,7 @@ function createPendingToken(launch: ClientLaunch, creatorLaunches: number): Toke
     holders: 0,
     curveProgress: 0,
     riskScore: 0,
-    status: "Live on curve",
+    status: launch.venue === "uniswap-v3" ? "Live on V3" : "Live on curve",
     chartData: [],
     recentTrades: [],
     riskLabels: [],
@@ -289,6 +340,55 @@ async function hydrateLaunch(launch: ClientLaunch, creatorLaunches: number): Pro
     };
   }
 
+  if (launch.venue === "uniswap-v3") {
+    const [totalSupplyRaw, metadataURI] = await publicClient.multicall({
+      allowFailure: false,
+      multicallAddress: MULTICALL3_ADDRESS,
+      contracts: [
+        { address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" },
+        { address: launch.token, abi: tokenConfigAbi, functionName: "metadataURI" },
+      ],
+    });
+    const metadata = await loadMetadata(metadataURI);
+    const totalSupply = Number(formatUnits(totalSupplyRaw, 18));
+    if (totalSupply <= 0) throw new Error("Factory V7 token supply is invalid.");
+    const launchPrice = ARCORIGIN_V7_START_MARKET_CAP_USDC / totalSupply;
+    const risk = calculateRiskScore({
+      fixedSupply: true,
+      standardTemplate: true,
+      noBlacklist: true,
+      noHiddenMint: true,
+      creatorAllocationPercent: 0,
+      socialsPresent: Boolean(metadata?.website || metadata?.x),
+      verifiedTemplate: true,
+      holderConcentrationKnown: true,
+      topTenHolderPercent: 0,
+      previousCleanLaunches: 0,
+    });
+    return {
+      ...createPendingToken(launch, creatorLaunches),
+      image: metadata?.image,
+      metadataURI,
+      curveAddress: undefined,
+      poolAddress: launch.curve,
+      positionId: launch.positionId?.toString(),
+      venue: "uniswap-v3",
+      creatorAllocationPercent: 0,
+      totalSupply,
+      description: metadata?.description ?? `ArcOrigin V7 launch indexed from ${arcChain.name} Uniswap V3 events.`,
+      price: launchPrice,
+      marketCap: ARCORIGIN_V7_START_MARKET_CAP_USDC,
+      raisedUSDC: ARCORIGIN_V7_START_MARKET_CAP_USDC,
+      targetUSDC: ARCORIGIN_V7_CROSS_MARKET_CAP_USDC,
+      curveProgress: ARCORIGIN_V7_START_MARKET_CAP_USDC / ARCORIGIN_V7_CROSS_MARKET_CAP_USDC * 100,
+      riskScore: risk.score,
+      status: "Live on V3",
+      chartData: [{ time: "Launch", timestamp: launch.launchedAt, price: launchPrice, volume: 0 }],
+      riskLabels: risk.labels,
+      socials: { website: metadata?.website, x: metadata?.x, telegram: metadata?.telegram },
+    };
+  }
+
   const [totalSupplyRaw, metadataURI, initialReserveRaw, virtualUsdcRaw, graduationRaw] = await publicClient.multicall({
     allowFailure: false,
     multicallAddress: MULTICALL3_ADDRESS,
@@ -340,6 +440,7 @@ async function hydrateLaunch(launch: ClientLaunch, creatorLaunches: number): Pro
     metadataURI,
     address: launch.token,
     curveAddress: launch.curve,
+    venue: "curve",
     factoryAddress: launch.factory,
     creator: launch.creator,
     source: "onchain",
