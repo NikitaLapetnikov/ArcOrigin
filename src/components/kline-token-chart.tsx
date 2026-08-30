@@ -40,6 +40,7 @@ type DisplayMode = "Price" | "MCap";
 type IndicatorName = "MA" | "EMA" | "BOLL" | "SAR" | "VOL" | "MACD" | "RSI" | "KDJ";
 type Tool = "cursor" | "straightLine" | "rayLine" | "horizontalStraightLine" | "verticalStraightLine" | "parallelStraightLine" | "fibonacciLine" | "brush" | "arcMeasure";
 type SavedOverlay = Pick<Overlay, "name" | "points"> & Pick<OverlayCreate, "styles" | "extendData">;
+type TradeMarkerData = { side: "Buy" | "Sell"; label: string };
 
 type TokenChartProps = {
   data: ChartPoint[];
@@ -70,6 +71,13 @@ function periodFor(timeframe: ChartTimeframe): Period {
   if (timeframe.endsWith("m")) return { type: "minute", span: Number.parseInt(timeframe, 10) };
   if (timeframe.endsWith("h")) return { type: "hour", span: Number.parseInt(timeframe, 10) };
   return { type: "day", span: 1 };
+}
+
+function timeframeSeconds(timeframe: ChartTimeframe) {
+  if (timeframe.endsWith("s")) return Number.parseInt(timeframe, 10);
+  if (timeframe.endsWith("m")) return Number.parseInt(timeframe, 10) * 60;
+  if (timeframe.endsWith("h")) return Number.parseInt(timeframe, 10) * 60 * 60;
+  return 24 * 60 * 60;
 }
 
 /**
@@ -121,6 +129,46 @@ export function KLineTokenChart({
     volume: candle.volume,
     turnover: candle.volume,
   })), [multiplier, sourceCandles]);
+  const tradeMarkers = useMemo<OverlayCreate[]>(() => {
+    const activeTimeframe = compact ? "1h" : timeframe;
+    const bucketSize = timeframeSeconds(activeTimeframe);
+    const candleByTime = new Map(sourceCandles.map((candle) => [Number(candle.time), candle]));
+    const groups = new Map<string, { side: "Buy" | "Sell"; timestamp: number; usdc: number; count: number }>();
+
+    for (const trade of trades) {
+      if (!Number.isFinite(trade.timestamp)) continue;
+      const timestamp = Math.floor((trade.timestamp as number) / bucketSize) * bucketSize;
+      if (!candleByTime.has(timestamp)) continue;
+      const key = `${timestamp}:${trade.type}`;
+      const current = groups.get(key) ?? { side: trade.type, timestamp, usdc: 0, count: 0 };
+      current.usdc += trade.usdc;
+      current.count += 1;
+      groups.set(key, current);
+    }
+
+    return [...groups.values()]
+      .sort((left, right) => left.timestamp - right.timestamp || left.side.localeCompare(right.side))
+      .map((group) => {
+        const candle = candleByTime.get(group.timestamp)!;
+        const prefix = group.side === "Buy" ? "B" : "S";
+        return {
+          name: "arcTradeMarker",
+          groupId: "arc-origin-trades",
+          lock: true,
+          needDefaultPointFigure: false,
+          needDefaultXAxisFigure: false,
+          needDefaultYAxisFigure: false,
+          points: [{
+            timestamp: group.timestamp * 1_000,
+            value: (group.side === "Buy" ? candle.low : candle.high) * multiplier,
+          }],
+          extendData: {
+            side: group.side,
+            label: `${prefix} ${money(group.usdc, true)}${group.count > 1 ? ` ×${group.count}` : ""}`,
+          },
+        };
+      });
+  }, [compact, multiplier, sourceCandles, timeframe, trades]);
   const latest = candles.at(-1);
   const activeChange = latest && latest.open > 0 ? ((latest.close / latest.open) - 1) * 100 : 0;
 
@@ -173,6 +221,59 @@ export function KLineTokenChart({
             { type: "rect", attrs: { x: left, y: top, width, height }, styles: { style: "fill", color: percent >= 0 ? "rgba(40,198,184,.12)" : "rgba(250,99,116,.12)", borderColor: percent >= 0 ? "#28c6b8" : "#fa6374", borderSize: 1 } },
             { type: "line", attrs: { coordinates: [start, end] }, styles: { color: percent >= 0 ? "#28c6b8" : "#fa6374", size: 1, style: "dashed" } },
             { type: "text", attrs: { x: left + width / 2, y: top + height / 2, text: label, align: "center", baseline: "middle" }, styles: { style: "fill", color: "#e6fffa", size: 10, family: "ui-monospace, monospace", weight: "600", backgroundColor: "#17202a", borderColor: "#39515b", borderSize: 1, borderRadius: 3, paddingLeft: 5, paddingRight: 5, paddingTop: 3, paddingBottom: 3 } },
+          ];
+        },
+      });
+      registerOverlay<TradeMarkerData>({
+        name: "arcTradeMarker",
+        totalStep: 2,
+        lock: true,
+        needDefaultPointFigure: false,
+        needDefaultXAxisFigure: false,
+        needDefaultYAxisFigure: false,
+        createPointFigures: ({ bounding, coordinates, overlay }) => {
+          const point = coordinates[0];
+          const marker = overlay.extendData;
+          if (!point || !marker) return [];
+          const buy = marker.side === "Buy";
+          const direction = buy ? 1 : -1;
+          const tone = buy ? "#28c6b8" : "#fa6374";
+          const centerY = Math.max(14, Math.min(bounding.height - 14, point.y + direction * 20));
+          const tipY = point.y + direction * 4;
+          const baseY = point.y + direction * 9;
+          return [
+            {
+              type: "line",
+              attrs: { coordinates: [{ x: point.x, y: baseY }, { x: point.x, y: centerY - direction * 8 }] },
+              styles: { color: tone, size: 1, style: "solid" },
+              ignoreEvent: true,
+            },
+            {
+              type: "polygon",
+              attrs: { coordinates: [{ x: point.x, y: tipY }, { x: point.x - 3.5, y: baseY }, { x: point.x + 3.5, y: baseY }] },
+              styles: { style: "fill", color: tone, borderColor: tone, borderSize: 0 },
+              ignoreEvent: true,
+            },
+            {
+              type: "text",
+              attrs: { x: point.x, y: centerY, text: marker.label, align: "center", baseline: "middle" },
+              styles: {
+                style: "fill",
+                color: buy ? "#dcfff9" : "#fff1f2",
+                size: 9,
+                family: "ui-monospace, SFMono-Regular, monospace",
+                weight: "600",
+                backgroundColor: buy ? "#114c48" : "#5c2430",
+                borderColor: tone,
+                borderSize: 1,
+                borderRadius: 4,
+                paddingLeft: 4,
+                paddingRight: 4,
+                paddingTop: 2,
+                paddingBottom: 2,
+              },
+              ignoreEvent: true,
+            },
           ];
         },
       });
@@ -280,22 +381,8 @@ export function KLineTokenChart({
     if (!ready || !chart) return;
     chart.removeOverlay({ groupId: "arc-origin-trades" });
     if (!showMarkers) return;
-    const earliest = candles[0]?.timestamp ?? 0;
-    const latestTimestamp = candles.at(-1)?.timestamp ?? 0;
-    const markers: OverlayCreate[] = trades
-      .filter((trade) => Number.isFinite(trade.timestamp) && (trade.timestamp ?? 0) * 1000 >= earliest && (trade.timestamp ?? 0) * 1000 <= latestTimestamp)
-      .map((trade) => ({
-        name: "simpleTag",
-        groupId: "arc-origin-trades",
-        points: [{ timestamp: (trade.timestamp ?? 0) * 1000, value: trade.price * multiplier }],
-        extendData: `${trade.type === "Buy" ? "B" : "S"} $${trade.usdc.toFixed(2)}`,
-        styles: {
-          line: { color: trade.type === "Buy" ? "#28c6b8" : "#fa6374" },
-          text: { color: trade.type === "Buy" ? "#6ee7d9" : "#fda4af" },
-        },
-      }));
-    if (markers.length > 0) chart.createOverlay(markers);
-  }, [candles, multiplier, ready, showMarkers, trades]);
+    if (tradeMarkers.length > 0) chart.createOverlay(tradeMarkers);
+  }, [ready, showMarkers, tradeMarkers]);
 
   useEffect(() => {
     const handleFullscreen = () => setIsFullscreen(document.fullscreenElement === shellRef.current);
