@@ -19,6 +19,12 @@ interface IUniswapV3PoolMinimal {
     function fee() external view returns (uint24);
     function liquidity() external view returns (uint128);
 
+    function increaseObservationCardinalityNext(uint16 observationCardinalityNext) external;
+
+    function observe(
+        uint32[] calldata secondsAgos
+    ) external view returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s);
+
     function slot0()
         external
         view
@@ -31,6 +37,22 @@ interface IUniswapV3PoolMinimal {
             uint8 feeProtocol,
             bool unlocked
         );
+}
+
+interface IUniswapV3SwapRouterMinimal {
+    struct ExactInputSingleParams {
+        address tokenIn;
+        address tokenOut;
+        uint24 fee;
+        address recipient;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+        uint160 sqrtPriceLimitX96;
+    }
+
+    function exactInputSingle(
+        ExactInputSingleParams calldata params
+    ) external payable returns (uint256 amountOut);
 }
 
 interface INonfungiblePositionManagerMinimal {

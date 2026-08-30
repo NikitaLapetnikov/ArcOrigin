@@ -6,6 +6,7 @@ const ARC_MAINNET_CHAIN_ID = 5_042n;
 const ARC_USDC = "0x3600000000000000000000000000000000000000";
 const UNISWAP_V3_FACTORY = "0xf0db7b58379503491d857db50ac9ece64c653918";
 const UNISWAP_V3_POSITION_MANAGER = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377";
+const UNISWAP_V3_SWAP_ROUTER = "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77";
 const LAUNCH_FEE = 10n * 10n ** 6n;
 const outputPath = path.join(__dirname, "..", "deployment", "arc-mainnet.local.json");
 const safeBatchPath = path.join(
@@ -135,10 +136,13 @@ async function main() {
       factoryRegistry,
       factoryV3,
       factoryManager,
+      factoryRouter,
       factoryLaunchFee,
       launchCount,
       lockerFactory,
       lockerManager,
+      lockerRouter,
+      lockerQuoteToken,
       lockerRecipient,
       retiredOwner,
       retiredPaused,
@@ -151,16 +155,17 @@ async function main() {
     ] = await Promise.all([
       safe.getOwners(), safe.getThreshold(), factory.owner(), factory.paused(),
       factory.emergencyGuardian(), factory.usdc(), factory.feeVault(), factory.creatorRegistry(),
-      factory.uniswapV3Factory(), factory.positionManager(), factory.launchFee(),
+      factory.uniswapV3Factory(), factory.positionManager(), factory.swapRouter(), factory.launchFee(),
       factory.getLaunchedTokenCount(), locker.factory(), locker.positionManager(),
-      locker.protocolFeeRecipient(), retired.owner(), retired.paused(),
+      locker.swapRouter(), locker.quoteToken(), locker.protocolFeeRecipient(), retired.owner(), retired.paused(),
       vault.isRegistrar(retiredFactory), vault.isCollector(retiredFactory), vault.owner(),
       vault.feeRecipient(), registry.owner(), registry.factory(),
     ]);
     return {
       safeOwners, safeThreshold, factoryOwner, factoryPaused, factoryGuardian,
-      factoryUsdc, factoryVault, factoryRegistry, factoryV3, factoryManager,
-      factoryLaunchFee, launchCount, lockerFactory, lockerManager, lockerRecipient,
+      factoryUsdc, factoryVault, factoryRegistry, factoryV3, factoryManager, factoryRouter,
+      factoryLaunchFee, launchCount, lockerFactory, lockerManager, lockerRouter,
+      lockerQuoteToken, lockerRecipient,
       retiredOwner, retiredPaused, retiredRegistrar, retiredCollector, vaultOwner,
       previousFeeRecipient, registryOwner, registryFactory,
     };
@@ -181,10 +186,13 @@ async function main() {
   assertEqual("Factory Registry", state.factoryRegistry, creatorRegistry);
   assertEqual("Factory Uniswap Factory", state.factoryV3, UNISWAP_V3_FACTORY);
   assertEqual("Factory PositionManager", state.factoryManager, UNISWAP_V3_POSITION_MANAGER);
+  assertEqual("Factory SwapRouter", state.factoryRouter, UNISWAP_V3_SWAP_ROUTER);
   assertEqual("Factory launch fee", state.factoryLaunchFee, LAUNCH_FEE);
   assertEqual("Factory launch count", state.launchCount, 0);
   assertEqual("Locker Factory", state.lockerFactory, factoryAddress);
   assertEqual("Locker PositionManager", state.lockerManager, UNISWAP_V3_POSITION_MANAGER);
+  assertEqual("Locker SwapRouter", state.lockerRouter, UNISWAP_V3_SWAP_ROUTER);
+  assertEqual("Locker quote token", state.lockerQuoteToken, ARC_USDC);
   assertEqual("Locker protocol recipient", state.lockerRecipient, feeVault);
   assertEqual("retired Factory owner", state.retiredOwner, governanceSafe);
   assertEqual("retired Factory registrar", state.retiredRegistrar, true);
@@ -226,6 +234,7 @@ async function main() {
       usdc: ARC_USDC,
       uniswapV3Factory: UNISWAP_V3_FACTORY,
       uniswapV3PositionManager: UNISWAP_V3_POSITION_MANAGER,
+      uniswapV3SwapRouter: UNISWAP_V3_SWAP_ROUTER,
     },
     economics: {
       totalSupply: "1000000000",
@@ -234,6 +243,9 @@ async function main() {
       poolFee: 10_000,
       creatorFeeShareBps: 7_000,
       protocolFeeShareBps: 3_000,
+      automaticBuyback: "OPT_IN_CREATOR_SHARE_BUYBACK_AND_BURN",
+      buybackKeeperRewardBps: 50,
+      buybackKeeperRewardCapUsdc: 1,
       lpCustody: "PERMANENT_LOCKER_NO_WITHDRAWAL_PATH",
     },
     governance: { safe: governanceSafe, threshold: "2-of-3", emergencyGuardian },

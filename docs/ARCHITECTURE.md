@@ -6,16 +6,29 @@ ArcOrigin launches every token directly into a canonical Uniswap V3 pool. There 
 
 Each successful launch is atomic:
 
-1. Deploy a fixed-supply ERC-20 with 1 billion tokens and no owner, mint, tax, pause, or blacklist hooks.
+1. Deploy an ERC-20 with an initial supply of 1 billion tokens and no owner, mint, tax, pause, or blacklist hooks. A holder may burn only tokens it owns.
 2. Create or initialize the canonical token/USDC Uniswap V3 pool at a $5,000 starting market cap using the official 1% fee tier.
 3. Mint a single-sided LP position with the launch token supply.
 4. Send the LP NFT directly to the immutable liquidity locker.
 5. Burn any token dust caused by Uniswap rounding, so the LP principal equals the effective total supply.
-6. Emit `TokenLaunched(token, pool, creator, name, symbol, positionId)`.
+6. Permanently register whether automatic buyback is enabled and, for enabled pools, request 32 Uniswap observations.
+7. Emit `TokenLaunched(token, pool, creator, name, symbol, positionId)` and `AutomaticBuybackConfigured(token, positionId, enabled)`.
 
 Token deployment uses a parent-block-bound `CREATE2` salt. A searcher can still make one launch transaction revert by front-running an initialization for its predicted pool, but the next block derives a different token address; a poisoned pool cannot permanently brick the Factory nonce.
 
-The locker has no NFT transfer, approval, liquidity decrease, burn, rescue, or administrative mutation function. Anyone can collect accrued LP fees; the locker sends 70% to the creator and 30% to the protocol FeeVault.
+The locker has no NFT transfer, approval, liquidity decrease, rescue, or administrative mutation function. For ordinary positions, anyone can collect accrued LP fees and the locker sends 70% to the creator and 30% to the protocol FeeVault.
+
+## Automatic buyback and burn
+
+Automatic buyback is optional and immutable after launch. For enabled positions, the creator permanently forfeits its 70% fee payout:
+
+- launch-token fees are burned as soon as fees are collected;
+- USDC fees accumulate in a reserve isolated by position ID;
+- once the reserve is at least 1 USDC, any account may atomically collect fees, swap reserve USDC for the launch token through the immutable official Router and canonical pool, and burn the output;
+- execution has a 15-minute cooldown, checks a 15-minute Uniswap TWAP against spot with a maximum 600-tick deviation, and limits sqrt-price movement to 2%;
+- the executor receives 0.5% of USDC actually spent, capped at 1 USDC. The protocol's 30% share never enters the reserve.
+
+The VPS keeper only automates this permissionless call. It owns no LP, has no configuration authority, and can be replaced by any caller. If simulation fails because the reserve, TWAP, or cooldown is not ready, no transaction is submitted and no fees move.
 
 ## Crossed status
 

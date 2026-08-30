@@ -1,0 +1,16 @@
+[Unit]
+Description=ArcOrigin automatic buyback keeper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=arcorigin
+Group=arcorigin
+WorkingDirectory=/opt/arcorigin-mainnet/current
+EnvironmentFile=/opt/arcorigin-mainnet/shared/.env.keeper
+ExecStart=/opt/node-v22.13.0-linux-x64/bin/node scripts/run-buyback-keeper.cjs
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

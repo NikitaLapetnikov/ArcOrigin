@@ -6,11 +6,12 @@ The deployment gate, reviewed invariants, findings, and residual risks are docum
 
 ## Architecture
 
-- Fixed supply: 1,000,000,000 tokens, no owner, mint, tax, blacklist, or pause.
+- Initial supply: 1,000,000,000 tokens, no owner, mint, tax, blacklist, or pause. Holders may burn only their own balance.
 - Launch: the Factory creates the token, initializes the token/USDC 1% pool at a 5,000 USDC market cap, mints the single-sided LP position, and locks its NFT atomically.
 - Liquidity: the immutable locker has no withdrawal path.
 - Status: 50,000 USDC changes the token status to `Crossed`; it does not move or unlock liquidity.
-- Fees: collected LP fees are split 70% to the creator and 30% to the protocol Fee Vault.
+- Fees: ordinary launches split collected LP fees 70% to the creator and 30% to the protocol Fee Vault.
+- Automatic buyback: a creator may irreversibly opt in at launch. The creator's 70% token-side fees burn immediately; its USDC-side fees fund permissionless TWAP-protected token buybacks and burns. The protocol share remains 30%.
 - Indexing: the app indexes only the configured active Factory and canonical Uniswap `Swap` events. Previous deployments and token lists are not loaded.
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for contract invariants and integration details.
@@ -55,6 +56,8 @@ npm run deploy:arc-mainnet
 The deploy script writes `deployment/arc-mainnet.local.json` and an unsigned Safe activation batch. It does not enable launches. Before activation, require an independent contract review, verified source code, a fork or testnet launch, and coordinated application/indexer configuration.
 
 Never commit private keys, RPC credentials, Pinata tokens, Redis credentials, or Safe signer material.
+
+The optional platform keeper is a permissionless executor, not an administrator. Run `npm run keeper:buyback` as a one-shot job with `BUYBACK_KEEPER_RPC_URL`, `BUYBACK_KEEPER_PRIVATE_KEY`, and `BUYBACK_KEEPER_FACTORY_ADDRESS` supplied through a protected VPS environment file. The included systemd timer runs it every five minutes. The keeper key must be a dedicated, minimally funded operational account and must never be a Safe owner.
 
 ## Security
 

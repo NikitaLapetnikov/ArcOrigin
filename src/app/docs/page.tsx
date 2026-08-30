@@ -59,6 +59,7 @@ export default function DocsPage() {
             <li>2. Sign the metadata commitment and publish it to IPFS.</li>
             <li>3. Approve the launch fee and call the Factory.</li>
             <li>4. The Factory creates the token, pool, liquidity position, and permanent lock atomically.</li>
+            <li>5. Optionally enable automatic buyback and burn. This choice permanently redirects the creator fee share and cannot be changed later.</li>
           </ol>
           <Callout>Creators receive no free token allocation. A creator purchase is a normal pool trade after launch.</Callout>
         </Section>
@@ -67,15 +68,18 @@ export default function DocsPage() {
           <p>Slippage protection is enforced with a minimum output. Token addresses are the identity of a market; names and symbols are not unique.</p>
         </Section>
         <Section id="fees" title="Fees">
-          <p>The pool uses the 1% Uniswap fee tier. Collected LP fees are split 70% to the creator and 30% to the protocol Fee Vault by the immutable liquidity locker. Anyone may trigger fee collection, but cannot redirect or withdraw the LP position.</p>
+          <p>The pool uses the 1% Uniswap fee tier. Ordinary launches split collected LP fees 70% to the creator and 30% to the protocol Fee Vault. Anyone may trigger fee collection, but cannot redirect or withdraw the LP position.</p>
+          <p>If automatic buyback is enabled at launch, the creator permanently redirects that 70% share: token fees burn immediately and USDC fees buy and burn the token in protected batches. The protocol share remains 30%. Execution requires at least 1 USDC, a 15-minute cooldown, and a safe 15-minute TWAP; the caller earns 0.5% of USDC spent, capped at 1 USDC.</p>
         </Section>
         <Section id="events" title="Onchain events">
           <Definition rows={[
             ["TokenLaunched", "Token, pool, creator, name, symbol, and position ID."],
             ["TokenCrossed", "Permanent record that live market cap reached the configured mark."],
+            ["AutomaticBuybackConfigured", "Immutable per-position buyback choice recorded at launch."],
             ["Swap", "Canonical price, volume, and trade history from the Uniswap pool."],
             ["Transfer", "Canonical holder balances and token movements."],
-            ["FeesCollected", "Creator and protocol portions distributed by the locker."],
+            ["FeesClaimed", "Creator/buyback and protocol portions routed by the locker."],
+            ["BuybackExecuted", "USDC spent, keeper reward, tokens burned, and reserve remaining."],
           ]} />
         </Section>
         <Section id="contracts" title="Contracts">

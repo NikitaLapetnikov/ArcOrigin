@@ -15,6 +15,7 @@ const USDC = 10n ** 6n;
 
 const erc20Abi = [
   "function balanceOf(address) view returns (uint256)",
+  "function totalSupply() view returns (uint256)",
   "function approve(address,uint256) returns (bool)",
   "function transfer(address,uint256) returns (bool)",
 ];
@@ -60,6 +61,7 @@ describeFork("ArcOrigin Arc mainnet fork integration", function () {
       CREATOR_REGISTRY,
       V3_FACTORY,
       POSITION_MANAGER,
+      ROUTER,
       0,
     );
     await factory.waitForDeployment();
@@ -89,6 +91,7 @@ describeFork("ArcOrigin Arc mainnet fork integration", function () {
           name: `Fork Launch ${index}`,
           symbol: `F${index}`,
           metadataURI: `ipfs://fork-${index}`,
+          automaticBuyback: true,
         }, { gasLimit: 15_000_000 })
       ).wait();
       const event = receipt.logs
@@ -118,8 +121,8 @@ describeFork("ArcOrigin Arc mainnet fork integration", function () {
       ["function mint(address,uint256)"],
       creator,
     );
-    await (await usdcMinter.mint(trader.address, 4n * USDC)).wait();
-    await (await usdc.approve(ROUTER, 4n * USDC)).wait();
+    await (await usdcMinter.mint(trader.address, 1_000n * USDC)).wait();
+    await (await usdc.approve(ROUTER, 1_000n * USDC)).wait();
     const router = new ethers.Contract(
       ROUTER,
       [
@@ -151,7 +154,7 @@ describeFork("ArcOrigin Arc mainnet fork integration", function () {
       const quotedBuy = await quoter.quoteExactInputSingle.staticCall({
         tokenIn: ARC_USDC,
         tokenOut: launch.token,
-        amountIn: USDC,
+        amountIn: 200n * USDC,
         fee: POOL_FEE,
         sqrtPriceLimitX96: 0,
       });
@@ -161,14 +164,14 @@ describeFork("ArcOrigin Arc mainnet fork integration", function () {
         tokenOut: launch.token,
         fee: POOL_FEE,
         recipient: trader.address,
-        amountIn: USDC,
+        amountIn: 200n * USDC,
         amountOutMinimum: quotedBuy.amountOut * 99n / 100n,
         sqrtPriceLimitX96: 0,
       }, { gasLimit: 5_000_000 })).wait();
       const bought = await token.balanceOf(trader.address);
       expect(bought > 0n).to.equal(true);
 
-      const sellAmount = bought / 2n;
+      const sellAmount = bought;
       await (await token.approve(ROUTER, sellAmount)).wait();
       const quotedSell = await quoter.quoteExactInputSingle.staticCall({
         tokenIn: launch.token,
@@ -187,17 +190,30 @@ describeFork("ArcOrigin Arc mainnet fork integration", function () {
         amountOutMinimum: quotedSell.amountOut * 99n / 100n,
         sqrtPriceLimitX96: 0,
       }, { gasLimit: 5_000_000 })).wait();
-      const feeReceipt = await (
-        await locker.connect(feeCaller).collectFees(launch.positionId)
+    }
+
+    await network.provider.send("evm_increaseTime", [901]);
+    await network.provider.send("evm_mine");
+    for (const launch of launches.values()) {
+      const token = new ethers.Contract(launch.token, erc20Abi, trader);
+      const supplyBefore = await token.totalSupply();
+      const keeperBefore = await usdc.balanceOf(feeCaller.address);
+      const buybackReceipt = await (
+        await locker.connect(feeCaller).collectAndExecuteBuyback(
+          launch.positionId,
+          { gasLimit: 5_000_000 },
+        )
       ).wait();
-      const feeEvent = feeReceipt.logs.some((log) => {
+      const buybackEvent = buybackReceipt.logs.some((log) => {
         try {
-          return locker.interface.parseLog(log)?.name === "FeesClaimed";
+          return locker.interface.parseLog(log)?.name === "BuybackExecuted";
         } catch {
           return false;
         }
       });
-      expect(feeEvent).to.equal(true);
+      expect(buybackEvent).to.equal(true);
+      expect((await token.totalSupply()) < supplyBefore).to.equal(true);
+      expect((await usdc.balanceOf(feeCaller.address)) > keeperBefore).to.equal(true);
     }
   });
 });

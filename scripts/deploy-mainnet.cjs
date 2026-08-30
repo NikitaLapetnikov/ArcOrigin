@@ -6,6 +6,7 @@ const ARC_MAINNET_CHAIN_ID = 5_042n;
 const ARC_USDC = "0x3600000000000000000000000000000000000000";
 const UNISWAP_V3_FACTORY = "0xf0db7b58379503491d857db50ac9ece64c653918";
 const UNISWAP_V3_POSITION_MANAGER = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377";
+const UNISWAP_V3_SWAP_ROUTER = "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77";
 const LAUNCH_FEE = 10n * 10n ** 6n;
 const outputPath = path.join(__dirname, "..", "deployment", "arc-mainnet.local.json");
 const safeBatchPath = path.join(
@@ -88,6 +89,7 @@ async function main() {
     ["canonical Arc USDC", ARC_USDC],
     ["official Uniswap V3 Factory", UNISWAP_V3_FACTORY],
     ["official Uniswap V3 PositionManager", UNISWAP_V3_POSITION_MANAGER],
+    ["official Uniswap V3 SwapRouter", UNISWAP_V3_SWAP_ROUTER],
   ]) await requireContract(label, address);
 
   const safe = new hre.ethers.Contract(
@@ -162,6 +164,7 @@ async function main() {
     creatorRegistry,
     UNISWAP_V3_FACTORY,
     UNISWAP_V3_POSITION_MANAGER,
+    UNISWAP_V3_SWAP_ROUTER,
     LAUNCH_FEE,
   );
   const transaction = factory.deploymentTransaction();
@@ -181,9 +184,12 @@ async function main() {
   assertEqual("factory USDC", await factory.usdc(), ARC_USDC);
   assertEqual("V3 factory", await factory.uniswapV3Factory(), UNISWAP_V3_FACTORY);
   assertEqual("position manager", await factory.positionManager(), UNISWAP_V3_POSITION_MANAGER);
+  assertEqual("swap router", await factory.swapRouter(), UNISWAP_V3_SWAP_ROUTER);
   assertEqual("launch fee", await factory.launchFee(), LAUNCH_FEE);
   assertEqual("locker factory", await locker.factory(), factoryAddress);
   assertEqual("locker position manager", await locker.positionManager(), UNISWAP_V3_POSITION_MANAGER);
+  assertEqual("locker swap router", await locker.swapRouter(), UNISWAP_V3_SWAP_ROUTER);
+  assertEqual("locker quote token", await locker.quoteToken(), ARC_USDC);
   assertEqual("locker protocol recipient", await locker.protocolFeeRecipient(), feeVault);
 
   const vaultInterface = new hre.ethers.Interface([
@@ -260,6 +266,7 @@ async function main() {
       usdc: ARC_USDC,
       uniswapV3Factory: UNISWAP_V3_FACTORY,
       uniswapV3PositionManager: UNISWAP_V3_POSITION_MANAGER,
+      uniswapV3SwapRouter: UNISWAP_V3_SWAP_ROUTER,
     },
     economics: {
       totalSupply: "1000000000",
@@ -268,6 +275,9 @@ async function main() {
       poolFee: 10_000,
       creatorFeeShareBps: 7_000,
       protocolFeeShareBps: 3_000,
+      automaticBuyback: "OPT_IN_CREATOR_SHARE_BUYBACK_AND_BURN",
+      buybackKeeperRewardBps: 50,
+      buybackKeeperRewardCapUsdc: 1,
       lpCustody: "PERMANENT_LOCKER_NO_WITHDRAWAL_PATH",
     },
     governance: { safe: governanceSafe, threshold: "2-of-3", emergencyGuardian },

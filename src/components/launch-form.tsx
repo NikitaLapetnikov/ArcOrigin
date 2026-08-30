@@ -38,6 +38,7 @@ type FormData = {
   website: string;
   x: string;
   telegram: string;
+  automaticBuyback: boolean;
 };
 
 type TransactionStatus = "idle" | "checking" | "signing_metadata" | "uploading_metadata" | "approving" | "launching" | "safe_confirming";
@@ -56,6 +57,7 @@ const defaults: FormData = {
   website: "",
   x: "",
   telegram: "",
+  automaticBuyback: false,
 };
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const DEFAULT_LAUNCH_FEE = 10n * 10n ** 6n;
@@ -357,6 +359,7 @@ export function LaunchForm() {
           name: form.name.trim(),
           symbol: form.ticker.toUpperCase(),
           metadataURI: metadata.metadataURI,
+          automaticBuyback: form.automaticBuyback,
       };
       let launchHash: Hash;
       if (safeLaunch) {
@@ -461,7 +464,7 @@ export function LaunchForm() {
       <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-cyan/10 text-cyan"><Rocket /></div>
       <p className="eyebrow mt-6">Onchain launch confirmed</p>
       <h2 className="mt-3 text-3xl font-semibold text-white">{form.name} · {tickerLabel(form.ticker.toUpperCase())}</h2>
-      <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">Your metadata is pinned to public IPFS, and the fixed-supply token is live in its permanently locked Uniswap V3 pool on {arcChain.name}.</p>
+      <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">Your metadata is pinned to public IPFS, and the fixed-supply token is live in its permanently locked Uniswap V3 pool on {arcChain.name}.{form.automaticBuyback ? " Automatic buyback and burn is permanently enabled." : ""}</p>
       <dl className="mx-auto mt-6 grid max-w-lg gap-3 rounded-xl border border-line bg-black/25 p-4 text-left text-xs">
         <ResultRow label="Token" address={result.token} />
         <ResultRow label="Uniswap V3 pool" address={result.pool} />
@@ -520,6 +523,22 @@ export function LaunchForm() {
           </div>
         </div>
 
+        <label className={`flex cursor-pointer gap-4 rounded-2xl border p-4 transition ${form.automaticBuyback ? "border-cyan/35 bg-cyan/[.06]" : "border-line bg-black/15 hover:border-cyan/20"}`}>
+          <input
+            type="checkbox"
+            checked={form.automaticBuyback}
+            onChange={(event) => setForm((current) => ({ ...current, automaticBuyback: event.target.checked }))}
+            className="mt-1 size-4 shrink-0 accent-cyan"
+          />
+          <span>
+            <span className="block text-sm font-semibold text-white">Automatic buyback and burn</span>
+            <span className="mt-1 block text-xs leading-5 text-slate-400">
+              Permanently redirect the creator&apos;s 70% LP-fee share to buy this token with USDC and burn it. Token-denominated fees burn immediately. A permissionless keeper may execute protected batches and earns up to 0.5% of spent USDC, capped at 1 USDC.
+            </span>
+            <span className="mt-2 block text-[11px] font-medium text-amber-200">Irreversible after launch. The creator will not receive this fee share.</span>
+          </span>
+        </label>
+
         <div className="grid overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2">
           <PaymentSummary label="Launch fee" value={launchFeeLabel} />
           <PaymentSummary label="Initial market cap" value="5,000 USDC" />
@@ -551,7 +570,8 @@ export function LaunchForm() {
           <dl className="mt-6 grid gap-3 border-t border-line pt-5 text-xs">
             <Row label="Supply" value="1 billion" />
             <Row label="Launch fee" value={launchFeeLabel} />
-            <Row label="Trading fee" value="1% · 70/30 split" />
+            <Row label="Trading fee" value={form.automaticBuyback ? "1% · 70% buyback / 30% protocol" : "1% · 70% creator / 30% protocol"} />
+            <Row label="Auto buyback" value={form.automaticBuyback ? "Enabled forever" : "Off"} />
             <Row label="Crossed mark" value={`${formatDisplayNumber(ARCORIGIN_CROSS_MARKET_CAP_USDC)} USDC`} />
             <Row label="LP custody" value="Locked forever" />
             <Row label="Network" value={arcChain.name} />

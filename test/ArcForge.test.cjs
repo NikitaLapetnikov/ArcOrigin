@@ -42,6 +42,8 @@ async function deployFixture() {
     "MockUniswapV3PositionManager",
   );
   const positionManager = await PositionManager.deploy(await v3Factory.getAddress());
+  const Router = await ethers.getContractFactory("MockUniswapV3SwapRouter");
+  const router = await Router.deploy(await v3Factory.getAddress());
   const Factory = await ethers.getContractFactory("ArcForgeFactory");
   const factory = await Factory.deploy(
     owner.address,
@@ -51,6 +53,7 @@ async function deployFixture() {
     await registry.getAddress(),
     await v3Factory.getAddress(),
     await positionManager.getAddress(),
+    await router.getAddress(),
     LAUNCH_FEE,
   );
   const factoryAddress = await factory.getAddress();
@@ -72,6 +75,7 @@ async function deployFixture() {
     registry,
     v3Factory,
     positionManager,
+    router,
     factory,
     locker: await ethers.getContractAt(
       "ArcOriginUniswapV3LiquidityLocker",
@@ -80,7 +84,7 @@ async function deployFixture() {
   };
 }
 
-async function launch(fixture) {
+async function launch(fixture, automaticBuyback = false) {
   await fixture.usdc
     .connect(fixture.creator)
     .approve(await fixture.factory.getAddress(), LAUNCH_FEE);
@@ -89,6 +93,7 @@ async function launch(fixture) {
       name: "Arc Direct",
       symbol: "ARCD",
       metadataURI: "ipfs://arc-direct",
+      automaticBuyback,
     })
   ).wait();
   const event = receipt.logs
@@ -232,6 +237,119 @@ describe("ArcOrigin direct Uniswap V3 launches", function () {
     ).to.equal(30n * USDC);
   });
 
+  it("uses opt-in creator fees for permissionless buyback and true supply burn", async function () {
+    const fixture = await deployFixture();
+    const { token, pool, positionId } = await launch(fixture, true);
+    const record = await fixture.locker.locks(positionId);
+    const info = await fixture.factory.getTokenInfo(await token.getAddress());
+    expect(record.automaticBuyback).to.equal(true);
+    expect(info.automaticBuyback).to.equal(true);
+
+    const tokenFees = 1_000n * TOKEN;
+    await pool.pay(await token.getAddress(), fixture.trader.address, tokenFees);
+    await token
+      .connect(fixture.trader)
+      .approve(await fixture.positionManager.getAddress(), tokenFees);
+    await fixture.usdc
+      .connect(fixture.trader)
+      .approve(await fixture.positionManager.getAddress(), 10n * USDC);
+    const quoteIsToken0 = record.token0 === (await fixture.usdc.getAddress());
+    await fixture.positionManager.connect(fixture.trader).seedFees(
+      positionId,
+      quoteIsToken0 ? 10n * USDC : tokenFees,
+      quoteIsToken0 ? tokenFees : 10n * USDC,
+    );
+
+    const creatorQuoteBefore = await fixture.usdc.balanceOf(fixture.creator.address);
+    const supplyBeforeCollection = await token.totalSupply();
+    await fixture.locker.connect(fixture.stranger).collectFees(positionId);
+    expect(await fixture.locker.buybackReserve(positionId)).to.equal(7n * USDC);
+    expect(await fixture.usdc.balanceOf(fixture.creator.address)).to.equal(
+      creatorQuoteBefore,
+    );
+    expect(supplyBeforeCollection - (await token.totalSupply())).to.equal(
+      700n * TOKEN,
+    );
+
+    const keeperBefore = await fixture.usdc.balanceOf(fixture.stranger.address);
+    const supplyBeforeBuyback = await token.totalSupply();
+    const expectedQuoteSpent = 6_965_000n;
+    const expectedBurn = expectedQuoteSpent * 200_000n * 10n ** 12n;
+    await expect(fixture.locker.connect(fixture.stranger).executeBuyback(positionId))
+      .to.emit(fixture.locker, "BuybackExecuted")
+      .withArgs(
+        positionId,
+        fixture.stranger.address,
+        expectedQuoteSpent,
+        34_825n,
+        expectedBurn,
+        175n,
+      );
+    expect(supplyBeforeBuyback - (await token.totalSupply())).to.equal(expectedBurn);
+    expect(
+      (await fixture.usdc.balanceOf(fixture.stranger.address)) - keeperBefore,
+    ).to.equal(34_825n);
+    expect(await fixture.locker.buybackReserve(positionId)).to.equal(175n);
+  });
+
+  it("rejects buybacks for ordinary launches and manipulated spot prices", async function () {
+    const fixture = await deployFixture();
+    const ordinary = await launch(fixture, false);
+    await expect(
+      fixture.locker.connect(fixture.stranger).executeBuyback(ordinary.positionId),
+    ).to.be.revertedWithCustomError(fixture.locker, "BuybackDisabled");
+
+    const automatic = await launch(fixture, true);
+    const record = await fixture.locker.locks(automatic.positionId);
+    const quoteIsToken0 = record.token0 === (await fixture.usdc.getAddress());
+    await fixture.usdc
+      .connect(fixture.trader)
+      .approve(await fixture.positionManager.getAddress(), 10n * USDC);
+    await fixture.positionManager.connect(fixture.trader).seedFees(
+      automatic.positionId,
+      quoteIsToken0 ? 10n * USDC : 0n,
+      quoteIsToken0 ? 0n : 10n * USDC,
+    );
+    await fixture.locker.collectFees(automatic.positionId);
+    await automatic.pool.setTicksForTest(601, 0);
+    await expect(
+      fixture.locker.connect(fixture.stranger).executeBuyback(automatic.positionId),
+    ).to.be.revertedWithCustomError(fixture.locker, "UnsafePrice");
+  });
+
+  it("executes capped buybacks for both token address orderings", async function () {
+    const fixture = await deployFixture();
+    const launches = new Map();
+    for (let index = 0; index < 32 && launches.size < 2; index += 1) {
+      const launched = await launch(fixture, true);
+      const record = await fixture.locker.locks(launched.positionId);
+      const quoteIsToken0 = record.token0 === (await fixture.usdc.getAddress());
+      if (!launches.has(quoteIsToken0)) launches.set(quoteIsToken0, launched);
+    }
+    expect(launches.size).to.equal(2);
+
+    for (const [quoteIsToken0, launched] of launches) {
+      await fixture.usdc
+        .connect(fixture.trader)
+        .approve(await fixture.positionManager.getAddress(), 300n * USDC);
+      await fixture.positionManager.connect(fixture.trader).seedFees(
+        launched.positionId,
+        quoteIsToken0 ? 300n * USDC : 0n,
+        quoteIsToken0 ? 0n : 300n * USDC,
+      );
+      const supplyBefore = await launched.token.totalSupply();
+      const keeperBefore = await fixture.usdc.balanceOf(fixture.stranger.address);
+      await fixture.locker
+        .connect(fixture.stranger)
+        .collectAndExecuteBuyback(launched.positionId);
+      expect((await launched.token.totalSupply()) < supplyBefore).to.equal(true);
+      expect(
+        (await fixture.usdc.balanceOf(fixture.stranger.address)) - keeperBefore,
+      ).to.equal(USDC);
+      expect(await fixture.locker.buybackReserve(launched.positionId)).to.equal(0n);
+    }
+  });
+
   it("treats $50k as a permanent status mark without moving liquidity", async function () {
     const fixture = await deployFixture();
     const { token, pool, positionId } = await launch(fixture);
@@ -260,6 +378,7 @@ describe("ArcOrigin direct Uniswap V3 launches", function () {
       name: "Block Bound",
       symbol: "BBND",
       metadataURI: "ipfs://block-bound",
+      automaticBuyback: false,
     };
     await fixture.usdc
       .connect(fixture.creator)
@@ -300,6 +419,7 @@ describe("ArcOrigin direct Uniswap V3 launches", function () {
       name: "Poison Retry",
       symbol: "RETRY",
       metadataURI: "ipfs://retry",
+      automaticBuyback: false,
     };
     const poisonedToken = await predictNextToken(
       fixture.factory,

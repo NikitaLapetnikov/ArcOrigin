@@ -8,12 +8,14 @@ The product indexes only launches emitted by the configured active Factory. Prev
 
 ## Core invariants
 
-- Each launch creates a fixed one-billion-token supply with no owner, mint, tax, blacklist, or token pause.
+- Each launch creates an initial one-billion-token supply with no owner, mint, tax, blacklist, or token pause. No account can burn another holder's balance.
 - The canonical token/USDC Uniswap V3 pool and its single-sided position are created in the launch transaction.
 - The LP NFT is owned by an immutable locker with no transfer, withdrawal, or liquidity-decrease path.
 - The 50,000 USDC Crossed mark changes status only; it cannot move liquidity or alter trading.
 - Pool verification checks both Factory launch data and the canonical Uniswap Factory before quoting.
-- LP fees are distributed 70% to the recorded creator and 30% to the protocol Fee Vault. Fee collection is permissionless, but recipients are immutable per position.
+- Ordinary LP positions distribute 70% of collected fees to the recorded creator and 30% to the protocol Fee Vault.
+- Automatic buyback is an immutable per-position launch choice. It redirects the creator's 70% share: launch-token fees burn immediately and USDC fees enter that position's buyback reserve. The protocol share remains 30%.
+- Buyback execution is permissionless and constrained to the position's canonical pool and the immutable official Router. It requires at least 1 USDC, a 15-minute cooldown, a 15-minute TWAP within 600 ticks of spot, and a bounded sqrt-price limit. The executor receives 0.5% of USDC actually spent, capped at 1 USDC.
 - The Factory starts paused. Only governance can unpause; the emergency guardian may pause future launches but cannot move assets.
 - Ownership renunciation is disabled on protocol administration contracts.
 
@@ -32,11 +34,15 @@ The current internal review and its limitations are recorded in `audit/SECURITY_
 
 Never store deployer keys, Safe signer material, RPC credentials, Pinata tokens, or Redis credentials in the repository. Deployment scripts produce a paused candidate and unsigned Safe operations; they do not authorize automatic activation.
 
+The buyback keeper key has no protocol privileges and must be separate from deployer and Safe signers. Keeper availability is not guaranteed: any account can execute an eligible buyback if the platform keeper is offline. Failed eligibility checks revert atomically, including fee collection attempted in the same call.
+
 ## Known risks
 
 Permanent LP custody does not guarantee demand, token quality, price stability, or sufficient depth. A token can lose all value. Smart-contract defects, compromised wallets, RPC failures, Uniswap failures, metadata gateway outages, and malicious token creators remain possible.
 
 Quotes are not reservations. Slippage limits protect minimum output, but transactions can still fail or be reordered. Users must verify token and pool addresses before signing.
+
+Buybacks are market orders within explicit limits, not price guarantees. MEV, pool volatility, insufficient TWAP history, low reserves, RPC outages, or an unfunded keeper can delay execution. Enabling buyback is irreversible and permanently forfeits the creator's 70% fee payout for that position.
 
 ## Reporting
 

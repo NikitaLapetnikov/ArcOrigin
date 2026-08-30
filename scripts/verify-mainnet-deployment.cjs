@@ -116,10 +116,13 @@ async function main() {
   assertEqual("Factory CreatorRegistry", await factory.creatorRegistry(), creatorRegistry);
   assertEqual("Factory Uniswap Factory", await factory.uniswapV3Factory(), manifest.contracts.uniswapV3Factory);
   assertEqual("Factory PositionManager", await factory.positionManager(), manifest.contracts.uniswapV3PositionManager);
+  assertEqual("Factory SwapRouter", await factory.swapRouter(), manifest.contracts.uniswapV3SwapRouter);
   assertEqual("Factory Locker", await factory.liquidityLocker(), lockerAddress);
   assertEqual("Factory launch fee", await factory.launchFee(), 10n * 10n ** 6n);
   assertEqual("Locker Factory", await locker.factory(), factoryAddress);
   assertEqual("Locker PositionManager", await locker.positionManager(), manifest.contracts.uniswapV3PositionManager);
+  assertEqual("Locker SwapRouter", await locker.swapRouter(), manifest.contracts.uniswapV3SwapRouter);
+  assertEqual("Locker quote token", await locker.quoteToken(), manifest.contracts.usdc);
   assertEqual("Locker protocol recipient", await locker.protocolFeeRecipient(), feeVault);
   assertEqual("FeeVault owner", await vault.owner(), governanceSafe);
   assertEqual("CreatorRegistry owner", await registry.owner(), governanceSafe);

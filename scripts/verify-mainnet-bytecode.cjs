@@ -58,6 +58,7 @@ async function main() {
     manifest.contracts.creatorRegistry,
     manifest.contracts.uniswapV3Factory,
     manifest.contracts.uniswapV3PositionManager,
+    manifest.contracts.uniswapV3SwapRouter,
     10n * 10n ** 6n,
   );
   assertEqual("audited creation bytecode and constructor args", transaction.data, expectedDeployment.data);

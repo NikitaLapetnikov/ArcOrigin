@@ -11,7 +11,12 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ArcForgeToken} from "./ArcForgeToken.sol";
 import {ArcForgeFeeVault} from "./ArcForgeFeeVault.sol";
 import {ArcForgeCreatorRegistry} from "./ArcForgeCreatorRegistry.sol";
-import {IUniswapV3FactoryMinimal, IUniswapV3PoolMinimal, INonfungiblePositionManagerMinimal} from "./interfaces/IUniswapV3Minimal.sol";
+import {
+    IUniswapV3FactoryMinimal,
+    IUniswapV3PoolMinimal,
+    IUniswapV3SwapRouterMinimal,
+    INonfungiblePositionManagerMinimal
+} from "./interfaces/IUniswapV3Minimal.sol";
 import {ArcOriginUniswapV3Math} from "./uniswap/ArcOriginUniswapV3Math.sol";
 import {ArcOriginUniswapV3LiquidityLocker} from "./uniswap/ArcOriginUniswapV3LiquidityLocker.sol";
 
@@ -37,6 +42,7 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
         string name;
         string symbol;
         string metadataURI;
+        bool automaticBuyback;
     }
 
     struct TokenInfo {
@@ -47,6 +53,7 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
         uint64 launchedAt;
         bool tokenIsToken0;
         bool crossed;
+        bool automaticBuyback;
         string metadataURI;
     }
 
@@ -63,6 +70,7 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
     ArcForgeCreatorRegistry public immutable creatorRegistry;
     IUniswapV3FactoryMinimal public immutable uniswapV3Factory;
     INonfungiblePositionManagerMinimal public immutable positionManager;
+    IUniswapV3SwapRouterMinimal public immutable swapRouter;
     ArcOriginUniswapV3LiquidityLocker public immutable liquidityLocker;
     uint256 public launchFee;
     uint256 public launchNonce;
@@ -92,6 +100,11 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
     event LaunchFeePaid(address indexed creator, uint256 amount);
     event LaunchFeeUpdated(uint256 previousFee, uint256 newFee);
     event EmergencyGuardianUpdated(address indexed previousGuardian, address indexed newGuardian);
+    event AutomaticBuybackConfigured(
+        address indexed token,
+        uint256 indexed positionId,
+        bool enabled
+    );
 
     error EmptyName();
     error EmptySymbol();
@@ -116,6 +129,7 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
         address creatorRegistry_,
         address uniswapV3Factory_,
         address positionManager_,
+        address swapRouter_,
         uint256 launchFee_
     ) Ownable(owner_) {
         if (
@@ -125,7 +139,8 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
             feeVault_ == address(0) ||
             creatorRegistry_ == address(0) ||
             uniswapV3Factory_ == address(0) ||
-            positionManager_ == address(0)
+            positionManager_ == address(0) ||
+            swapRouter_ == address(0)
         ) revert InvalidConfiguration();
         if (
             usdc_.code.length == 0 ||
@@ -133,6 +148,7 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
             creatorRegistry_.code.length == 0 ||
             uniswapV3Factory_.code.length == 0 ||
             positionManager_.code.length == 0 ||
+            swapRouter_.code.length == 0 ||
             IERC20Metadata(usdc_).decimals() != 6 ||
             launchFee_ > MAX_LAUNCH_FEE ||
             INonfungiblePositionManagerMinimal(positionManager_).factory() != uniswapV3Factory_ ||
@@ -144,11 +160,14 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
         creatorRegistry = ArcForgeCreatorRegistry(creatorRegistry_);
         uniswapV3Factory = IUniswapV3FactoryMinimal(uniswapV3Factory_);
         positionManager = INonfungiblePositionManagerMinimal(positionManager_);
+        swapRouter = IUniswapV3SwapRouterMinimal(swapRouter_);
         emergencyGuardian = emergencyGuardian_;
         launchFee = launchFee_;
         liquidityLocker = new ArcOriginUniswapV3LiquidityLocker(
             address(this),
             positionManager_,
+            swapRouter_,
+            usdc_,
             feeVault_
         );
         _pause();
@@ -172,7 +191,41 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
         );
         token = address(launchedToken);
 
-        bool tokenIsToken0 = token < address(usdc);
+        bool tokenIsToken0;
+        LiquidityResult memory result;
+        (pool, tokenIsToken0, result) = _createLaunchLiquidity(
+            token,
+            params.automaticBuyback
+        );
+        uint256 dust = TOTAL_SUPPLY - result.lockedSupply;
+        launchedToken.burnFactoryDust(dust);
+        if (
+            launchedToken.totalSupply() != result.lockedSupply ||
+            launchedToken.balanceOf(address(this)) != 0
+        ) {
+            revert InvalidLiquidityPosition();
+        }
+
+        _registerLockedPosition(
+            token,
+            pool,
+            msg.sender,
+            params.automaticBuyback,
+            result
+        );
+
+        _recordLaunch(params, token, pool, tokenIsToken0, result);
+    }
+
+    function _createLaunchLiquidity(
+        address token,
+        bool automaticBuyback
+    ) private returns (
+        address pool,
+        bool tokenIsToken0,
+        LiquidityResult memory result
+    ) {
+        tokenIsToken0 = token < address(usdc);
         (address token0, address token1, uint256 amount0ForPrice, uint256 amount1ForPrice) =
             ArcOriginUniswapV3Math.sortTokens(
                 token,
@@ -184,42 +237,11 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
             amount0ForPrice,
             amount1ForPrice
         );
-
         pool = _createOrInitializePool(token0, token1, initialSqrtPriceX96);
-        LiquidityResult memory result = _seedPermanentLiquidity(
-            token,
-            pool,
-            token0,
-            token1,
-            tokenIsToken0
-        );
-        uint256 dust = TOTAL_SUPPLY - result.lockedSupply;
-        launchedToken.burnFactoryDust(dust);
-        if (
-            launchedToken.totalSupply() != result.lockedSupply ||
-            launchedToken.balanceOf(address(this)) != 0
-        ) {
-            revert InvalidLiquidityPosition();
+        if (automaticBuyback) {
+            IUniswapV3PoolMinimal(pool).increaseObservationCardinalityNext(32);
         }
-
-        liquidityLocker.registerPosition(
-            ArcOriginUniswapV3LiquidityLocker.RegisterParams({
-                positionId: result.positionId,
-                pool: pool,
-                token0: token0,
-                token1: token1,
-                launchToken: token,
-                creatorFeeRecipient: msg.sender,
-                creatorFeeShareBps: CREATOR_FEE_SHARE_BPS,
-                fee: POOL_FEE,
-                tickLower: result.tickLower,
-                tickUpper: result.tickUpper,
-                liquidity: result.liquidity,
-                launchTokenPrincipal: result.lockedSupply
-            })
-        );
-
-        _recordLaunch(params, token, pool, tokenIsToken0, result);
+        result = _seedPermanentLiquidity(token, pool, token0, token1, tokenIsToken0);
     }
 
     /// @notice Permanently records the milestone once the live pool reaches $50k market cap.
@@ -380,6 +402,32 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
         }
     }
 
+    function _registerLockedPosition(
+        address token,
+        address pool,
+        address creator,
+        bool automaticBuyback,
+        LiquidityResult memory result
+    ) private {
+        liquidityLocker.registerPosition(
+            ArcOriginUniswapV3LiquidityLocker.RegisterParams({
+                positionId: result.positionId,
+                pool: pool,
+                token0: IUniswapV3PoolMinimal(pool).token0(),
+                token1: IUniswapV3PoolMinimal(pool).token1(),
+                launchToken: token,
+                creatorFeeRecipient: creator,
+                creatorFeeShareBps: CREATOR_FEE_SHARE_BPS,
+                fee: POOL_FEE,
+                tickLower: result.tickLower,
+                tickUpper: result.tickUpper,
+                liquidity: result.liquidity,
+                launchTokenPrincipal: result.lockedSupply,
+                automaticBuyback: automaticBuyback
+            })
+        );
+    }
+
     function _recordLaunch(
         LaunchParams calldata params,
         address token,
@@ -397,6 +445,7 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
             launchedAt: uint64(block.timestamp),
             tokenIsToken0: tokenIsToken0,
             crossed: false,
+            automaticBuyback: params.automaticBuyback,
             metadataURI: params.metadataURI
         });
         creatorRegistry.recordLaunch(msg.sender, token);
@@ -416,6 +465,11 @@ contract ArcForgeFactory is Ownable2Step, Pausable, ReentrancyGuard {
             params.name,
             params.symbol,
             result.positionId
+        );
+        emit AutomaticBuybackConfigured(
+            token,
+            result.positionId,
+            params.automaticBuyback
         );
     }
 

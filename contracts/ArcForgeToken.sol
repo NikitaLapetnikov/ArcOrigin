@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /// @notice Fixed-supply launch token with no owner, mint, tax, pause, or blacklist.
-/// @dev Only the immutable launch factory can burn its own rounding dust after LP minting.
+/// @dev Holders may only burn their own balance. The factory uses the same primitive for LP rounding dust.
 contract ArcForgeToken is ERC20 {
     address public immutable creator;
     address public immutable factory;
@@ -41,5 +41,9 @@ contract ArcForgeToken is ERC20 {
     function burnFactoryDust(uint256 amount) external {
         if (msg.sender != factory) revert Unauthorized();
         if (amount != 0) _burn(factory, amount);
+    }
+
+    function burn(uint256 amount) external {
+        if (amount != 0) _burn(msg.sender, amount);
     }
 }

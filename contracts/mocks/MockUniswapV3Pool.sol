@@ -2,8 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {IUniswapV3PoolMinimal} from "../interfaces/IUniswapV3Minimal.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 contract MockUniswapV3Pool is IUniswapV3PoolMinimal {
+    using SafeERC20 for IERC20;
+
     address public immutable override factory;
     address public immutable override token0;
     address public immutable override token1;
@@ -11,6 +15,9 @@ contract MockUniswapV3Pool is IUniswapV3PoolMinimal {
     address public immutable positionManager;
     uint128 public override liquidity;
     uint160 private _sqrtPriceX96;
+    int24 private _currentTick;
+    int24 private _twapTick;
+    uint16 private _observationCardinalityNext = 1;
 
     error AlreadyInitialized();
     error InvalidPrice();
@@ -44,6 +51,36 @@ contract MockUniswapV3Pool is IUniswapV3PoolMinimal {
         _sqrtPriceX96 = sqrtPriceX96_;
     }
 
+    function setTicksForTest(int24 currentTick_, int24 twapTick_) external {
+        _currentTick = currentTick_;
+        _twapTick = twapTick_;
+    }
+
+    function increaseObservationCardinalityNext(
+        uint16 observationCardinalityNext_
+    ) external {
+        if (observationCardinalityNext_ > _observationCardinalityNext) {
+            _observationCardinalityNext = observationCardinalityNext_;
+        }
+    }
+
+    function observe(
+        uint32[] calldata secondsAgos
+    ) external view returns (
+        int56[] memory tickCumulatives,
+        uint160[] memory secondsPerLiquidityCumulativeX128s
+    ) {
+        tickCumulatives = new int56[](secondsAgos.length);
+        secondsPerLiquidityCumulativeX128s = new uint160[](secondsAgos.length);
+        for (uint256 index; index < secondsAgos.length; ++index) {
+            tickCumulatives[index] = -int56(_twapTick) * int56(uint56(secondsAgos[index]));
+        }
+    }
+
+    function pay(address token, address recipient, uint256 amount) external {
+        IERC20(token).safeTransfer(recipient, amount);
+    }
+
     function slot0()
         external
         view
@@ -57,6 +94,14 @@ contract MockUniswapV3Pool is IUniswapV3PoolMinimal {
             bool unlocked
         )
     {
-        return (_sqrtPriceX96, 0, 0, 1, 1, 0, true);
+        return (
+            _sqrtPriceX96,
+            _currentTick,
+            0,
+            1,
+            _observationCardinalityNext,
+            0,
+            true
+        );
     }
 }
