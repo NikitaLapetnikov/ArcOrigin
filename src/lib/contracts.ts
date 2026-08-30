@@ -52,6 +52,41 @@ export const factoryAbi = [
   },
   { type: "function", name: "isCrossed", stateMutability: "view", inputs: [{ name: "token", type: "address" }], outputs: [{ name: "", type: "bool" }] },
   { type: "function", name: "currentMarketCap", stateMutability: "view", inputs: [{ name: "token", type: "address" }], outputs: [{ name: "", type: "uint256" }] },
+  { type: "function", name: "liquidityLocker", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
+] as const;
+
+export const liquidityLockerAbi = [
+  {
+    type: "event",
+    name: "BuybackExecuted",
+    anonymous: false,
+    inputs: [
+      { name: "positionId", type: "uint256", indexed: true },
+      { name: "keeper", type: "address", indexed: true },
+      { name: "quoteSpent", type: "uint256", indexed: false },
+      { name: "keeperReward", type: "uint256", indexed: false },
+      { name: "launchTokensBurned", type: "uint256", indexed: false },
+      { name: "remainingQuoteReserve", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "function",
+    name: "buybackReady",
+    stateMutability: "view",
+    inputs: [{ name: "positionId", type: "uint256" }],
+    outputs: [
+      { name: "ready", type: "bool" },
+      { name: "reserve", type: "uint256" },
+      { name: "nextExecutionAt", type: "uint256" },
+    ],
+  },
+  {
+    type: "function",
+    name: "lastBuybackAt",
+    stateMutability: "view",
+    inputs: [{ name: "positionId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint64" }],
+  },
 ] as const;
 
 export const erc20Abi = [

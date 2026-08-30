@@ -72,6 +72,7 @@ export default function DocsPage() {
         <Section id="fees" title="Fees">
           <p>The pool uses the 1% Uniswap fee tier. Ordinary launches split collected LP fees 70% to the creator and 30% to the protocol Fee Vault. Anyone may trigger fee collection, but cannot redirect or withdraw the LP position.</p>
           <p>If automatic buyback is enabled at launch, the creator permanently redirects that 70% share: token fees burn immediately and USDC fees buy and burn the token in protected batches. The protocol share remains 30%. Execution requires at least 1 USDC, a 15-minute cooldown, and a safe 15-minute TWAP; the caller earns 0.5% of USDC spent, capped at 1 USDC.</p>
+          <p>Each enabled token page exposes an onchain transparency panel with the pending USDC reserve, cumulative USDC spent, tokens bought and burned, execution count, latest transaction, and platform keeper funding status. The values are derived from the locker state and <code className="text-xs text-cyan">BuybackExecuted</code> events.</p>
         </Section>
         <Section id="events" title="Onchain events">
           <Definition rows={[

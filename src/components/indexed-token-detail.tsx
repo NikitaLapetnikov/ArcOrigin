@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ArrowLeft, Check, Copy, ExternalLink } from "lucide-react";
 import { BuySellPanel } from "@/components/buy-sell-panel";
+import { BuybackTransparencyPanel } from "@/components/buyback-transparency-panel";
 import { OnchainTokenDashboard } from "@/components/onchain-token-dashboard";
 import { TokenInfoPanel } from "@/components/token-info-panel";
 import { TokenLabels } from "@/components/token-labels";
@@ -116,6 +117,7 @@ export function IndexedTokenDetail({
       initialHolderSnapshot={initialHolderSnapshot}
       rightRail={<>
         <BuySellPanel token={token} />
+        <BuybackTransparencyPanel token={token} />
         <TokenInfoPanel token={token} />
       </>}
     />
