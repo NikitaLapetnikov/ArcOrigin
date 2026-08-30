@@ -2,10 +2,10 @@
 
 set -eu
 
-health_url="${ARCORIGIN_HEALTH_URL:-http://127.0.0.1:3100/api/health}"
-home_url="${ARCORIGIN_HOME_URL:-http://127.0.0.1:3100/}"
-service_name="${ARCORIGIN_SERVICE:-arcorigin.service}"
-logger_tag="${ARCORIGIN_LOGGER_TAG:-arcorigin-healthcheck}"
+health_url="${ARCORIGIN_HEALTH_URL:-http://127.0.0.1:3101/api/health}"
+home_url="${ARCORIGIN_HOME_URL:-http://127.0.0.1:3101/}"
+service_name="${ARCORIGIN_SERVICE:-arcorigin-mainnet.service}"
+logger_tag="${ARCORIGIN_LOGGER_TAG:-arcorigin-mainnet-healthcheck}"
 warmup_url="${ARCORIGIN_WARMUP_URL:-}"
 
 warm_index() {

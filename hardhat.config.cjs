@@ -14,11 +14,6 @@ module.exports = {
     artifacts: "./artifacts",
   },
   networks: {
-    arcTestnet: {
-      url: process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.network",
-      chainId: 5042002,
-      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
-    },
     arcMainnet: {
       // No public fallback: deployment must use a reviewed, dedicated endpoint.
       url: process.env.ARC_MAINNET_RPC_URL || "http://127.0.0.1:1",

@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ARCORIGIN_NETWORK, arcChain } from "@/lib/chains";
+import { arcChain } from "@/lib/chains";
 
 const productLinks = [
   ["Explore", "/tokens"],
@@ -32,7 +32,7 @@ export function Footer() {
         <div>
           <p className="text-xs font-semibold text-slate-300">Risk notice</p>
           <p className="mt-3 text-[13px] leading-6 text-slate-400">
-            Transactions may be irreversible. Tokens can be volatile and lose all value. ArcOrigin does not custody assets or provide financial advice.{ARCORIGIN_NETWORK === "testnet" ? " Testnet assets have no guaranteed value." : ""}
+            Transactions may be irreversible. Tokens can be volatile and lose all value. ArcOrigin does not custody assets or provide financial advice.
           </p>
         </div>
       </div>

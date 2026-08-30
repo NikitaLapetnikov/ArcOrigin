@@ -25,7 +25,7 @@ Mainnet candidates must remain paused until all of the following are complete:
 
 1. Independent review of the exact source and compiler settings.
 2. Reproducible creation-bytecode verification against the published source commit and exact constructor arguments. Arc mainnet explorer source verification is currently unavailable.
-3. A fork or testnet launch covering both token orderings and live Router trades.
+3. A mainnet-fork launch covering both token orderings and live Router trades.
 4. Verification that the Governance Safe is exactly the intended 2-of-3 owner.
 5. Coordinated application and indexer configuration using the new Factory address and deployment block.
 6. Health monitoring, RPC failover, Redis persistence, and reorg recovery checks.

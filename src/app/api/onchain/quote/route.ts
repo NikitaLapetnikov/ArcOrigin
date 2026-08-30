@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAddress, isAddress, maxUint256, zeroAddress } from "viem";
-import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, ARCORIGIN_NETWORK } from "@/lib/chains";
+import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3 } from "@/lib/chains";
 import { factoryAbi, uniswapV3FactoryAbi, uniswapV3QuoterAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
@@ -71,7 +71,7 @@ async function readVerifiedQuote(token: `0x${string}`, pool: `0x${string}`, side
   const index = await getTokenIndexSnapshot();
   const indexedToken = index.snapshot?.tokens.find((candidate) => candidate.address.toLowerCase() === token.toLowerCase());
   const client = createArcPublicClient(
-    ARCORIGIN_NETWORK === "mainnet" ? process.env.ARC_MAINNET_RPC_URL : process.env.ARC_TESTNET_RPC_URL,
+    process.env.ARC_MAINNET_RPC_URL,
     4_000,
   );
   if (indexedToken?.poolAddress?.toLowerCase() !== pool.toLowerCase()) {

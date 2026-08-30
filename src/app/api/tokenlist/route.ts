@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const PLATFORM_URL = "https://arcorigin.xyz/";
-const PLATFORM_LOGO_URL = "https://mainnet.arcorigin.xyz/brand/arcorigin-logo-v2.png";
+const PLATFORM_LOGO_URL = "https://arcorigin.xyz/brand/arcorigin-logo-v2.png";
 
 export async function GET() {
   try {

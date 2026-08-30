@@ -5,7 +5,7 @@ import { fallback, http } from "viem";
 import { WagmiProvider, createConfig } from "wagmi";
 import { injected } from "@wagmi/core";
 import { useEffect, useState, type ReactNode } from "react";
-import { ARCORIGIN_NETWORK, arcMainnet, arcTestnet } from "@/lib/chains";
+import { arcMainnet } from "@/lib/chains";
 import { getSafeAppContext, safeAppConnector } from "@/lib/wallet/safe-app-connector";
 
 function connectors() {
@@ -22,21 +22,13 @@ function rpcTransport(urls: readonly string[]) {
   );
 }
 
-const config = ARCORIGIN_NETWORK === "mainnet"
-  ? createConfig({
-    chains: [arcMainnet],
-    connectors: connectors(),
-    multiInjectedProviderDiscovery: true,
-    transports: { [arcMainnet.id]: rpcTransport(arcMainnet.rpcUrls.default.http) },
-    ssr: true,
-  })
-  : createConfig({
-    chains: [arcTestnet],
-    connectors: connectors(),
-    multiInjectedProviderDiscovery: true,
-    transports: { [arcTestnet.id]: rpcTransport(arcTestnet.rpcUrls.default.http) },
-    ssr: true,
-  });
+const config = createConfig({
+  chains: [arcMainnet],
+  connectors: connectors(),
+  multiInjectedProviderDiscovery: true,
+  transports: { [arcMainnet.id]: rpcTransport(arcMainnet.rpcUrls.default.http) },
+  ssr: true,
+});
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());

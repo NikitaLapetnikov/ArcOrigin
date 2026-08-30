@@ -28,9 +28,7 @@ const factoryHealthAbi = [
 ] as const;
 
 const healthClient = createArcPublicClient(
-  ARCORIGIN_NETWORK === "mainnet"
-    ? process.env.ARC_MAINNET_RPC_URL
-    : process.env.ARC_TESTNET_RPC_URL,
+  process.env.ARC_MAINNET_RPC_URL,
   5_000,
 );
 const HEALTH_CACHE_TTL_MS = 10_000;
@@ -44,20 +42,14 @@ function indexerMaxBlockLag() {
 }
 
 function expectedOwner() {
-  const value = (
-    ARCORIGIN_NETWORK === "mainnet"
-      ? process.env.MAINNET_GOVERNANCE_SAFE
-      : process.env.TESTNET_GOVERNANCE_SAFE
-  )?.trim();
+  const value = process.env.MAINNET_GOVERNANCE_SAFE?.trim();
   return value && isAddress(value) ? value as Address : null;
 }
 
 async function loadProductionHealth() {
   const checkedAt = new Date().toISOString();
   const startedAt = Date.now();
-  const expectedLaunchPaused = ARCORIGIN_NETWORK === "mainnet"
-    ? process.env.MAINNET_EXPECT_LAUNCHES_PAUSED !== "false"
-    : process.env.TESTNET_EXPECT_LAUNCHES_PAUSED === "true";
+  const expectedLaunchPaused = process.env.MAINNET_EXPECT_LAUNCHES_PAUSED !== "false";
   const owner = expectedOwner();
   const errors: string[] = [];
   const warnings: string[] = [];

@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { getAddress, isAddress, verifyMessage as verifyEoaMessage, type Address, type Hex } from "viem";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
-import { ARCORIGIN_NETWORK, arcChain } from "@/lib/chains";
+import { arcChain } from "@/lib/chains";
 import {
   TOKEN_IMAGE_MAX_BYTES,
   canonicalMetadataCommitment,
@@ -45,9 +45,7 @@ const state = globalThis.__arcOriginMetadataUploadState ?? {
 };
 globalThis.__arcOriginMetadataUploadState = state;
 const signaturePublicClient = createArcPublicClient(
-  ARCORIGIN_NETWORK === "mainnet"
-    ? process.env.ARC_MAINNET_RPC_URL
-    : process.env.ARC_TESTNET_RPC_URL,
+  process.env.ARC_MAINNET_RPC_URL,
   6_000,
 );
 

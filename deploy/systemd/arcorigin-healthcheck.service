@@ -1,7 +1,0 @@
-[Unit]
-Description=ArcOrigin local health check and recovery
-After=arcorigin.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/arcorigin-healthcheck

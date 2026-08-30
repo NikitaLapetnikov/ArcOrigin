@@ -1,23 +1,8 @@
 import { defineChain, isAddress, type Address } from "viem";
 
-export type ArcNetworkKey = "testnet" | "mainnet";
-export const ARCORIGIN_NETWORK: ArcNetworkKey = process.env.NEXT_PUBLIC_ARC_NETWORK === "mainnet" ? "mainnet" : "testnet";
+export const ARCORIGIN_NETWORK = "mainnet" as const;
 const mainnetRpcUrl = process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL?.trim() || "https://invalid.invalid";
 const mainnetExplorerUrl = process.env.NEXT_PUBLIC_ARC_MAINNET_EXPLORER_URL?.trim() || "https://invalid.invalid";
-
-export const arcTestnet = defineChain({
-  id: 5_042_002,
-  name: "Arc Testnet",
-  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-  rpcUrls: { default: { http: [
-    "https://rpc.drpc.testnet.arc.network",
-    "https://rpc.blockdaemon.testnet.arc.network",
-    "https://rpc.quicknode.testnet.arc.network",
-    "https://rpc.testnet.arc.network",
-  ] } },
-  blockExplorers: { default: { name: "Arcscan", url: "https://testnet.arcscan.app" } },
-  testnet: true,
-});
 
 export const arcMainnet = defineChain({
   id: 5_042,
@@ -27,16 +12,12 @@ export const arcMainnet = defineChain({
   blockExplorers: { default: { name: "Arc Explorer", url: mainnetExplorerUrl } },
 });
 
-export const arcChain = ARCORIGIN_NETWORK === "mainnet" ? arcMainnet : arcTestnet;
+export const arcChain = arcMainnet;
 export const EXPLORER_URL = arcChain.blockExplorers.default.url;
-export const EXPLORER_API_URL = ARCORIGIN_NETWORK === "mainnet"
-  ? process.env.NEXT_PUBLIC_ARC_MAINNET_EXPLORER_API_URL?.trim() || null
-  : process.env.NEXT_PUBLIC_ARC_TESTNET_EXPLORER_API_URL?.trim() || "https://testnet.arcscan.app/api";
+export const EXPLORER_API_URL = process.env.NEXT_PUBLIC_ARC_MAINNET_EXPLORER_API_URL?.trim() || null;
 
 export const ARC_OFFICIAL_USDC = "0x3600000000000000000000000000000000000000" as Address;
-export const ARC_OFFICIAL_ORIGIN_TOKEN = ARCORIGIN_NETWORK === "mainnet"
-  ? "0xce9C0e29f8D5904bFAc3C8a79A0c9af00e6bDCcB" as Address
-  : null;
+export const ARC_OFFICIAL_ORIGIN_TOKEN = "0xce9C0e29f8D5904bFAc3C8a79A0c9af00e6bDCcB" as Address;
 export const ARC_MAINNET_UNISWAP_V3_FACTORY = "0xf0db7b58379503491d857db50ac9ece64c653918" as Address;
 export const ARC_MAINNET_UNISWAP_V3_POSITION_MANAGER = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377" as Address;
 export const ARC_MAINNET_UNISWAP_V3_QUOTER = "0x7dfd4f31be6814d2906bde155c3e1b146eac1468" as Address;
@@ -55,32 +36,32 @@ function configuredBlock(value: string | undefined) {
   return BigInt(value);
 }
 
-if (ARCORIGIN_NETWORK === "mainnet" && (!process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL || !process.env.NEXT_PUBLIC_ARC_MAINNET_EXPLORER_URL)) {
+if (!process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL || !process.env.NEXT_PUBLIC_ARC_MAINNET_EXPLORER_URL) {
   throw new Error("Arc mainnet RPC and explorer URLs must be explicitly configured.");
 }
 
 export const ARC_ACTIVE_FACTORY = configuredAddress(
-  ARCORIGIN_NETWORK === "mainnet" ? process.env.NEXT_PUBLIC_MAINNET_FACTORY_ADDRESS : process.env.NEXT_PUBLIC_FACTORY_ADDRESS,
+  process.env.NEXT_PUBLIC_MAINNET_FACTORY_ADDRESS,
   undefined,
   "Factory address",
 );
 export const ARC_ACTIVE_FACTORY_BLOCK = configuredBlock(
-  ARCORIGIN_NETWORK === "mainnet" ? process.env.NEXT_PUBLIC_MAINNET_FACTORY_FROM_BLOCK : process.env.NEXT_PUBLIC_FACTORY_FROM_BLOCK,
+  process.env.NEXT_PUBLIC_MAINNET_FACTORY_FROM_BLOCK,
 );
 export const ARC_ACTIVE_CONTRACTS = {
   factory: ARC_ACTIVE_FACTORY,
   feeVault: configuredAddress(
-    ARCORIGIN_NETWORK === "mainnet" ? process.env.NEXT_PUBLIC_MAINNET_FEE_VAULT_ADDRESS : process.env.NEXT_PUBLIC_FEE_VAULT_ADDRESS,
+    process.env.NEXT_PUBLIC_MAINNET_FEE_VAULT_ADDRESS,
     undefined,
     "FeeVault address",
   ),
   creatorRegistry: configuredAddress(
-    ARCORIGIN_NETWORK === "mainnet" ? process.env.NEXT_PUBLIC_MAINNET_CREATOR_REGISTRY_ADDRESS : process.env.NEXT_PUBLIC_CREATOR_REGISTRY_ADDRESS,
+    process.env.NEXT_PUBLIC_MAINNET_CREATOR_REGISTRY_ADDRESS,
     undefined,
     "CreatorRegistry address",
   ),
   usdc: configuredAddress(
-    ARCORIGIN_NETWORK === "mainnet" ? process.env.NEXT_PUBLIC_MAINNET_USDC_ADDRESS : process.env.NEXT_PUBLIC_USDC_ADDRESS,
+    process.env.NEXT_PUBLIC_MAINNET_USDC_ADDRESS,
     ARC_OFFICIAL_USDC,
     "USDC address",
   ),
@@ -90,10 +71,10 @@ if (ARC_ACTIVE_CONTRACTS.usdc.toLowerCase() !== ARC_OFFICIAL_USDC.toLowerCase())
 function uniswapAddress(name: string, officialMainnetAddress: Address): Address {
   const configured = configuredAddress(
     process.env[name],
-    ARCORIGIN_NETWORK === "mainnet" ? officialMainnetAddress : undefined,
+    officialMainnetAddress,
     name,
   );
-  if (ARCORIGIN_NETWORK === "mainnet" && configured.toLowerCase() !== officialMainnetAddress.toLowerCase()) {
+  if (configured.toLowerCase() !== officialMainnetAddress.toLowerCase()) {
     throw new Error(`${name} does not match the official Arc deployment.`);
   }
   return configured;

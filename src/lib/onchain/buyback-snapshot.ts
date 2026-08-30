@@ -1,7 +1,7 @@
 import "server-only";
 
 import { formatUnits, getAddress, isAddress, parseAbiItem, type Address, type Hash } from "viem";
-import { ARC_ACTIVE_FACTORY, ARC_ACTIVE_FACTORY_BLOCK, ARCORIGIN_NETWORK } from "@/lib/chains";
+import { ARC_ACTIVE_FACTORY, ARC_ACTIVE_FACTORY_BLOCK } from "@/lib/chains";
 import { factoryAbi, liquidityLockerAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
@@ -42,7 +42,7 @@ export type BuybackSnapshot = {
 type CacheEntry = { snapshot: BuybackSnapshot; cachedAt: number };
 
 const publicClient = createArcPublicClient(
-  ARCORIGIN_NETWORK === "mainnet" ? process.env.ARC_MAINNET_RPC_URL : process.env.ARC_TESTNET_RPC_URL,
+  process.env.ARC_MAINNET_RPC_URL,
 );
 const cache = new Map<string, CacheEntry>();
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { ArrowRightLeft, ChevronDown, Copy, LogOut, Menu, UserRound, Wallet, X } from "lucide-react";
+import { ChevronDown, Copy, LogOut, Menu, UserRound, Wallet, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -15,7 +15,7 @@ import {
   useSwitchChain,
   type Connector,
 } from "wagmi";
-import { ARCORIGIN_NETWORK, arcChain } from "@/lib/chains";
+import { arcChain } from "@/lib/chains";
 import { cn, shortAddress } from "@/lib/utils";
 import { Button } from "./ui";
 import { ThemeToggle } from "./theme-toggle";
@@ -279,7 +279,6 @@ export function Header() {
       </nav>
       <div className="hidden items-center gap-2 md:flex">
         <ThemeToggle />
-        <NetworkLink />
         <WalletButton />
       </div>
       <button
@@ -293,34 +292,7 @@ export function Header() {
     {open && <div id="mobile-navigation" className="mx-auto grid w-full max-w-[1800px] gap-1 border-t border-line px-3 py-3 sm:px-4 lg:hidden">
       {nav.map(([label, href]) => <NavLink key={href} label={label} href={href} path={path} onClick={() => setOpen(false)} />)}
       <div className="my-2 h-px bg-line md:hidden" />
-      <div className="mt-2 flex flex-wrap items-center gap-2 md:hidden"><ThemeToggle /><NetworkLink mobile /><WalletButton /></div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 md:hidden"><ThemeToggle /><WalletButton /></div>
     </div>}
   </header>;
-}
-
-function NetworkLink({ mobile = false }: { mobile?: boolean }) {
-  const otherNetwork = ARCORIGIN_NETWORK === "mainnet" ? "testnet" : "mainnet";
-  const configuredDestination = (
-    otherNetwork === "mainnet"
-      ? process.env.NEXT_PUBLIC_MAINNET_APP_URL
-      : process.env.NEXT_PUBLIC_TESTNET_APP_URL
-  )?.trim();
-  const destination = configuredDestination || (
-    otherNetwork === "mainnet"
-      ? "https://mainnet.arcorigin.xyz"
-      : "https://arcorigin.xyz"
-  );
-  const label = otherNetwork === "mainnet" ? "Switch to Mainnet" : "Switch to Testnet";
-
-  return <a
-    href={destination}
-    title={`Switch to Arc ${otherNetwork}`}
-    className={cn(
-      "h-10 items-center gap-2 rounded-[10px] border border-cyan/25 bg-cyan/[.055] px-3 text-xs font-semibold text-cyan transition hover:border-cyan/45 hover:bg-cyan/[.09]",
-      mobile ? "inline-flex" : "hidden md:inline-flex",
-    )}
-  >
-    <ArrowRightLeft className="size-3.5" />
-    {label}
-  </a>;
 }

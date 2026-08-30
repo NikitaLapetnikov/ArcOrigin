@@ -2,11 +2,6 @@ import type { NextConfig } from "next";
 
 const isDevelopment = process.env.NODE_ENV === "development";
 const arcConnectSources = [
-  "https://rpc.drpc.testnet.arc.network",
-  "https://rpc.blockdaemon.testnet.arc.network",
-  "https://rpc.quicknode.testnet.arc.network",
-  "https://rpc.testnet.arc.network",
-  "https://testnet.arcscan.app",
   "https://rpc.blockdaemon.mainnet.arc.io",
   "https://rpc.arc-scan.org",
   "https://arc-mainnet.cloud.blockscout.com",

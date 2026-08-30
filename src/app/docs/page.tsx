@@ -91,11 +91,11 @@ export default function DocsPage() {
         <Section id="integrations" title="Indexer integration">
           <p>Screeners and analytics services can discover ArcOrigin launches from the Factory and enrich them with the public token list. The endpoint includes token and pool addresses, creator, image, website, X, Telegram, immutable auto-buyback status, and the address-bound Official ORIGIN marker.</p>
           <Definition rows={[
-            ["Token list", "https://mainnet.arcorigin.xyz/api/tokenlist"],
+            ["Token list", "https://arcorigin.xyz/api/tokenlist"],
             ["Factory", ARC_ACTIVE_CONTRACTS.factory],
             ["From block", ARC_ACTIVE_FACTORY_BLOCK.toString()],
             ["Event", "TokenLaunched(address,address,address,string,string,uint256)"],
-            ["Platform logo", "https://mainnet.arcorigin.xyz/brand/arcorigin-logo-v2.png"],
+            ["Platform logo", "https://arcorigin.xyz/brand/arcorigin-logo-v2.png"],
           ]} />
           <Callout>The endpoint is public, requires no API key, permits cross-origin reads, and keeps metadata compatible with external DEX screeners.</Callout>
         </Section>

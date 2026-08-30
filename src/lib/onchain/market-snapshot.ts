@@ -76,7 +76,7 @@ type MarketState = {
 };
 
 const publicClient = createArcPublicClient(
-  ARCORIGIN_NETWORK === "mainnet" ? process.env.ARC_MAINNET_RPC_URL : process.env.ARC_TESTNET_RPC_URL,
+  process.env.ARC_MAINNET_RPC_URL,
 );
 
 declare global {

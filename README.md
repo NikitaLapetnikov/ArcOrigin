@@ -53,7 +53,7 @@ npm run preflight:arc-mainnet
 npm run deploy:arc-mainnet
 ```
 
-The deploy script writes `deployment/arc-mainnet.local.json` and an unsigned Safe activation batch. It does not enable launches. Before activation, require an independent contract review, verified source code, a fork or testnet launch, and coordinated application/indexer configuration.
+The deploy script writes `deployment/arc-mainnet.local.json` and an unsigned Safe activation batch. It does not enable launches. Before activation, require an independent contract review, verified source code, a mainnet-fork rehearsal, and coordinated application/indexer configuration.
 
 Never commit private keys, RPC credentials, Pinata tokens, Redis credentials, or Safe signer material.
 

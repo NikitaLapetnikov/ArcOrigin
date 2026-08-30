@@ -36,8 +36,8 @@ const sections: LegalSection[] = [
     content: <p>Transactions may include network fees, protocol fees, price impact, slippage, and third-party costs. Current amounts are shown in the interface or transaction request before signing and can change through onchain governance. You are responsible for any taxes or reporting obligations.</p>,
   },
   {
-    title: "Testnet and technical risk",
-    content: <><p>ArcOrigin may expose separate testnet and mainnet environments. Testnet assets are experimental and may have no monetary value. Mainnet assets can be volatile or lose all value. Networks may reset, contracts may change, and data may be unavailable.</p><p>Smart contracts, wallets, RPC providers, indexers, explorers, storage systems, and browsers can fail, contain defects, or behave unexpectedly. Use only assets you can afford to lose.</p></>,
+    title: "Network and technical risk",
+    content: <><p>ArcOrigin operates on Arc mainnet. Mainnet assets can be volatile or lose all value, contracts may change through new deployments, and network data may be unavailable.</p><p>Smart contracts, wallets, RPC providers, indexers, explorers, storage systems, and browsers can fail, contain defects, or behave unexpectedly. Use only assets you can afford to lose.</p></>,
   },
   {
     title: "Acceptable use",
