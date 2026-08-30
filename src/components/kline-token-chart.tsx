@@ -133,15 +133,14 @@ export function KLineTokenChart({
     const activeTimeframe = compact ? "1h" : timeframe;
     const bucketSize = timeframeSeconds(activeTimeframe);
     const candleByTime = new Map(sourceCandles.map((candle) => [Number(candle.time), candle]));
-    const groups = new Map<string, { side: "Buy" | "Sell"; timestamp: number; usdc: number; count: number }>();
+    const groups = new Map<string, { side: "Buy" | "Sell"; timestamp: number; count: number }>();
 
     for (const trade of trades) {
       if (!Number.isFinite(trade.timestamp)) continue;
       const timestamp = Math.floor((trade.timestamp as number) / bucketSize) * bucketSize;
       if (!candleByTime.has(timestamp)) continue;
       const key = `${timestamp}:${trade.type}`;
-      const current = groups.get(key) ?? { side: trade.type, timestamp, usdc: 0, count: 0 };
-      current.usdc += trade.usdc;
+      const current = groups.get(key) ?? { side: trade.type, timestamp, count: 0 };
       current.count += 1;
       groups.set(key, current);
     }
@@ -164,7 +163,7 @@ export function KLineTokenChart({
           }],
           extendData: {
             side: group.side,
-            label: `${prefix} ${money(group.usdc, true)}${group.count > 1 ? ` ×${group.count}` : ""}`,
+            label: `${prefix}${group.count > 1 ? ` ×${group.count}` : ""}`,
           },
         };
       });
