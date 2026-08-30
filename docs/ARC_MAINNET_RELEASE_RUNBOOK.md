@@ -88,7 +88,6 @@ Required before preflight:
 ```dotenv
 ARC_MAINNET_RPC_URL=https://rpc.arc-scan.org
 NEXT_PUBLIC_ARC_MAINNET_RPC_URL=https://rpc.arc-scan.org
-NEXT_PUBLIC_ARC_MAINNET_FALLBACK_RPC_URLS=https://5042.rpc.thirdweb.com
 NEXT_PUBLIC_ARC_MAINNET_EXPLORER_URL=https://arc-mainnet.cloud.blockscout.com
 NEXT_PUBLIC_ARC_MAINNET_EXPLORER_API_URL=https://arc-mainnet.cloud.blockscout.com/api
 MAINNET_EXPLORER_URL=https://arc-mainnet.cloud.blockscout.com
