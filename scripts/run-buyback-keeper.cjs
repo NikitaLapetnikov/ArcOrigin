@@ -85,20 +85,43 @@ function expectedSkip(error) {
   return /BuybackNotReady|UnsafePrice|\bOLD\b/i.test(message);
 }
 
+function transientRpcFailure(error) {
+  const message = `${error?.shortMessage ?? ""} ${error?.details ?? ""} ${error?.message ?? ""}`;
+  return /Request exceeds defined limit|temporarily out of capacity|all upstream|Too Many Requests|rate limit|timeout|timed out|fetch failed|network error|\b429\b|\b50[234]\b|\b-32005\b/i.test(message);
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function withRpcRetry(operation, attempts = 4) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!transientRpcFailure(error) || attempt === attempts) throw error;
+      await wait(attempt * 1_500);
+    }
+  }
+  throw lastError;
+}
+
 async function launchedTokens(client, factoryAddress) {
-  const count = await client.readContract({
+  const count = await withRpcRetry(() => client.readContract({
     address: factoryAddress,
     abi: factoryAbi,
     functionName: "getLaunchedTokenCount",
-  });
+  }));
   const tokens = [];
   for (let offset = 0n; offset < count; offset += PAGE_SIZE) {
-    tokens.push(...await client.readContract({
+    tokens.push(...await withRpcRetry(() => client.readContract({
       address: factoryAddress,
       abi: factoryAbi,
       functionName: "getLaunchedTokens",
       args: [offset, PAGE_SIZE],
-    }));
+    })));
   }
   return tokens;
 }
@@ -122,27 +145,27 @@ async function main() {
   const publicClient = createPublicClient({ chain: arcMainnet, transport });
   const account = privateKeyToAccount(privateKey);
   const walletClient = createWalletClient({ account, chain: arcMainnet, transport });
-  const chainId = await publicClient.getChainId();
+  const chainId = await withRpcRetry(() => publicClient.getChainId());
   if (chainId !== ARC_MAINNET_CHAIN_ID) {
     throw new Error(`Keeper RPC chain mismatch: expected ${ARC_MAINNET_CHAIN_ID}, received ${chainId}.`);
   }
-  if (!await publicClient.getCode({ address: factoryAddress })) {
+  if (!await withRpcRetry(() => publicClient.getCode({ address: factoryAddress }))) {
     throw new Error("Configured Factory has no bytecode.");
   }
 
-  const lockerAddress = getAddress(await publicClient.readContract({
+  const lockerAddress = getAddress(await withRpcRetry(() => publicClient.readContract({
     address: factoryAddress,
     abi: factoryAbi,
     functionName: "liquidityLocker",
-  }));
-  if (!await publicClient.getCode({ address: lockerAddress })) {
+  })));
+  if (!await withRpcRetry(() => publicClient.getCode({ address: lockerAddress }))) {
     throw new Error("Factory Locker has no bytecode.");
   }
-  const lockerFactory = await publicClient.readContract({
+  const lockerFactory = await withRpcRetry(() => publicClient.readContract({
     address: lockerAddress,
     abi: lockerAbi,
     functionName: "factory",
-  });
+  }));
   if (getAddress(lockerFactory) !== factoryAddress) {
     throw new Error("Locker does not belong to the configured Factory.");
   }
@@ -151,34 +174,34 @@ async function main() {
   let executed = 0;
   let failures = 0;
   for (const token of await launchedTokens(publicClient, factoryAddress)) {
-    const info = await publicClient.readContract({
+    const info = await withRpcRetry(() => publicClient.readContract({
       address: factoryAddress,
       abi: factoryAbi,
       functionName: "getTokenInfo",
       args: [token],
-    });
+    }));
     if (!info.automaticBuyback) continue;
     enabled += 1;
     try {
-      const simulation = await publicClient.simulateContract({
+      const simulation = await withRpcRetry(() => publicClient.simulateContract({
         account,
         address: lockerAddress,
         abi: lockerAbi,
         functionName: "collectAndExecuteBuyback",
         args: [info.positionId],
-      });
-      const estimatedGas = await publicClient.estimateContractGas({
+      }));
+      const estimatedGas = await withRpcRetry(() => publicClient.estimateContractGas({
         account,
         address: lockerAddress,
         abi: lockerAbi,
         functionName: "collectAndExecuteBuyback",
         args: [info.positionId],
-      });
+      }));
       const transactionHash = await walletClient.writeContract({
         ...simulation.request,
         gas: estimatedGas * 120n / 100n,
       });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: transactionHash });
+      const receipt = await withRpcRetry(() => publicClient.waitForTransactionReceipt({ hash: transactionHash }));
       if (receipt.status !== "success") throw new Error("Buyback transaction failed.");
       executed += 1;
       console.log(JSON.stringify({
@@ -213,7 +236,11 @@ async function main() {
   if (failures !== 0) process.exitCode = 1;
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { transientRpcFailure, withRpcRetry };

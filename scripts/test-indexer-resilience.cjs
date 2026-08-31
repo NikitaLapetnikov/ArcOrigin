@@ -56,6 +56,9 @@ const {
 const {
   requiredNativeUsdcBalance,
 } = loadTypeScriptModule("src/lib/arc-usdc.ts");
+const {
+  transientRpcFailure,
+} = require("./run-buyback-keeper.cjs");
 
 const address = "0x1111111111111111111111111111111111111111";
 
@@ -201,4 +204,10 @@ test("native USDC preflight reserves the six-decimal amount plus gas", () => {
     requiredNativeUsdcBalance(100_000n, 2_000_000_000n, 1_500_000n),
     1_500_200_000_000_000_000n,
   );
+});
+
+test("keeper recognizes Arc provider capacity failures before retrying", () => {
+  assert.equal(transientRpcFailure({ code: -32005, details: "Request exceeds defined limit." }), true);
+  assert.equal(transientRpcFailure({ details: "all upstream temporarily out of capacity" }), true);
+  assert.equal(transientRpcFailure(new Error("execution reverted")), false);
 });
