@@ -30,10 +30,12 @@ const factoryHealthAbi = [
 
 const healthClient = createArcPublicClient(
   process.env.ARC_MAINNET_RPC_URL,
-  5_000,
+  3_000,
+  0,
 );
 const HEALTH_CACHE_TTL_MS = 10_000;
 const DEFAULT_INDEXER_MAX_BLOCK_LAG = 300n;
+const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 function indexerMaxBlockLag() {
   const value = process.env.INDEXER_MAX_BLOCK_LAG?.trim();
@@ -85,29 +87,37 @@ async function loadProductionHealth() {
     // Keep Redis independent, but serialize Arc reads so the health probe does
     // not create its own burst against capacity-constrained public RPCs.
     const cachePromise = settle(() => getPersistentCacheStatus());
-    const chainResult = await settleRpc(() => healthClient.getChainId());
-    const blockResult = await settleRpc(() => healthClient.getBlockNumber());
-    const bytecodeResult = await settleRpc(() => healthClient.getBytecode({ address: ARC_ACTIVE_CONTRACTS.factory }));
-    const ownerResult = await settleRpc(() => healthClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.factory,
-        abi: factoryHealthAbi,
-        functionName: "owner",
-      }));
-    const launchPauseResult = await settleRpc(() => healthClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.factory,
-        abi: factoryHealthAbi,
-        functionName: "paused",
-      }));
+    const [chainResult, blockResult] = await Promise.all([
+      settleRpc(() => healthClient.getChainId()),
+      settleRpc(() => healthClient.getBlockNumber()),
+    ]);
+    const [bytecodeResult, factoryStateResult] = await Promise.all([
+      settleRpc(() => healthClient.getBytecode({ address: ARC_ACTIVE_CONTRACTS.factory })),
+      settleRpc(() => healthClient.multicall({
+        allowFailure: false,
+        multicallAddress: MULTICALL3_ADDRESS,
+        contracts: [
+          {
+            address: ARC_ACTIVE_CONTRACTS.factory,
+            abi: factoryHealthAbi,
+            functionName: "owner",
+          },
+          {
+            address: ARC_ACTIVE_CONTRACTS.factory,
+            abi: factoryHealthAbi,
+            functionName: "paused",
+          },
+        ],
+      })),
+    ]);
     const indexerResult = await settleRpc(() => getTokenIndexCacheStatus());
     const cacheResult = await cachePromise;
 
     const chainId = chainResult.status === "fulfilled" ? chainResult.value : null;
     const latestBlock = blockResult.status === "fulfilled" ? blockResult.value : null;
     const bytecode = bytecodeResult.status === "fulfilled" ? bytecodeResult.value : null;
-    const factoryOwner = ownerResult.status === "fulfilled" ? ownerResult.value : null;
-    const launchesPaused = launchPauseResult.status === "fulfilled"
-      ? launchPauseResult.value
-      : null;
+    const factoryOwner = factoryStateResult.status === "fulfilled" ? factoryStateResult.value[0] : null;
+    const launchesPaused = factoryStateResult.status === "fulfilled" ? factoryStateResult.value[1] : null;
     const indexer = indexerResult.status === "fulfilled" ? indexerResult.value : null;
     const cache = cacheResult.status === "fulfilled" ? cacheResult.value : null;
     const ownerMatches = owner && factoryOwner
