@@ -13,6 +13,7 @@ import { WatchlistButton } from "@/components/watchlist-button";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
 import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
 import { EXPLORER_URL } from "@/lib/chains";
+import type { BuybackSnapshot } from "@/lib/onchain/buyback-snapshot";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import type { TokenData } from "@/lib/types";
 import { number, shortAddress, tickerLabel, utcDateTime } from "@/lib/utils";
@@ -21,10 +22,12 @@ export function IndexedTokenDetail({
   address,
   initialToken,
   initialHolderSnapshot,
+  initialBuybackSnapshot,
 }: {
   address: string;
   initialToken: TokenData | null;
   initialHolderSnapshot: HolderSnapshot | null;
+  initialBuybackSnapshot: BuybackSnapshot | null;
 }) {
   const [copied, setCopied] = useState(false);
   const { tokens, loading, error, refresh } = useFactoryTokenIndex({ includeMarketData: false, allowCache: true });
@@ -117,7 +120,7 @@ export function IndexedTokenDetail({
       initialHolderSnapshot={initialHolderSnapshot}
       rightRail={<>
         <BuySellPanel token={token} />
-        <BuybackTransparencyPanel token={token} />
+        <BuybackTransparencyPanel token={token} initialSnapshot={initialBuybackSnapshot} />
         <TokenInfoPanel token={token} />
       </>}
     />

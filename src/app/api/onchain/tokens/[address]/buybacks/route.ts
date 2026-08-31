@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAddress, isAddress } from "viem";
-import { getBuybackSnapshot } from "@/lib/onchain/buyback-snapshot";
+import { getBuybackSnapshotResult } from "@/lib/onchain/buyback-snapshot";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
+import { snapshotCacheControl } from "@/lib/onchain/snapshot-http-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,9 +14,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if (!isAddress(address)) return NextResponse.json({ error: "Invalid token address." }, { status: 400 });
   try {
     const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
-    const snapshot = await getBuybackSnapshot(getAddress(address), forceRefresh);
-    return NextResponse.json({ snapshot }, {
-      headers: { "Cache-Control": forceRefresh ? "no-store" : "public, max-age=10, s-maxage=20, stale-while-revalidate=120" },
+    const result = await getBuybackSnapshotResult(getAddress(address), forceRefresh);
+    return NextResponse.json(result, {
+      headers: { "Cache-Control": snapshotCacheControl({
+        forceRefresh,
+        stale: result.stale,
+        freshPolicy: "public, max-age=10, s-maxage=20, stale-while-revalidate=300",
+      }) },
     });
   } catch (error) {
     if (error instanceof FactoryTokenNotFoundError) {

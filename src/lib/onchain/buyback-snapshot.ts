@@ -1,15 +1,17 @@
 import "server-only";
 
 import { formatUnits, getAddress, isAddress, parseAbiItem, type Address, type Hash } from "viem";
-import { ARC_ACTIVE_FACTORY, ARC_ACTIVE_FACTORY_BLOCK } from "@/lib/chains";
+import { ARCORIGIN_NETWORK, ARC_ACTIVE_FACTORY, ARC_ACTIVE_FACTORY_BLOCK } from "@/lib/chains";
 import { factoryAbi, liquidityLockerAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshotForToken } from "@/lib/onchain/token-index-snapshot";
+import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
 
 const buybackExecutedEvent = parseAbiItem("event BuybackExecuted(uint256 indexed positionId, address indexed keeper, uint256 quoteSpent, uint256 keeperReward, uint256 launchTokensBurned, uint256 remainingQuoteReserve)");
 const LOG_BLOCK_RANGE = 9_999n;
 const CACHE_TTL_MS = 20_000;
+const PERSISTENT_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export type BuybackExecution = {
   txHash: Hash;
@@ -40,11 +42,102 @@ export type BuybackSnapshot = {
 };
 
 type CacheEntry = { snapshot: BuybackSnapshot; cachedAt: number };
+type BuybackState = {
+  cache: Map<string, CacheEntry>;
+  pending: Map<string, Promise<BuybackSnapshot>>;
+};
+
+export type BuybackSnapshotResult = {
+  snapshot: BuybackSnapshot;
+  stale: boolean;
+};
 
 const publicClient = createArcPublicClient(
   process.env.ARC_MAINNET_RPC_URL,
 );
-const cache = new Map<string, CacheEntry>();
+
+declare global {
+  var __arcOriginBuybackState: BuybackState | undefined;
+}
+
+const state = globalThis.__arcOriginBuybackState ?? {
+  cache: new Map<string, CacheEntry>(),
+  pending: new Map<string, Promise<BuybackSnapshot>>(),
+};
+globalThis.__arcOriginBuybackState = state;
+
+function persistentCacheKey(tokenAddress: string) {
+  return `arcorigin:${ARCORIGIN_NETWORK}:buybacks:${ARC_ACTIVE_FACTORY.toLowerCase()}:${tokenAddress.toLowerCase()}`;
+}
+
+function finiteNonNegative(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function isBuybackSnapshot(value: unknown): value is BuybackSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const snapshot = value as Partial<BuybackSnapshot>;
+  const latest = snapshot.latestExecution;
+  const keeper = snapshot.keeper;
+  return typeof snapshot.enabled === "boolean"
+    && typeof snapshot.ready === "boolean"
+    && finiteNonNegative(snapshot.reserveUsdc)
+    && finiteNonNegative(snapshot.nextExecutionAt)
+    && finiteNonNegative(snapshot.totalUsdcSpent)
+    && finiteNonNegative(snapshot.totalTokensBurned)
+    && Number.isInteger(snapshot.executionCount)
+    && finiteNonNegative(snapshot.executionCount)
+    && (latest === null || Boolean(
+      latest
+      && typeof latest === "object"
+      && typeof latest.txHash === "string"
+      && /^0x[0-9a-fA-F]{64}$/.test(latest.txHash)
+      && typeof latest.blockNumber === "string"
+      && /^\d+$/.test(latest.blockNumber)
+      && finiteNonNegative(latest.timestamp)
+      && typeof latest.keeper === "string"
+      && isAddress(latest.keeper)
+      && finiteNonNegative(latest.usdcSpent)
+      && finiteNonNegative(latest.keeperRewardUsdc)
+      && finiteNonNegative(latest.tokensBurned)
+    ))
+    && (keeper === null || Boolean(
+      keeper
+      && typeof keeper === "object"
+      && typeof keeper.address === "string"
+      && isAddress(keeper.address)
+      && finiteNonNegative(keeper.balanceUsdc)
+      && typeof keeper.platform === "boolean"
+    ))
+    && typeof snapshot.indexedBlock === "string"
+    && /^\d+$/.test(snapshot.indexedBlock)
+    && typeof snapshot.generatedAt === "string"
+    && Number.isFinite(Date.parse(snapshot.generatedAt));
+}
+
+function storeSnapshot(tokenAddress: string, snapshot: BuybackSnapshot) {
+  const cacheKey = tokenAddress.toLowerCase();
+  state.cache.set(cacheKey, { snapshot, cachedAt: Date.now() });
+  void writePersistentSnapshot(
+    persistentCacheKey(cacheKey),
+    snapshot,
+    PERSISTENT_CACHE_TTL_SECONDS,
+  );
+  return snapshot;
+}
+
+export async function getCachedBuybackSnapshot(tokenAddress: Address) {
+  const cacheKey = tokenAddress.toLowerCase();
+  const cached = state.cache.get(cacheKey);
+  if (cached && isBuybackSnapshot(cached.snapshot)) return cached.snapshot;
+  const persisted = await readPersistentSnapshot<unknown>(persistentCacheKey(cacheKey));
+  if (!isBuybackSnapshot(persisted)) return null;
+  state.cache.set(cacheKey, {
+    snapshot: persisted,
+    cachedAt: Date.parse(persisted.generatedAt) || 0,
+  });
+  return persisted;
+}
 
 async function readBuybackEvents(locker: Address, positionId: bigint, indexedBlock: bigint) {
   const events: Array<{
@@ -84,11 +177,8 @@ function configuredKeeperAddress() {
   return value && isAddress(value) ? getAddress(value) : null;
 }
 
-export async function getBuybackSnapshot(tokenAddress: Address, forceRefresh = false) {
+async function loadBuybackSnapshot(tokenAddress: Address, forceRefresh: boolean) {
   const cacheKey = tokenAddress.toLowerCase();
-  const cached = cache.get(cacheKey);
-  if (!forceRefresh && cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) return cached.snapshot;
-
   const indexResult = await getTokenIndexSnapshotForToken(tokenAddress, forceRefresh);
   const token = indexResult.snapshot?.tokens.find((item) => item.address.toLowerCase() === cacheKey);
   if (!token) throw new FactoryTokenNotFoundError("Token was not launched by the configured ArcOrigin factory.");
@@ -108,8 +198,7 @@ export async function getBuybackSnapshot(tokenAddress: Address, forceRefresh = f
       indexedBlock: indexedBlock.toString(),
       generatedAt: new Date().toISOString(),
     };
-    cache.set(cacheKey, { snapshot, cachedAt: Date.now() });
-    return snapshot;
+    return storeSnapshot(cacheKey, snapshot);
   }
 
   const locker = getAddress(await publicClient.readContract({
@@ -161,6 +250,44 @@ export async function getBuybackSnapshot(tokenAddress: Address, forceRefresh = f
     indexedBlock: indexedBlock.toString(),
     generatedAt: new Date().toISOString(),
   };
-  cache.set(cacheKey, { snapshot, cachedAt: Date.now() });
-  return snapshot;
+  return storeSnapshot(cacheKey, snapshot);
+}
+
+function refreshSnapshot(tokenAddress: Address, forceRefresh: boolean) {
+  const cacheKey = tokenAddress.toLowerCase();
+  const existing = state.pending.get(cacheKey);
+  if (existing) return existing;
+  const pending = loadBuybackSnapshot(tokenAddress, forceRefresh)
+    .finally(() => state.pending.delete(cacheKey));
+  state.pending.set(cacheKey, pending);
+  return pending;
+}
+
+export async function getBuybackSnapshotResult(
+  tokenAddress: Address,
+  forceRefresh = false,
+): Promise<BuybackSnapshotResult> {
+  const cacheKey = tokenAddress.toLowerCase();
+  const cachedSnapshot = await getCachedBuybackSnapshot(tokenAddress);
+  const cachedEntry = state.cache.get(cacheKey);
+  const isFresh = cachedSnapshot
+    && cachedEntry
+    && Date.now() - cachedEntry.cachedAt < CACHE_TTL_MS;
+  if (isFresh && !forceRefresh) return { snapshot: cachedSnapshot, stale: false };
+
+  const pending = refreshSnapshot(tokenAddress, true);
+  if (cachedSnapshot && !forceRefresh) {
+    void pending.catch(() => undefined);
+    return { snapshot: cachedSnapshot, stale: true };
+  }
+  try {
+    return { snapshot: await pending, stale: false };
+  } catch (error) {
+    if (cachedSnapshot) return { snapshot: cachedSnapshot, stale: true };
+    throw error;
+  }
+}
+
+export async function getBuybackSnapshot(tokenAddress: Address, forceRefresh = false) {
+  return (await getBuybackSnapshotResult(tokenAddress, forceRefresh)).snapshot;
 }

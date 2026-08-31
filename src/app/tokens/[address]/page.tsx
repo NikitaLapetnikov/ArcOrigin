@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getAddress, isAddress } from "viem";
 import { IndexedTokenDetail } from "@/components/indexed-token-detail";
+import { getCachedBuybackSnapshot } from "@/lib/onchain/buyback-snapshot";
 import { getCachedHolderSnapshot } from "@/lib/onchain/holder-snapshot";
 import { getCachedTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
 
@@ -12,9 +13,10 @@ export const dynamic = "force-dynamic";
 export default async function TokenDetailPage({ params }: Props) {
   const address = (await params).address;
   const normalizedAddress = isAddress(address) ? getAddress(address) : null;
-  const [tokenIndex, initialHolderSnapshot] = await Promise.all([
+  const [tokenIndex, initialHolderSnapshot, initialBuybackSnapshot] = await Promise.all([
     getCachedTokenIndexSnapshot(),
     normalizedAddress ? getCachedHolderSnapshot(normalizedAddress) : null,
+    normalizedAddress ? getCachedBuybackSnapshot(normalizedAddress) : null,
   ]);
   const initialToken = normalizedAddress
     ? tokenIndex?.tokens.find(
@@ -25,5 +27,6 @@ export default async function TokenDetailPage({ params }: Props) {
     address={address}
     initialToken={initialToken}
     initialHolderSnapshot={initialHolderSnapshot}
+    initialBuybackSnapshot={initialBuybackSnapshot}
   />;
 }
