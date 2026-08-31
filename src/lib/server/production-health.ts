@@ -8,6 +8,7 @@ import {
 } from "@/lib/chains";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getTokenIndexCacheStatus } from "@/lib/onchain/token-index-snapshot";
+import { isRetryableRpcError } from "@/lib/rpc-errors";
 import { getPersistentCacheStatus } from "@/lib/server/persistent-cache";
 
 const factoryHealthAbi = [
@@ -46,6 +47,32 @@ function expectedOwner() {
   return value && isAddress(value) ? value as Address : null;
 }
 
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function settle<T>(operation: () => Promise<T>): Promise<PromiseSettledResult<T>> {
+  try {
+    return { status: "fulfilled", value: await operation() };
+  } catch (reason) {
+    return { status: "rejected", reason };
+  }
+}
+
+async function settleRpc<T>(operation: () => Promise<T>, attempts = 3): Promise<PromiseSettledResult<T>> {
+  return settle(async () => {
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        if (!isRetryableRpcError(error) || attempt === attempts) throw error;
+        await wait(attempt * 500);
+      }
+    }
+    throw new Error("Arc health RPC failed after retries.");
+  });
+}
+
 async function loadProductionHealth() {
   const checkedAt = new Date().toISOString();
   const startedAt = Date.now();
@@ -55,31 +82,24 @@ async function loadProductionHealth() {
   const warnings: string[] = [];
 
   try {
-    const [
-      chainResult,
-      blockResult,
-      bytecodeResult,
-      ownerResult,
-      launchPauseResult,
-      indexerResult,
-      cacheResult,
-    ] = await Promise.allSettled([
-      healthClient.getChainId(),
-      healthClient.getBlockNumber(),
-      healthClient.getBytecode({ address: ARC_ACTIVE_CONTRACTS.factory }),
-      healthClient.readContract({
+    // Keep Redis independent, but serialize Arc reads so the health probe does
+    // not create its own burst against capacity-constrained public RPCs.
+    const cachePromise = settle(() => getPersistentCacheStatus());
+    const chainResult = await settleRpc(() => healthClient.getChainId());
+    const blockResult = await settleRpc(() => healthClient.getBlockNumber());
+    const bytecodeResult = await settleRpc(() => healthClient.getBytecode({ address: ARC_ACTIVE_CONTRACTS.factory }));
+    const ownerResult = await settleRpc(() => healthClient.readContract({
         address: ARC_ACTIVE_CONTRACTS.factory,
         abi: factoryHealthAbi,
         functionName: "owner",
-      }),
-      healthClient.readContract({
+      }));
+    const launchPauseResult = await settleRpc(() => healthClient.readContract({
         address: ARC_ACTIVE_CONTRACTS.factory,
         abi: factoryHealthAbi,
         functionName: "paused",
-      }),
-      getTokenIndexCacheStatus(),
-      getPersistentCacheStatus(),
-    ]);
+      }));
+    const indexerResult = await settleRpc(() => getTokenIndexCacheStatus());
+    const cacheResult = await cachePromise;
 
     const chainId = chainResult.status === "fulfilled" ? chainResult.value : null;
     const latestBlock = blockResult.status === "fulfilled" ? blockResult.value : null;
