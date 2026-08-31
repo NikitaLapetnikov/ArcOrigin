@@ -232,12 +232,11 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
       if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(repairError))) throw repairError;
       throw new Error(`Your wallet still uses the retired Blockdaemon Arc RPC. Open wallet settings → Networks → Arc and set the RPC URL to ${ARC_WALLET_RPC_URL}, then retry.`);
     }
-
-    try {
-      await walletReadClient.getTransactionCount({ address, blockTag: "latest" });
-    } catch {
-      throw new Error(`Your wallet did not replace the retired Arc RPC automatically. Open wallet settings → Networks → Arc and set the RPC URL to ${ARC_WALLET_RPC_URL}, then retry.`);
-    }
+    // Do not re-read through walletReadClient here. Injected connectors cache
+    // their transport, so that object can keep calling the retired endpoint
+    // even after the wallet has accepted or manually applied the new RPC.
+    // The trade is independently quoted and simulated through the public
+    // failover client before the prepared transaction reaches the wallet.
   }
 
   const readQuote = useCallback(async (): Promise<LiveQuote> => {
