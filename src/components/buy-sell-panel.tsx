@@ -24,6 +24,7 @@ const priorityOptions: Priority[] = ["Low", "Medium", "High"];
 const MAX_SLIPPAGE_PERCENT = 50;
 const BALANCE_POLL_INTERVAL_MS = 10_000;
 const QUOTE_POLL_INTERVAL_MS = 5_000;
+const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
 
 function wait(milliseconds: number) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
@@ -40,9 +41,29 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
 
 function transactionError(error: unknown) {
   const message = typeof error === "object" && error && "shortMessage" in error ? String(error.shortMessage) : error instanceof Error ? error.message : "The wallet transaction failed.";
+  if (isUnauthorizedBlockdaemonRpc(error)) return `Your wallet still uses the retired Blockdaemon Arc RPC. Open wallet settings → Networks → Arc and set the RPC URL to ${ARC_WALLET_RPC_URL}, then retry.`;
   if (/RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|\b429\b/i.test(message)) return "Arc RPC is temporarily unavailable. Check your wallet activity or Arcscan before retrying because the transaction may already have been submitted.";
   if (/User rejected|User denied|rejected the request/i.test(message)) return "The request was cancelled in your wallet.";
   return message;
+}
+
+function rpcErrorText(error: unknown) {
+  const parts: string[] = [];
+  let current = error;
+  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth += 1) {
+    const record = current as Record<string, unknown>;
+    for (const key of ["shortMessage", "message", "details"] as const) {
+      if (typeof record[key] === "string") parts.push(record[key]);
+    }
+    current = record.cause;
+  }
+  return parts.join("\n");
+}
+
+function isUnauthorizedBlockdaemonRpc(error: unknown) {
+  const details = rpcErrorText(error);
+  return /(?:\b401\b|Authorization Required)/i.test(details)
+    && /(?:blockdaemon|HTTP request failed)/i.test(details);
 }
 
 function displayUnits(value: bigint, decimals: number, maximumFractionDigits = decimals === 6 ? 6 : 4) {
@@ -170,6 +191,30 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     return publicClient;
   }
 
+  async function ensureWalletRpc() {
+    if (!walletClient || !address || walletClient.chain.id !== arcChain.id) return;
+    const walletReadClient = walletClient.extend(publicActions) as unknown as PublicClient;
+    try {
+      await walletReadClient.getTransactionCount({ address, blockTag: "latest" });
+      return;
+    } catch (rpcError) {
+      if (!isUnauthorizedBlockdaemonRpc(rpcError)) throw rpcError;
+    }
+
+    try {
+      await walletClient.addChain({ chain: arcChain });
+    } catch (repairError) {
+      if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(repairError))) throw repairError;
+      throw new Error(`Your wallet still uses the retired Blockdaemon Arc RPC. Open wallet settings → Networks → Arc and set the RPC URL to ${ARC_WALLET_RPC_URL}, then retry.`);
+    }
+
+    try {
+      await walletReadClient.getTransactionCount({ address, blockTag: "latest" });
+    } catch {
+      throw new Error(`Your wallet did not replace the retired Arc RPC automatically. Open wallet settings → Networks → Arc and set the RPC URL to ${ARC_WALLET_RPC_URL}, then retry.`);
+    }
+  }
+
   const readQuote = useCallback(async (): Promise<LiveQuote> => {
     if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
     const input = parseUnits(amount, inputDecimals);
@@ -237,6 +282,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     submissionLockRef.current = true; setStatus("quoting"); setNotice(""); setTransactionHash(null);
     try {
       const client = await getClient();
+      await ensureWalletRpc();
       const quote = await readQuote();
       setStatus("preparing");
       const approvalToken = (side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token.address) as Address;
