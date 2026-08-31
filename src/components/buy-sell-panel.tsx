@@ -211,34 +211,6 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     return publicClient;
   }
 
-  async function ensureWalletRpc() {
-    if (!walletClient || !address || walletClient.chain.id !== arcChain.id) return;
-    const walletReadClient = walletClient.extend(publicActions) as unknown as PublicClient;
-    try {
-      await withRpcRetry(() => walletReadClient.getTransactionCount({ address, blockTag: "latest" }), 2);
-      return;
-    } catch (rpcError) {
-      if (!isUnauthorizedBlockdaemonRpc(rpcError)) {
-        // Public preflight below remains authoritative. A capacity-limited wallet
-        // RPC can still submit a fully prepared transaction without doing eth_call.
-        if (isRpcCapacityError(rpcError)) return;
-        throw rpcError;
-      }
-    }
-
-    try {
-      await walletClient.addChain({ chain: arcChain });
-    } catch (repairError) {
-      if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(repairError))) throw repairError;
-      throw new Error(`Your wallet still uses the retired Blockdaemon Arc RPC. Open wallet settings → Networks → Arc and set the RPC URL to ${ARC_WALLET_RPC_URL}, then retry.`);
-    }
-    // Do not re-read through walletReadClient here. Injected connectors cache
-    // their transport, so that object can keep calling the retired endpoint
-    // even after the wallet has accepted or manually applied the new RPC.
-    // The trade is independently quoted and simulated through the public
-    // failover client before the prepared transaction reaches the wallet.
-  }
-
   const readQuote = useCallback(async (): Promise<LiveQuote> => {
     if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
     const input = parseTradeAmount(amount, inputDecimals);
@@ -306,7 +278,6 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     submissionLockRef.current = true; setStatus("quoting"); setNotice(""); setTransactionHash(null);
     try {
       const client = await getClient();
-      await ensureWalletRpc();
       let executionQuote = await readQuote();
       setStatus("preparing");
       const approvalToken = (side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token.address) as Address;
@@ -325,7 +296,8 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         })));
         const approvalFees = await estimatePriorityFees(client as PublicClient, priority);
         await ensureGasBalance(client as PublicClient, address, approvalGas, approvalFees);
-        const approvalHash = await writeContractAsync({ address: approvalToken, abi: erc20Abi, functionName: "approve", args: approvalArgs, gas: approvalGas, ...approvalFees });
+        const approvalNonce = await withRpcRetry(() => client.getTransactionCount({ address, blockTag: "pending" }));
+        const approvalHash = await writeContractAsync({ address: approvalToken, abi: erc20Abi, functionName: "approve", args: approvalArgs, gas: approvalGas, nonce: approvalNonce, ...approvalFees });
         setTransactionHash(approvalHash);
         if ((await withRpcRetry(() => client.waitForTransactionReceipt({ hash: approvalHash }))).status !== "success") throw new Error(`${inputSymbol} approval reverted onchain.`);
         setStatus("quoting");
@@ -352,6 +324,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
       })));
       const tradeFees = await estimatePriorityFees(client as PublicClient, priority);
       await ensureGasBalance(client as PublicClient, address, tradeGas, tradeFees);
+      const tradeNonce = await withRpcRetry(() => client.getTransactionCount({ address, blockTag: "pending" }));
       setStatus("trading");
       const tradeHash = await writeContractAsync({
         address: ARC_UNISWAP_V3.router,
@@ -359,6 +332,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         functionName: "exactInputSingle",
         args: tradeArgs,
         gas: tradeGas,
+        nonce: tradeNonce,
         ...tradeFees,
       });
       setTransactionHash(tradeHash);
