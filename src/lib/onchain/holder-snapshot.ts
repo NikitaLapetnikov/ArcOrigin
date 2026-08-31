@@ -14,6 +14,7 @@ import {
   upgradeLegacyCanonicalCheckpoint,
 } from "@/lib/onchain/canonical-checkpoint";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
+import { isRetryableRpcError } from "@/lib/rpc-errors";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed pool, address indexed creator, string name, string symbol, uint256 positionId)");
 const transferEvent = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
@@ -114,11 +115,6 @@ export class FactoryTokenNotFoundError extends Error {}
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function isRetryableRpcError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|rate limit|request limit|\b429\b|timed? ?out|socket/i.test(message);
 }
 
 async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {

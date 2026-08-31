@@ -49,6 +49,13 @@ const {
 const {
   snapshotCacheControl,
 } = loadTypeScriptModule("src/lib/onchain/snapshot-http-cache.ts");
+const {
+  isRetryableRpcError,
+  isRpcCapacityError,
+} = loadTypeScriptModule("src/lib/rpc-errors.ts");
+const {
+  requiredNativeUsdcBalance,
+} = loadTypeScriptModule("src/lib/arc-usdc.ts");
 
 const address = "0x1111111111111111111111111111111111111111";
 
@@ -174,4 +181,24 @@ test("stale and forced snapshots cannot be retained by an HTTP cache", () => {
   assert.equal(snapshotCacheControl({ forceRefresh: false, stale: false, freshPolicy }), freshPolicy);
   assert.equal(snapshotCacheControl({ forceRefresh: false, stale: true, freshPolicy }), "no-store");
   assert.equal(snapshotCacheControl({ forceRefresh: true, stale: false, freshPolicy }), "no-store");
+});
+
+test("Arc capacity errors remain retryable through nested RPC causes", () => {
+  const error = {
+    message: "Contract call failed",
+    cause: {
+      code: -32005,
+      details: "Request exceeds defined limit.",
+    },
+  };
+  assert.equal(isRpcCapacityError(error), true);
+  assert.equal(isRetryableRpcError(error), true);
+  assert.equal(isRetryableRpcError(new Error("execution reverted")), false);
+});
+
+test("native USDC preflight reserves the six-decimal amount plus gas", () => {
+  assert.equal(
+    requiredNativeUsdcBalance(100_000n, 2_000_000_000n, 1_500_000n),
+    1_500_200_000_000_000_000n,
+  );
 });

@@ -119,7 +119,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
 
   useLiveRefresh({
     intervalMs: MARKET_POLL_INTERVAL_MS,
-    refresh: () => refresh(true, true),
+    refresh: () => refresh(false, true),
   });
 
   useEffect(() => {

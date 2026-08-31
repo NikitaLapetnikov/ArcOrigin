@@ -396,7 +396,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
 
   useLiveRefresh({
     intervalMs: includeMarketData ? MARKET_POLL_INTERVAL_MS : INDEX_POLL_INTERVAL_MS,
-    refresh: () => refresh(true, true),
+    refresh: () => refresh(false, true),
   });
 
   useEffect(() => {

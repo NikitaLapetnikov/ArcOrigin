@@ -17,6 +17,7 @@ import {
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshotForToken } from "@/lib/onchain/token-index-snapshot";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
+import { isRetryableRpcError } from "@/lib/rpc-errors";
 import type { ChartPoint, TokenData, Trade } from "@/lib/types";
 
 const swapEvent = parseAbiItem("event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)");
@@ -92,11 +93,6 @@ function readCanonicalBlock(blockNumber: bigint) {
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function isRetryableRpcError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|rate limit|request limit|\b429\b|timed? ?out|socket/i.test(message);
 }
 
 async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {

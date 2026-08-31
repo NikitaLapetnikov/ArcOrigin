@@ -22,7 +22,7 @@
     "test:production-health": "node --test scripts/test-production-health.cjs",
     "monitor:production": "node scripts/monitor-production-health.cjs",
     "keeper:buyback": "node scripts/run-buyback-keeper.cjs",
-    "test": "npm run contracts:test"
+    "test": "npm run contracts:test && npm run test:indexer-resilience && npm run test:production-health"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",

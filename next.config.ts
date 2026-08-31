@@ -1,11 +1,28 @@
 import type { NextConfig } from "next";
 
 const isDevelopment = process.env.NODE_ENV === "development";
-const arcConnectSources = [
-  "https://rpc.blockdaemon.mainnet.arc.io",
+function httpsOrigin(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+const configuredArcConnectSources = [
+  process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL ?? "",
+  ...(process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_FALLBACK_URLS ?? "").split(","),
+  process.env.NEXT_PUBLIC_ARC_MAINNET_EXPLORER_API_URL ?? "",
+].map((value) => httpsOrigin(value.trim())).filter((value): value is string => Boolean(value));
+const arcConnectSources = [...new Set([
   "https://rpc.arc-scan.org",
+  "https://ac-rpc.theleak.cx",
+  "https://arc-mainnet-rpc.baracat.meme",
   "https://arc-mainnet.cloud.blockscout.com",
-];
+  "https://api.arc-scan.org",
+  ...configuredArcConnectSources,
+])];
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -33,9 +50,6 @@ const nextConfig: NextConfig = {
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
-        { key: "Access-Control-Allow-Origin", value: "*" },
-        { key: "Access-Control-Allow-Methods", value: "GET" },
-        { key: "Access-Control-Allow-Headers", value: "X-Requested-With, content-type, Authorization" },
       ],
     }];
   },

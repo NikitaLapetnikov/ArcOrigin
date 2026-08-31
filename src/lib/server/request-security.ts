@@ -56,8 +56,10 @@ export async function readLimitedBytes(request: Request, maximumBytes: number): 
 }
 
 export function requestClientKey(request: NextRequest) {
-  const candidate = request.headers.get("x-real-ip")
-    ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+  // Caddy supplies the forwarding chain. Prefer it over X-Real-IP, which a
+  // direct client can set and otherwise use to evade per-client limits.
+  const candidate = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    ?? request.headers.get("x-real-ip")
     ?? "";
   return candidate.length <= 64 && /^[0-9a-f:.]+$/i.test(candidate) ? candidate.toLowerCase() : "unknown";
 }

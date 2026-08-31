@@ -19,6 +19,7 @@ import { calculateRiskScore } from "@/lib/scoring";
 import { factoryAbi } from "@/lib/contracts";
 import { resolveTokenMetadata } from "@/lib/server/token-metadata-resolver";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
+import { isRetryableRpcError } from "@/lib/rpc-errors";
 import type { CreatorProfile, TokenData } from "@/lib/types";
 
 const tokenConfigAbi = [
@@ -105,11 +106,6 @@ async function waitForSnapshot(pending: Promise<TokenIndexSnapshot>) {
   } finally {
     if (timeout) clearTimeout(timeout);
   }
-}
-
-function isRetryableRpcError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|rate limit|request limit|\b429\b|timed? ?out|socket/i.test(message);
 }
 
 async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {

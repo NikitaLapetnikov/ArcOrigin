@@ -183,7 +183,7 @@ export function useBuybackSnapshot(
 
   useLiveRefresh({
     intervalMs: 30_000,
-    refresh: () => refresh(true, true),
+    refresh: () => refresh(false, true),
     enabled,
   });
 

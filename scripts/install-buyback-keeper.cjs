@@ -31,6 +31,7 @@ function main() {
   const productionValues = parse(fs.readFileSync(SHARED_ENV, "utf8"));
   const rpcUrl = productionValues.ARC_MAINNET_RPC_URL?.trim();
   if (!rpcUrl) throw new Error("Active production environment has no ARC_MAINNET_RPC_URL.");
+  const rpcFallbackUrls = productionValues.NEXT_PUBLIC_ARC_MAINNET_RPC_FALLBACK_URLS?.trim() || "";
   const configuredFactory = productionValues.NEXT_PUBLIC_MAINNET_FACTORY_ADDRESS?.trim();
   if (!configuredFactory || !isAddress(configuredFactory)) {
     throw new Error("Active production environment has no valid mainnet Factory.");
@@ -44,6 +45,7 @@ function main() {
   const account = privateKeyToAccount(privateKey);
   const keeperContents = [
     `BUYBACK_KEEPER_RPC_URL=${JSON.stringify(rpcUrl)}`,
+    `BUYBACK_KEEPER_RPC_FALLBACK_URLS=${JSON.stringify(rpcFallbackUrls)}`,
     `BUYBACK_KEEPER_PRIVATE_KEY=${privateKey}`,
     `BUYBACK_KEEPER_FACTORY_ADDRESS=${factory}`,
     "",

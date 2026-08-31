@@ -86,7 +86,7 @@ export function useLatestBuys() {
 
   useLiveRefresh({
     intervalMs: LATEST_BUYS_POLL_INTERVAL_MS,
-    refresh: () => refresh(true, true),
+    refresh: () => refresh(false, true),
   });
 
   useEffect(() => {

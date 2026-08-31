@@ -2,6 +2,7 @@ const {
   createPublicClient,
   createWalletClient,
   defineChain,
+  fallback,
   getAddress,
   http,
   isAddress,
@@ -104,12 +105,20 @@ async function launchedTokens(client, factoryAddress) {
 
 async function main() {
   const rpcUrl = required("BUYBACK_KEEPER_RPC_URL");
+  const rpcFallbackUrls = (process.env.BUYBACK_KEEPER_RPC_FALLBACK_URLS || "")
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean);
+  const rpcUrls = [...new Set([rpcUrl, ...rpcFallbackUrls])];
   const privateKey = required("BUYBACK_KEEPER_PRIVATE_KEY");
   if (!/^0x[0-9a-fA-F]{64}$/.test(privateKey)) {
     throw new Error("BUYBACK_KEEPER_PRIVATE_KEY must be a 32-byte hex private key.");
   }
   const factoryAddress = requiredAddress("BUYBACK_KEEPER_FACTORY_ADDRESS");
-  const transport = http(rpcUrl, { timeout: 12_000, retryCount: 2 });
+  const transport = fallback(
+    rpcUrls.map((url) => http(url, { timeout: 12_000, retryCount: 1, retryDelay: 300 })),
+    { rank: false, retryCount: 0 },
+  );
   const publicClient = createPublicClient({ chain: arcMainnet, transport });
   const account = privateKeyToAccount(privateKey);
   const walletClient = createWalletClient({ account, chain: arcMainnet, transport });
@@ -196,6 +205,7 @@ async function main() {
     event: "buyback_keeper_complete",
     factory: factoryAddress,
     keeper: account.address,
+    rpcEndpoints: rpcUrls.length,
     enabledPositions: enabled,
     executed,
     failures,

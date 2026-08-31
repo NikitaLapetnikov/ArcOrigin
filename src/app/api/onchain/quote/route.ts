@@ -1,12 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAddress, isAddress, maxUint256, zeroAddress } from "viem";
 import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3 } from "@/lib/chains";
 import { factoryAbi, uniswapV3FactoryAbi, uniswapV3QuoterAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
 import { isRetryableRpcError, isRpcCapacityError } from "@/lib/rpc-errors";
+import { requestClientKey } from "@/lib/server/request-security";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type QuoteSide = "Buy" | "Sell";
 type QuotePayload = {
@@ -20,8 +22,12 @@ type QuotePayload = {
 
 const QUOTE_CACHE_TTL_MS = 1_500;
 const MAX_QUOTE_CACHE_ENTRIES = 256;
+const MAX_PENDING_QUOTES = 256;
+const QUOTE_RATE_WINDOW_MS = 60_000;
+const MAX_QUOTES_PER_WINDOW = 120;
 const quoteCache = new Map<string, { expiresAt: number; payload: QuotePayload }>();
 const pendingQuotes = new Map<string, Promise<QuotePayload>>();
+const quoteRates = new Map<string, { startedAt: number; count: number }>();
 
 class QuoteRequestError extends Error {
   constructor(message: string, readonly status: number, readonly stage: string) {
@@ -67,6 +73,23 @@ function writeCachedQuote(key: string, payload: QuotePayload) {
     if (oldestKey) quoteCache.delete(oldestKey);
   }
   quoteCache.set(key, { expiresAt: Date.now() + QUOTE_CACHE_TTL_MS, payload });
+}
+
+function consumeQuoteRate(clientKey: string) {
+  const now = Date.now();
+  const current = quoteRates.get(clientKey);
+  if (!current || now - current.startedAt >= QUOTE_RATE_WINDOW_MS) {
+    quoteRates.set(clientKey, { startedAt: now, count: 1 });
+    return true;
+  }
+  if (current.count >= MAX_QUOTES_PER_WINDOW) return false;
+  current.count += 1;
+  if (quoteRates.size > 2_000) {
+    for (const [key, rate] of quoteRates) {
+      if (now - rate.startedAt >= QUOTE_RATE_WINDOW_MS) quoteRates.delete(key);
+    }
+  }
+  return true;
 }
 
 async function readVerifiedQuote(token: `0x${string}`, pool: `0x${string}`, side: QuoteSide, amount: bigint): Promise<QuotePayload> {
@@ -115,7 +138,13 @@ async function readVerifiedQuote(token: `0x${string}`, pool: `0x${string}`, side
   };
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  if (!consumeQuoteRate(requestClientKey(request))) {
+    return NextResponse.json(
+      { error: "Too many quote requests. Retry in a few seconds." },
+      { status: 429, headers: { "Cache-Control": "no-store", "Retry-After": "10" } },
+    );
+  }
   const { searchParams } = new URL(request.url);
   const token = searchParams.get("token");
   const pool = searchParams.get("pool");
@@ -135,6 +164,9 @@ export async function GET(request: Request) {
   if (cached) return NextResponse.json(cached, { headers: { "Cache-Control": "no-store" } });
   let pending = pendingQuotes.get(key);
   if (!pending) {
+    if (pendingQuotes.size >= MAX_PENDING_QUOTES) {
+      return errorResponse("The quote service is busy. Retry in a moment.", 503);
+    }
     pending = readVerifiedQuote(normalizedToken, normalizedPool, side, amount);
     pendingQuotes.set(key, pending);
   }

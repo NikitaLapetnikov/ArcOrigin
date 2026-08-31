@@ -1,6 +1,8 @@
 export const TOKEN_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 export const TOKEN_IMAGE_INPUT_MAX_BYTES = 8 * 1024 * 1024;
 export const TOKEN_URL_MAX_LENGTH = 200;
+export const TOKEN_DESCRIPTION_MAX_CHARACTERS = 2_000;
+export const TOKEN_DESCRIPTION_MAX_BYTES = 8_000;
 
 export type TokenMetadataInput = {
   name: string;
@@ -93,6 +95,15 @@ export function validateTokenMetadataInput(input: TokenMetadataInput): TokenMeta
   }
   if (!/^[A-Za-z0-9]{2,10}$/.test(symbol)) throw new TokenMetadataValidationError("Ticker must be 2–10 letters or numbers.");
   if (!description) throw new TokenMetadataValidationError("Description is required.");
+  if (
+    description.length > TOKEN_DESCRIPTION_MAX_CHARACTERS
+    || new TextEncoder().encode(description).byteLength > TOKEN_DESCRIPTION_MAX_BYTES
+    || /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(description)
+  ) {
+    throw new TokenMetadataValidationError(
+      `Description must be at most ${TOKEN_DESCRIPTION_MAX_CHARACTERS.toLocaleString("en-US")} characters with no control characters.`,
+    );
+  }
   return {
     name,
     symbol,

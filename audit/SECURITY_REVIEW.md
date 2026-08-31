@@ -1,6 +1,6 @@
 # ArcOrigin security review
 
-Review date: 2026-08-30
+Review date: 2026-08-31
 
 This is an internal engineering security review of the source committed with this report. It is not a substitute for an independent third-party audit.
 
@@ -17,10 +17,12 @@ This is an internal engineering security review of the source committed with thi
 - permissionless VPS keeper and systemd timer
 - launch UI ABI and irreversible opt-in disclosure
 - Arc mainnet deployment, Safe activation, and post-deployment verification scripts
+- production web application, API routes, RPC failover, persistent snapshots, CSP, and request limits
+- wallet transaction preparation, polling, upload boundaries, dependency advisories, and VPS operations
 
 ## Result
 
-No unresolved critical or high-severity issue was found in the reviewed contracts. The source may be deployed only as a paused mainnet candidate. Activation remains gated by reproducible creation-bytecode verification, candidate-state verification, Safe review and signatures, keeper setup, and the production UI/indexer cutover.
+No unresolved critical or high-severity issue was found in the reviewed contracts or application paths. The reviewed candidate was activated through the Governance Safe after reproducible bytecode and runtime checks. The production health probe confirms the Safe remains the Factory owner, launches are enabled, the Factory has bytecode, Redis is reachable, and the index checkpoint is canonical.
 
 ## Remediated findings
 
@@ -72,6 +74,42 @@ Severity: medium before mitigation
 
 USDC reserves are isolated by position ID. Swap spend and output use before/after balance deltas, the Router allowance is bounded to the current swap budget and cleared afterward, and reserve reduction uses actual USDC spent plus the bounded reward. Ordinary positions retain the previous 70/30 payout behavior.
 
+### RPC load amplification and stale browser endpoints
+
+Severity: high availability impact before mitigation
+
+Background browser polling forced market, holder, launch, latest-buy, and buyback requests to bypass the shared server cache. Browser CSP also retained the retired Blockdaemon endpoint while omitting active failover providers. Background refreshes now use bounded stale-while-revalidate snapshots, explicit user refresh and post-trade reconciliation remain immediate, and CSP is generated from the configured mainnet providers. Shared RPC error detection includes Arc's `-32005` capacity response.
+
+### Transaction submission depended on wallet RPC reads
+
+Severity: high availability impact before mitigation
+
+Wallet-provided RPC clients could return the retired Blockdaemon 401 response or capacity errors while preparing a valid trade or launch. Reads, simulations, gas estimation, pending nonce selection, and fee estimation now use the application's failover client. The wallet receives a fully prepared transaction only for signing and submission. Pool and Router identities returned by the quote path are revalidated before use.
+
+### Native-USDC gas balance double counting
+
+Severity: medium
+
+Arc's native gas balance and canonical six-decimal USDC precompile represent the same funds at different precision. Independent checks could accept an account that had enough for the amount and enough for gas separately but not enough for both together. Buy, approval, and launch preparation now converts quote USDC into native precision and requires the combined amount plus maximum gas before requesting a signature.
+
+### Unbounded public quote work
+
+Severity: medium
+
+The quote endpoint accepted unlimited concurrent unique simulations. It now validates canonical Factory and Uniswap pool membership, limits per-client requests, caps concurrent unique quotes, deduplicates identical pending work, and bounds its short-lived cache.
+
+### Metadata size and dependency exposure
+
+Severity: medium
+
+Descriptions had no explicit character ceiling, and externally resolved metadata could exceed UI-safe limits. Both signed upload input and resolved external metadata are capped and control characters are rejected. Production dependency scanning identified vulnerable transitive `hono`, `nanoid`, and `postcss` versions; workspace overrides and the lockfile now resolve patched releases. The production-only advisory scan reports zero known vulnerabilities.
+
+### Keeper single-endpoint dependency
+
+Severity: medium availability impact
+
+The permissionless keeper used only the primary RPC and failed when that provider returned Arc's capacity limit. Its public and wallet clients now share an ordered multi-provider failover transport populated from production fallback configuration. No keeper credential or administrative authority is exposed to the application.
+
 ## Contract analysis
 
 Slither 0.11.6 analyzed the clean build (36 contracts, 102 detectors). With dependencies and mocks filtered, it reported 24 items; each was reviewed:
@@ -92,6 +130,10 @@ Factory runtime bytecode is 19,064 bytes, below the EIP-170 limit. Constructor b
 - Live dependency verification at block 18,259,815 confirmed the expected bytecode hashes for Arc USDC and all configured Uniswap contracts, with the 1% fee tier enabled at tick spacing 200.
 - Live governance inspection confirmed the configured 2-of-3 Safe owns the previous Factory, FeeVault, and CreatorRegistry.
 - Arcscan documents that mainnet source verification is currently unavailable because Sourcify does not support chain 5042. Deployment verification therefore compares the complete creation transaction input byte-for-byte with the audited compiler output and exact constructor arguments, then separately verifies runtime configuration. See https://docs.arc-scan.org/docs/addresses.
+- Application lint, strict TypeScript checking, production build, contract tests, indexer resilience tests, and production health tests pass on the reviewed source.
+- Production dependency audit reports zero known production vulnerabilities after patched transitive overrides.
+- Desktop and mobile smoke checks covered the home, launch, profile, token terminal, light/dark themes, timeframe controls, chart tools, and responsive overflow without submitting a wallet transaction.
+- The live main-domain health endpoint reported `ok`, Safe ownership matched, launches were enabled, Redis was reachable, and the index checkpoint was canonical during the review.
 
 ## Residual risks
 
@@ -103,6 +145,6 @@ Factory runtime bytecode is 19,064 bytes, below the EIP-170 limit. Constructor b
 - Availability depends on Arc, Uniswap, RPC, explorer, Redis, and metadata infrastructure.
 - Safe security depends on protecting at least two owners and carefully reviewing the final batch calldata.
 
-## Deployment decision
+## Deployment status
 
-Deploy only a paused candidate owned directly by the reviewed Governance Safe. The updated mainnet fork and production build pass. Do not execute the activation batch unless reproducible creation-bytecode verification, candidate-mode verification, UI cutover, and keeper dry run also pass. The activation batch must be executed atomically through the Governance Safe and followed by active-mode verification.
+The reviewed deployment is active on Arc mainnet and owned directly by the reviewed Governance Safe. Future contract changes must repeat the paused-candidate, reproducible-bytecode, fork-test, Safe-batch, and post-activation verification process. Application-only releases must continue to pass the complete local suite, dependency audit, atomic VPS activation, public health check, and browser smoke test.

@@ -14,17 +14,9 @@ concurrency:
 
 jobs:
   health:
-    name: Check ${{ matrix.name }}
+    name: Check arcorigin.xyz
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: arcorigin.xyz
-            health_url: https://arcorigin.xyz/api/health
-          - name: mainnet.arcorigin.xyz
-            health_url: https://mainnet.arcorigin.xyz/api/health
     steps:
       - name: Check out the monitored revision
         uses: actions/checkout@v4
@@ -36,7 +28,7 @@ jobs:
 
       - name: Check the public health endpoint
         env:
-          PRODUCTION_HEALTH_URL: ${{ matrix.health_url }}
+          PRODUCTION_HEALTH_URL: https://arcorigin.xyz/api/health
           MONITOR_TIMEOUT_MS: "20000"
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
           ALERT_WEBHOOK_FORMAT: ${{ vars.ALERT_WEBHOOK_FORMAT || 'slack' }}

@@ -28,7 +28,7 @@ npm run dev
 
 `PINATA_JWT` is server-only and enables wallet-authorized image and metadata uploads to public IPFS. Redis is optional but recommended in production for persistent index snapshots.
 
-Set `NEXT_PUBLIC_ARC_MAINNET_RPC_FALLBACK_URLS` to a comma-separated list of independently operated Arc RPC endpoints. Browser reads, quotes, simulations, and server snapshots fail over in order when the primary RPC is rate-limited or unavailable.
+Set `NEXT_PUBLIC_ARC_MAINNET_RPC_FALLBACK_URLS` to a comma-separated list of independently operated Arc RPC endpoints. Browser reads, quotes, simulations, server snapshots, and the optional keeper fail over in order when the primary RPC is rate-limited or unavailable. Background UI polling reuses bounded server snapshots; explicit refreshes and confirmed-transaction reconciliation still request current chain state.
 
 Useful checks:
 
@@ -37,7 +37,9 @@ npm run typecheck
 npm run lint
 npm run contracts:compile
 npm run contracts:test
+npm test
 npm run build
+pnpm audit --prod
 ```
 
 ## Configuration
@@ -59,7 +61,7 @@ The deploy script writes `deployment/arc-mainnet.local.json` and an unsigned Saf
 
 Never commit private keys, RPC credentials, Pinata tokens, Redis credentials, or Safe signer material.
 
-The optional platform keeper is a permissionless executor, not an administrator. Run `npm run keeper:buyback` as a one-shot job with `BUYBACK_KEEPER_RPC_URL`, `BUYBACK_KEEPER_PRIVATE_KEY`, and `BUYBACK_KEEPER_FACTORY_ADDRESS` supplied through a protected VPS environment file. The included systemd timer runs it every five minutes. The keeper key must be a dedicated, minimally funded operational account and must never be a Safe owner.
+The optional platform keeper is a permissionless executor, not an administrator. Run `npm run keeper:buyback` as a one-shot job with `BUYBACK_KEEPER_RPC_URL`, `BUYBACK_KEEPER_RPC_FALLBACK_URLS`, `BUYBACK_KEEPER_PRIVATE_KEY`, and `BUYBACK_KEEPER_FACTORY_ADDRESS` supplied through a protected VPS environment file. The included systemd timer runs it every five minutes. The keeper key must be a dedicated, minimally funded operational account and must never be a Safe owner.
 
 ## Security
 

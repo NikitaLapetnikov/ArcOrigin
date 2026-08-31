@@ -7,12 +7,13 @@ import {
   encodeFunctionData,
   formatUnits,
   isHash,
-  publicActions,
   type Address,
   type Hash,
+  type PublicClient,
 } from "viem";
 import type SafeAppsSDK from "@safe-global/safe-apps-sdk";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
+import { requiredNativeUsdcBalance } from "@/lib/arc-usdc";
 import {
   ARCORIGIN_CROSS_MARKET_CAP_USDC,
   ARC_ACTIVE_CONTRACTS,
@@ -23,10 +24,12 @@ import { erc20Abi, factoryAbi } from "@/lib/contracts";
 import {
   TOKEN_IMAGE_INPUT_MAX_BYTES,
   TOKEN_IMAGE_MAX_BYTES,
+  TOKEN_DESCRIPTION_MAX_CHARACTERS,
   canonicalMetadataCommitment,
   validateTokenMetadataInput,
   type TokenMetadataInput,
 } from "@/lib/token-metadata";
+import { isRetryableRpcError, isRpcCapacityError, rpcErrorText } from "@/lib/rpc-errors";
 import { shortAddress, tickerLabel } from "@/lib/utils";
 import { getSafeAppContext } from "@/lib/wallet/safe-app-connector";
 import { Button, LinkButton, WarningBox } from "./ui";
@@ -49,6 +52,9 @@ type UploadedMetadata = {
   metadataURI: string;
   gatewayURL: string;
 };
+type TransactionFeeOverrides =
+  | { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
+  | { gasPrice: bigint };
 
 const defaults: FormData = {
   name: "",
@@ -68,12 +74,19 @@ function formatDisplayNumber(value: number) {
 }
 
 function transactionError(error: unknown) {
-  const fallback = error instanceof Error ? error.message : "The wallet transaction failed.";
-  if (/User rejected|User denied|rejected the request/i.test(fallback)) return "The request was cancelled in your wallet.";
-  if (/RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|\b429\b/i.test(fallback)) {
+  const details = rpcErrorText(error);
+  const fallback = typeof error === "object" && error && "shortMessage" in error
+    ? String(error.shortMessage)
+    : error instanceof Error
+      ? error.message
+      : "The wallet transaction failed.";
+  if (/User rejected|User denied|rejected the request/i.test(details || fallback)) return "The request was cancelled in your wallet.";
+  if (isRpcCapacityError(error)) {
+    return "Arc RPC is busy. Check your wallet activity before retrying because an approval or launch may already have been submitted.";
+  }
+  if (isRetryableRpcError(error)) {
     return "Arc RPC is temporarily unavailable. Check your wallet activity or Arcscan before retrying because an approval or launch may already have been submitted.";
   }
-  if (typeof error === "object" && error && "shortMessage" in error) return String(error.shortMessage);
   return fallback;
 }
 
@@ -86,13 +99,43 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
     try {
       return await operation();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const retryable = /RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|rate limit|\b429\b/i.test(message);
-      if (!retryable || attempt === attempts) throw error;
+      if (!isRetryableRpcError(error) || attempt === attempts) throw error;
       await wait(attempt * 750);
     }
   }
   throw new Error("Arc RPC request failed after retries.");
+}
+
+function gasWithSafetyMargin(estimate: bigint) {
+  return estimate * 125n / 100n + 20_000n;
+}
+
+async function transactionFees(client: PublicClient): Promise<TransactionFeeOverrides> {
+  const fees = await withRpcRetry(() => client.estimateFeesPerGas());
+  if (fees.maxFeePerGas !== undefined && fees.maxPriorityFeePerGas !== undefined) {
+    return {
+      maxFeePerGas: fees.maxFeePerGas * 110n / 100n,
+      maxPriorityFeePerGas: fees.maxPriorityFeePerGas * 110n / 100n,
+    };
+  }
+  return { gasPrice: await withRpcRetry(() => client.getGasPrice()) };
+}
+
+async function ensureGasBalance(
+  client: PublicClient,
+  account: Address,
+  gas: bigint,
+  fees: TransactionFeeOverrides,
+  requiredUsdc = 0n,
+) {
+  const feePerGas = "gasPrice" in fees ? fees.gasPrice : fees.maxFeePerGas;
+  const nativeBalance = await withRpcRetry(() => client.getBalance({ address: account }));
+  const requiredNativeBalance = requiredNativeUsdcBalance(gas, feePerGas, requiredUsdc);
+  if (nativeBalance < requiredNativeBalance) {
+    throw new Error(requiredUsdc > 0n
+      ? "Insufficient USDC balance for the launch fee and network gas."
+      : "Insufficient native USDC balance for gas.");
+  }
 }
 
 async function waitForSafeExecution(
@@ -316,7 +359,7 @@ export function LaunchForm() {
       setError("Connect your wallet in the header before launching a token.");
       return;
     }
-    if (!publicClient && !walletClient) {
+    if (!publicClient) {
       setError(`${arcChain.name} RPC is unavailable. Try again in a moment.`);
       return;
     }
@@ -330,8 +373,7 @@ export function LaunchForm() {
         await switchChainAsync({ chainId: arcChain.id });
         throw new Error(`${arcChain.name} is now selected. Review and launch again.`);
       }
-      const transactionClient = walletClient?.extend(publicActions) ?? publicClient;
-      if (!transactionClient) throw new Error(`No ${arcChain.name} client is available.`);
+      const transactionClient = publicClient;
       const balance = await withRpcRetry(() => transactionClient.readContract({
         address: ARC_ACTIVE_CONTRACTS.usdc,
         abi: erc20Abi,
@@ -394,21 +436,55 @@ export function LaunchForm() {
       } else {
         if (allowance < currentLaunchFee) {
           setStatus("approving");
+          const approvalArgs = [ARC_ACTIVE_CONTRACTS.factory, currentLaunchFee] as const;
+          const approvalGas = gasWithSafetyMargin(await withRpcRetry(() => transactionClient.estimateContractGas({
+            account: address,
+            address: ARC_ACTIVE_CONTRACTS.usdc,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: approvalArgs,
+          })));
+          const approvalFees = await transactionFees(transactionClient);
+          await ensureGasBalance(transactionClient, address, approvalGas, approvalFees, currentLaunchFee);
+          const approvalNonce = await withRpcRetry(() => transactionClient.getTransactionCount({
+            address,
+            blockTag: "pending",
+          }));
           const approvalHash = await writeContractAsync({
             address: ARC_ACTIVE_CONTRACTS.usdc,
             abi: erc20Abi,
             functionName: "approve",
-            args: [ARC_ACTIVE_CONTRACTS.factory, currentLaunchFee],
+            args: approvalArgs,
+            gas: approvalGas,
+            nonce: approvalNonce,
+            ...approvalFees,
           });
           const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: approvalHash }));
           if (approvalReceipt.status !== "success") throw new Error("USDC approval reverted onchain.");
         }
         setStatus("launching");
+        const launchArgs = [launchParameters] as const;
+        const launchGas = gasWithSafetyMargin(await withRpcRetry(() => transactionClient.estimateContractGas({
+          account: address,
+          address: ARC_ACTIVE_CONTRACTS.factory,
+          abi: factoryAbi,
+          functionName: "launchToken",
+          args: launchArgs,
+        })));
+        const launchFees = await transactionFees(transactionClient);
+        await ensureGasBalance(transactionClient, address, launchGas, launchFees, currentLaunchFee);
+        const launchNonce = await withRpcRetry(() => transactionClient.getTransactionCount({
+          address,
+          blockTag: "pending",
+        }));
         launchHash = await writeContractAsync({
           address: ARC_ACTIVE_CONTRACTS.factory,
           abi: factoryAbi,
           functionName: "launchToken",
-          args: [launchParameters],
+          args: launchArgs,
+          gas: launchGas,
+          nonce: launchNonce,
+          ...launchFees,
         });
       }
       const receipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: launchHash }));
@@ -509,7 +585,8 @@ export function LaunchForm() {
 
         <label htmlFor={descriptionId}>
           <span className="label">Description *</span>
-          <textarea id={descriptionId} className="input min-h-28 resize-y py-3" required value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="A short description of the token" />
+          <textarea id={descriptionId} className="input min-h-28 resize-y py-3" required maxLength={TOKEN_DESCRIPTION_MAX_CHARACTERS} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="A short description of the token" />
+          <span className="mt-1 block text-right text-[10px] text-slate-600">{form.description.length.toLocaleString("en-US")} / {TOKEN_DESCRIPTION_MAX_CHARACTERS.toLocaleString("en-US")}</span>
         </label>
 
         <div className="grid gap-5 md:grid-cols-[160px_minmax(0,1fr)]">

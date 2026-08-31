@@ -1,6 +1,11 @@
 import "server-only";
 
-import { normalizeTelegramUrl, normalizeWebsiteUrl, normalizeXUrl } from "@/lib/token-metadata";
+import {
+  TOKEN_DESCRIPTION_MAX_CHARACTERS,
+  normalizeTelegramUrl,
+  normalizeWebsiteUrl,
+  normalizeXUrl,
+} from "@/lib/token-metadata";
 
 const MAX_METADATA_BYTES = 2 * 1024 * 1024;
 const CACHE_LIMIT = 200;
@@ -66,7 +71,11 @@ function text(value: unknown, maxLength: number) {
 }
 
 function descriptionText(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+  return typeof value === "string"
+    && value.trim().length > 0
+    && value.trim().length <= TOKEN_DESCRIPTION_MAX_CHARACTERS
+    ? value.trim()
+    : undefined;
 }
 
 function cacheMetadata(key: string, value: ResolvedTokenMetadata | null) {

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings2 } from "lucide-react";
-import { decodeEventLog, formatUnits, maxUint256, parseUnits, publicActions, zeroAddress, type Address, type Hash, type PublicClient } from "viem";
+import { decodeEventLog, formatUnits, isAddress, maxUint256, parseUnits, publicActions, zeroAddress, type Address, type Hash, type PublicClient } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
+import { requiredNativeUsdcBalance } from "@/lib/arc-usdc";
 import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { erc20Abi, uniswapV3FactoryAbi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
 import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText } from "@/lib/rpc-errors";
@@ -18,7 +19,9 @@ type LiveQuote = { input: bigint; output: bigint; fee: bigint; minimumOutput: bi
 type QuoteResponse = { output?: string; fee?: string; spender?: string; pool?: string; error?: string };
 type TransactionStatus = "idle" | "quoting" | "preparing" | "approving" | "trading";
 type WalletBalances = { usdc: bigint; token: bigint };
-type TransactionFeeOverrides = { maxFeePerGas?: bigint; maxPriorityFeePerGas?: bigint };
+type TransactionFeeOverrides =
+  | { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
+  | { gasPrice: bigint };
 const percentageOptions = [10, 25, 50, 75, 100] as const;
 const slippageOptions = [10, 20, 40] as const;
 const priorityOptions: Priority[] = ["Low", "Medium", "High"];
@@ -116,21 +119,31 @@ async function readUniswapFallback(clients: PublicClient[], token: Address, pool
 }
 
 async function estimatePriorityFees(client: PublicClient, priority: Priority): Promise<TransactionFeeOverrides> {
-  try {
-    const multiplier = priority === "Low" ? 100n : priority === "High" ? 150n : 110n;
-    const fees = await client.estimateFeesPerGas();
+  const multiplier = priority === "Low" ? 100n : priority === "High" ? 150n : 110n;
+  const fees = await withRpcRetry(() => client.estimateFeesPerGas());
+  if (fees.maxFeePerGas !== undefined && fees.maxPriorityFeePerGas !== undefined) {
     return {
-      maxPriorityFeePerGas: fees.maxPriorityFeePerGas === undefined ? undefined : fees.maxPriorityFeePerGas * multiplier / 100n,
-      maxFeePerGas: fees.maxFeePerGas === undefined ? undefined : fees.maxFeePerGas * multiplier / 100n,
+      maxPriorityFeePerGas: fees.maxPriorityFeePerGas * multiplier / 100n,
+      maxFeePerGas: fees.maxFeePerGas * multiplier / 100n,
     };
-  } catch { return {}; }
+  }
+  return { gasPrice: await withRpcRetry(() => client.getGasPrice()) * multiplier / 100n };
 }
 
-async function ensureGasBalance(client: PublicClient, account: Address, gas: bigint, fees: TransactionFeeOverrides) {
-  if (fees.maxFeePerGas === undefined) return;
+async function ensureGasBalance(
+  client: PublicClient,
+  account: Address,
+  gas: bigint,
+  fees: TransactionFeeOverrides,
+  requiredUsdc = 0n,
+) {
+  const feePerGas = "gasPrice" in fees ? fees.gasPrice : fees.maxFeePerGas;
   const nativeBalance = await withRpcRetry(() => client.getBalance({ address: account }));
-  if (nativeBalance < gas * fees.maxFeePerGas) {
-    throw new Error("Insufficient native USDC balance for gas.");
+  const requiredNativeBalance = requiredNativeUsdcBalance(gas, feePerGas, requiredUsdc);
+  if (nativeBalance < requiredNativeBalance) {
+    throw new Error(requiredUsdc > 0n
+      ? "Insufficient USDC balance for the amount and network gas."
+      : "Insufficient native USDC balance for gas.");
   }
 }
 
@@ -227,6 +240,12 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
       result = await readUniswapFallback([publicClient, walletReadClient].filter((client): client is PublicClient => Boolean(client)), token.address as Address, poolAddress, side, input);
     }
     if (!result.output || result.fee === undefined || !result.spender || !result.pool) throw new Error(result.error || "Unable to read an onchain quote.");
+    if (!isAddress(result.spender)
+      || result.spender.toLowerCase() !== ARC_UNISWAP_V3.router.toLowerCase()
+      || !isAddress(result.pool)
+      || result.pool.toLowerCase() !== poolAddress.toLowerCase()) {
+      throw new Error("The quote did not return the verified ArcOrigin router and pool.");
+    }
     const output = BigInt(result.output);
     if (output <= 0n) throw new Error("The pool returned zero output.");
     const slippageBps = BigInt(Math.round(slippage * 100));
@@ -295,7 +314,13 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
           args: approvalArgs,
         })));
         const approvalFees = await estimatePriorityFees(client as PublicClient, priority);
-        await ensureGasBalance(client as PublicClient, address, approvalGas, approvalFees);
+        await ensureGasBalance(
+          client as PublicClient,
+          address,
+          approvalGas,
+          approvalFees,
+          side === "Buy" ? executionQuote.input : 0n,
+        );
         const approvalNonce = await withRpcRetry(() => client.getTransactionCount({ address, blockTag: "pending" }));
         const approvalHash = await writeContractAsync({ address: approvalToken, abi: erc20Abi, functionName: "approve", args: approvalArgs, gas: approvalGas, nonce: approvalNonce, ...approvalFees });
         setTransactionHash(approvalHash);
@@ -323,7 +348,13 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         args: tradeArgs,
       })));
       const tradeFees = await estimatePriorityFees(client as PublicClient, priority);
-      await ensureGasBalance(client as PublicClient, address, tradeGas, tradeFees);
+      await ensureGasBalance(
+        client as PublicClient,
+        address,
+        tradeGas,
+        tradeFees,
+        side === "Buy" ? executionQuote.input : 0n,
+      );
       const tradeNonce = await withRpcRetry(() => client.getTransactionCount({ address, blockTag: "pending" }));
       setStatus("trading");
       const tradeHash = await writeContractAsync({

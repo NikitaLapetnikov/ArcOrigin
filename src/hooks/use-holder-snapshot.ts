@@ -192,7 +192,7 @@ export function useHolderSnapshot(
   useLiveRefresh({
     enabled: autoRefresh && Boolean(token && address),
     intervalMs: HOLDER_POLL_INTERVAL_MS,
-    refresh: () => refresh(true, true),
+    refresh: () => refresh(false, true),
   });
 
   useEffect(() => {
