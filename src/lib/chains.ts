@@ -2,13 +2,18 @@ import { defineChain, isAddress, type Address } from "viem";
 
 export const ARCORIGIN_NETWORK = "mainnet" as const;
 const mainnetRpcUrl = process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_URL?.trim() || "https://invalid.invalid";
+const mainnetRpcFallbackUrls = (process.env.NEXT_PUBLIC_ARC_MAINNET_RPC_FALLBACK_URLS ?? "")
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
+const mainnetRpcUrls = [...new Set([mainnetRpcUrl, ...mainnetRpcFallbackUrls])] as [string, ...string[]];
 const mainnetExplorerUrl = process.env.NEXT_PUBLIC_ARC_MAINNET_EXPLORER_URL?.trim() || "https://invalid.invalid";
 
 export const arcMainnet = defineChain({
   id: 5_042,
   name: "Arc",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-  rpcUrls: { default: { http: [mainnetRpcUrl] } },
+  rpcUrls: { default: { http: mainnetRpcUrls } },
   blockExplorers: { default: { name: "Arc Explorer", url: mainnetExplorerUrl } },
 });
 

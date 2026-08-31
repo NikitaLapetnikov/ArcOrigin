@@ -28,6 +28,8 @@ npm run dev
 
 `PINATA_JWT` is server-only and enables wallet-authorized image and metadata uploads to public IPFS. Redis is optional but recommended in production for persistent index snapshots.
 
+Set `NEXT_PUBLIC_ARC_MAINNET_RPC_FALLBACK_URLS` to a comma-separated list of independently operated Arc RPC endpoints. Browser reads, quotes, simulations, and server snapshots fail over in order when the primary RPC is rate-limited or unavailable.
+
 Useful checks:
 
 ```bash

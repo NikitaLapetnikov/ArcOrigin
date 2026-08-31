@@ -2,7 +2,11 @@ import { createPublicClient, fallback, http } from "viem";
 import { arcChain } from "@/lib/chains";
 
 export function arcRpcUrls(preferred?: string) {
-  return [...new Set([preferred, ...arcChain.rpcUrls.default.http].filter((url): url is string => Boolean(url)))];
+  const preferredUrls = (preferred ?? "")
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean);
+  return [...new Set([...preferredUrls, ...arcChain.rpcUrls.default.http])];
 }
 
 export function createArcPublicClient(

@@ -4,6 +4,7 @@ import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3 } from "@/lib/chains";
 import { factoryAbi, uniswapV3FactoryAbi, uniswapV3QuoterAbi } from "@/lib/contracts";
 import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
+import { isRetryableRpcError, isRpcCapacityError } from "@/lib/rpc-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -37,14 +38,15 @@ function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
+async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 4): Promise<T> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       return await operation();
     } catch (error) {
       lastError = error;
-      if (attempt < attempts) await wait(attempt * 200);
+      if (!isRetryableRpcError(error) || attempt === attempts) throw error;
+      await wait(attempt * 400);
     }
   }
   throw lastError;
@@ -143,7 +145,10 @@ export async function GET(request: Request) {
   } catch (error) {
     const requestError = error instanceof QuoteRequestError ? error : null;
     console.error("ArcOrigin quote dependency failed.", { stage: requestError?.stage ?? "read-quote", errorName: error instanceof Error ? error.name : "UnknownError" });
-    return errorResponse(requestError?.message ?? "The onchain quote is temporarily unavailable.", requestError?.status ?? 503);
+    const dependencyMessage = isRpcCapacityError(error)
+      ? "Arc RPC is busy. The quote will retry automatically."
+      : "The onchain quote is temporarily unavailable.";
+    return errorResponse(requestError?.message ?? dependencyMessage, requestError?.status ?? 503);
   } finally {
     if (pendingQuotes.get(key) === pending) pendingQuotes.delete(key);
   }
