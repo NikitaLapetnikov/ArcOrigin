@@ -15,9 +15,19 @@ import { ArcscanLink, Badge, Button } from "./ui";
 
 type Side = "Buy" | "Sell";
 type Priority = "Low" | "Medium" | "High";
-type LiveQuote = { input: bigint; output: bigint; fee: bigint; minimumOutput: bigint; spender: Address; pool: Address };
+type LiveQuote = {
+  input: bigint;
+  output: bigint;
+  fee: bigint;
+  minimumOutput: bigint;
+  spender: Address;
+  pool: Address;
+  side: Side;
+  slippageBps: bigint;
+  quotedAt: number;
+};
 type QuoteResponse = { output?: string; fee?: string; spender?: string; pool?: string; error?: string };
-type TransactionStatus = "idle" | "quoting" | "preparing" | "approving" | "trading";
+type TransactionStatus = "idle" | "checking-rpc" | "quoting" | "preparing" | "approving" | "trading";
 type WalletBalances = { usdc: bigint; token: bigint };
 type TransactionFeeOverrides =
   | { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
@@ -28,6 +38,7 @@ const priorityOptions: Priority[] = ["Low", "Medium", "High"];
 const MAX_SLIPPAGE_PERCENT = 50;
 const BALANCE_POLL_INTERVAL_MS = 10_000;
 const QUOTE_POLL_INTERVAL_MS = 5_000;
+const MAX_EXECUTION_QUOTE_AGE_MS = 8_000;
 const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
 const MAX_INPUT_CHARACTERS = 80;
 
@@ -130,15 +141,13 @@ async function estimatePriorityFees(client: PublicClient, priority: Priority): P
   return { gasPrice: await withRpcRetry(() => client.getGasPrice()) * multiplier / 100n };
 }
 
-async function ensureGasBalance(
-  client: PublicClient,
-  account: Address,
+function ensureGasBalance(
+  nativeBalance: bigint,
   gas: bigint,
   fees: TransactionFeeOverrides,
   requiredUsdc = 0n,
 ) {
   const feePerGas = "gasPrice" in fees ? fees.gasPrice : fees.maxFeePerGas;
-  const nativeBalance = await withRpcRetry(() => client.getBalance({ address: account }));
   const requiredNativeBalance = requiredNativeUsdcBalance(gas, feePerGas, requiredUsdc);
   if (nativeBalance < requiredNativeBalance) {
     throw new Error(requiredUsdc > 0n
@@ -171,6 +180,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
   const balanceRefreshInFlightRef = useRef(false);
   const quoteRefreshInFlightRef = useRef(false);
   const quoteRequestRef = useRef(0);
+  const verifiedWalletRpcRef = useRef("");
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient({ chainId: arcChain.id });
   const { data: walletClient } = useWalletClient();
@@ -189,24 +199,19 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     if (!address || chainId !== arcChain.id || !publicClient) { setBalances(null); return; }
     if (background && balanceRefreshInFlightRef.current) return;
     balanceRefreshInFlightRef.current = true;
-    const walletReadClient = walletClient?.chain.id === arcChain.id ? walletClient.extend(publicActions) as unknown as PublicClient : null;
-    const clients = [publicClient, walletReadClient].filter((client): client is PublicClient => Boolean(client));
     if (!background) setBalanceLoading(true);
     setBalanceError(false);
     try {
-      const readBalance = async (contract: Address) => {
-        let lastError: unknown;
-        for (const client of clients) {
-          try { return await withRpcRetry(() => client.readContract({ address: contract, abi: erc20Abi, functionName: "balanceOf", args: [address] }), 2); } catch (error) { lastError = error; }
-        }
-        throw lastError;
-      };
-      setBalances({ usdc: await readBalance(ARC_ACTIVE_CONTRACTS.usdc), token: await readBalance(token.address as Address) });
+      const [usdc, tokenBalance] = await Promise.all([
+        withRpcRetry(() => publicClient.readContract({ address: ARC_ACTIVE_CONTRACTS.usdc, abi: erc20Abi, functionName: "balanceOf", args: [address] }), 2),
+        withRpcRetry(() => publicClient.readContract({ address: token.address as Address, abi: erc20Abi, functionName: "balanceOf", args: [address] }), 2),
+      ]);
+      setBalances({ usdc, token: tokenBalance });
     } catch { setBalanceError(true); } finally {
       balanceRefreshInFlightRef.current = false;
       if (!background) setBalanceLoading(false);
     }
-  }, [address, chainId, publicClient, token.address, walletClient]);
+  }, [address, chainId, publicClient, token.address]);
 
   useLiveRefresh({
     enabled: Boolean(address && chainId === arcChain.id && publicClient),
@@ -216,6 +221,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
 
   useEffect(() => { const timer = window.setTimeout(() => void refreshBalances(), 1_000); return () => window.clearTimeout(timer); }, [refreshBalances]);
   useEffect(() => { setTransactionHash(null); setNotice(""); setNoticeIsError(false); }, [amount, side, slippageInput]);
+  useEffect(() => { verifiedWalletRpcRef.current = ""; }, [address, chainId, walletClient]);
 
   async function getClient() {
     if (!isConnected || !address) throw new Error("Connect a wallet before trading.");
@@ -224,7 +230,41 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     return publicClient;
   }
 
+  async function ensureWalletRpcReady() {
+    if (!walletClient || !address) throw new Error("The connected wallet is not ready. Reconnect it and retry.");
+    const checkKey = `${address.toLowerCase()}:${arcChain.id}`;
+    if (verifiedWalletRpcRef.current === checkKey) return;
+    const walletReadClient = walletClient.extend(publicActions) as unknown as PublicClient;
+    try {
+      await walletReadClient.getTransactionCount({ address, blockTag: "latest" });
+      verifiedWalletRpcRef.current = checkKey;
+      return;
+    } catch (error) {
+      if (!isUnauthorizedBlockdaemonRpc(error)) throw error;
+    }
+
+    setNotice(`Your wallet has an outdated Arc RPC. Approve the network update to ${ARC_WALLET_RPC_URL}.`);
+    setNoticeIsError(false);
+    try {
+      await walletClient.addChain({ chain: arcChain });
+    } catch (error) {
+      if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(error))) throw error;
+      // Some wallets report "already added" instead of updating in place.
+      // Switching and rechecking below still succeeds when they accepted the new RPC.
+    }
+    await walletClient.switchChain({ id: arcChain.id });
+    try {
+      await (walletClient.extend(publicActions) as unknown as PublicClient).getTransactionCount({ address, blockTag: "latest" });
+      verifiedWalletRpcRef.current = checkKey;
+      setNotice("");
+    } catch (error) {
+      verifiedWalletRpcRef.current = "";
+      throw error;
+    }
+  }
+
   const readQuote = useCallback(async (): Promise<LiveQuote> => {
+    if (!publicClient) throw new Error(`No ${arcChain.name} public client is available.`);
     if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
     const input = parseTradeAmount(amount, inputDecimals);
     if (input === null) throw new Error(`Enter a valid amount with no more than ${inputDecimals} decimal places.`);
@@ -236,8 +276,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     } catch (error) {
       const status = typeof error === "object" && error && "status" in error ? Number(error.status) : null;
       if (status !== null && status < 500) throw error;
-      const walletReadClient = walletClient?.chain.id === arcChain.id ? walletClient.extend(publicActions) as unknown as PublicClient : null;
-      result = await readUniswapFallback([publicClient, walletReadClient].filter((client): client is PublicClient => Boolean(client)), token.address as Address, poolAddress, side, input);
+      result = await readUniswapFallback([publicClient as unknown as PublicClient], token.address as Address, poolAddress, side, input);
     }
     if (!result.output || result.fee === undefined || !result.spender || !result.pool) throw new Error(result.error || "Unable to read an onchain quote.");
     if (!isAddress(result.spender)
@@ -249,8 +288,18 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     const output = BigInt(result.output);
     if (output <= 0n) throw new Error("The pool returned zero output.");
     const slippageBps = BigInt(Math.round(slippage * 100));
-    return { input, output, fee: BigInt(result.fee), minimumOutput: output * (10_000n - slippageBps) / 10_000n, spender: result.spender as Address, pool: result.pool as Address };
-  }, [amount, inputDecimals, poolAddress, publicClient, side, slippage, slippageValid, token.address, walletClient]);
+    return {
+      input,
+      output,
+      fee: BigInt(result.fee),
+      minimumOutput: output * (10_000n - slippageBps) / 10_000n,
+      spender: result.spender as Address,
+      pool: result.pool as Address,
+      side,
+      slippageBps,
+      quotedAt: Date.now(),
+    };
+  }, [amount, inputDecimals, poolAddress, publicClient, side, slippage, slippageValid, token.address]);
 
   const refreshQuote = useCallback(async (background = false) => {
     if (background && quoteRefreshInFlightRef.current) return;
@@ -294,34 +343,42 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
   async function submitTrade() {
     if (!address) { setNotice("Connect a wallet to trade."); setNoticeIsError(true); return; }
     if (submissionLockRef.current) return;
-    submissionLockRef.current = true; setStatus("quoting"); setNotice(""); setTransactionHash(null);
+    submissionLockRef.current = true; setStatus("checking-rpc"); setNotice(""); setTransactionHash(null);
     try {
       const client = await getClient();
-      let executionQuote = await readQuote();
+      await ensureWalletRpcReady();
+      const currentSlippageBps = BigInt(Math.round(slippage * 100));
+      let executionQuote = liveQuote
+        && liveQuote.input === parsedAmount
+        && liveQuote.side === side
+        && liveQuote.slippageBps === currentSlippageBps
+        && Date.now() - liveQuote.quotedAt <= MAX_EXECUTION_QUOTE_AGE_MS
+        ? liveQuote
+        : await (async () => { setStatus("quoting"); return readQuote(); })();
       setStatus("preparing");
       const approvalToken = (side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token.address) as Address;
-      const currentBalance = await withRpcRetry(() => client.readContract({ address: approvalToken, abi: erc20Abi, functionName: "balanceOf", args: [address] }));
+      const [currentBalance, allowance] = await Promise.all([
+        withRpcRetry(() => client.readContract({ address: approvalToken, abi: erc20Abi, functionName: "balanceOf", args: [address] })),
+        withRpcRetry(() => client.readContract({ address: approvalToken, abi: erc20Abi, functionName: "allowance", args: [address, executionQuote.spender] })),
+      ]);
       if (currentBalance < executionQuote.input) throw new Error(`Insufficient ${inputSymbol} balance.`);
-      const allowance = await withRpcRetry(() => client.readContract({ address: approvalToken, abi: erc20Abi, functionName: "allowance", args: [address, executionQuote.spender] }));
       if (allowance < executionQuote.input) {
         setStatus("approving");
         const approvalArgs = [executionQuote.spender, executionQuote.input] as const;
-        const approvalGas = gasWithSafetyMargin(await withRpcRetry(() => client.estimateContractGas({
-          account: address,
-          address: approvalToken,
-          abi: erc20Abi,
-          functionName: "approve",
-          args: approvalArgs,
-        })));
-        const approvalFees = await estimatePriorityFees(client as PublicClient, priority);
-        await ensureGasBalance(
-          client as PublicClient,
-          address,
-          approvalGas,
-          approvalFees,
-          side === "Buy" ? executionQuote.input : 0n,
-        );
-        const approvalNonce = await withRpcRetry(() => client.getTransactionCount({ address, blockTag: "pending" }));
+        const [estimatedApprovalGas, approvalFees, approvalNativeBalance, approvalNonce] = await Promise.all([
+          withRpcRetry(() => client.estimateContractGas({
+            account: address,
+            address: approvalToken,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: approvalArgs,
+          })),
+          estimatePriorityFees(client as PublicClient, priority),
+          withRpcRetry(() => client.getBalance({ address })),
+          withRpcRetry(() => client.getTransactionCount({ address, blockTag: "pending" })),
+        ]);
+        const approvalGas = gasWithSafetyMargin(estimatedApprovalGas);
+        ensureGasBalance(approvalNativeBalance, approvalGas, approvalFees, side === "Buy" ? executionQuote.input : 0n);
         const approvalHash = await writeContractAsync({ address: approvalToken, abi: erc20Abi, functionName: "approve", args: approvalArgs, gas: approvalGas, nonce: approvalNonce, ...approvalFees });
         setTransactionHash(approvalHash);
         if ((await withRpcRetry(() => client.waitForTransactionReceipt({ hash: approvalHash }))).status !== "success") throw new Error(`${inputSymbol} approval reverted onchain.`);
@@ -329,8 +386,6 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         executionQuote = await readQuote();
       }
       setStatus("preparing");
-      const refreshedBalance = await withRpcRetry(() => client.readContract({ address: approvalToken, abi: erc20Abi, functionName: "balanceOf", args: [address] }));
-      if (refreshedBalance < executionQuote.input) throw new Error(`Insufficient ${inputSymbol} balance.`);
       const tradeArgs = [{
         tokenIn: approvalToken,
         tokenOut: (side === "Buy" ? token.address : ARC_ACTIVE_CONTRACTS.usdc) as Address,
@@ -340,22 +395,20 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         amountOutMinimum: executionQuote.minimumOutput,
         sqrtPriceLimitX96: 0n,
       }] as const;
-      const tradeGas = gasWithSafetyMargin(await withRpcRetry(() => client.estimateContractGas({
-        account: address,
-        address: ARC_UNISWAP_V3.router,
-        abi: uniswapV3RouterAbi,
-        functionName: "exactInputSingle",
-        args: tradeArgs,
-      })));
-      const tradeFees = await estimatePriorityFees(client as PublicClient, priority);
-      await ensureGasBalance(
-        client as PublicClient,
-        address,
-        tradeGas,
-        tradeFees,
-        side === "Buy" ? executionQuote.input : 0n,
-      );
-      const tradeNonce = await withRpcRetry(() => client.getTransactionCount({ address, blockTag: "pending" }));
+      const [estimatedTradeGas, tradeFees, tradeNativeBalance, tradeNonce] = await Promise.all([
+        withRpcRetry(() => client.estimateContractGas({
+          account: address,
+          address: ARC_UNISWAP_V3.router,
+          abi: uniswapV3RouterAbi,
+          functionName: "exactInputSingle",
+          args: tradeArgs,
+        })),
+        estimatePriorityFees(client as PublicClient, priority),
+        withRpcRetry(() => client.getBalance({ address })),
+        withRpcRetry(() => client.getTransactionCount({ address, blockTag: "pending" })),
+      ]);
+      const tradeGas = gasWithSafetyMargin(estimatedTradeGas);
+      ensureGasBalance(tradeNativeBalance, tradeGas, tradeFees, side === "Buy" ? executionQuote.input : 0n);
       setStatus("trading");
       const tradeHash = await writeContractAsync({
         address: ARC_UNISWAP_V3.router,
@@ -388,7 +441,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
   }
 
   const idleActionLabel = parsedAmount === null ? "Enter a valid amount" : amountExceedsBalance ? `Insufficient ${inputSymbol}` : quoteLoading || !liveQuote ? "Waiting for live quote…" : `${side} ${tickerLabel(token.ticker)}`;
-  const actionLabel = status === "quoting" ? "Reading quote…" : status === "preparing" ? "Checking transaction…" : status === "approving" ? `Approving ${inputSymbol}…` : status === "trading" ? `${side} pending…` : idleActionLabel;
+  const actionLabel = status === "checking-rpc" ? "Checking Arc network…" : status === "quoting" ? "Refreshing quote…" : status === "preparing" ? "Preparing transaction…" : status === "approving" ? `Approving ${inputSymbol}…` : status === "trading" ? `${side} pending…` : idleActionLabel;
   const tradeDisabled = isPending || !slippageValid || parsedAmount === null || amountExceedsBalance || quoteLoading || !liveQuote;
   const balanceLabel = !address ? "Connect wallet" : chainId !== arcChain.id ? `Switch to ${arcChain.name}` : balanceLoading ? "Reading balance…" : activeBalance === undefined ? balanceError ? "Balance unavailable · Retry" : "Balance unavailable" : `Balance ${displayUnits(activeBalance, inputDecimals)} ${inputSymbol}`;
   const outputDecimals = side === "Buy" ? 18 : 6;

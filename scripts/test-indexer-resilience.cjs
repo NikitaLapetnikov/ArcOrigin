@@ -52,6 +52,7 @@ const {
 const {
   isRetryableRpcError,
   isRpcCapacityError,
+  isUnauthorizedBlockdaemonRpc,
 } = loadTypeScriptModule("src/lib/rpc-errors.ts");
 const {
   requiredNativeUsdcBalance,
@@ -206,6 +207,18 @@ test("Arc capacity errors remain retryable through nested RPC causes", () => {
   assert.equal(isRpcCapacityError(error), true);
   assert.equal(isRetryableRpcError(error), true);
   assert.equal(isRetryableRpcError(new Error("execution reverted")), false);
+});
+
+test("retired wallet RPC authorization failures are detected before a transaction", () => {
+  const error = {
+    shortMessage: "HTTP request failed.",
+    cause: {
+      details: "Status: 401 Authorization Required",
+      message: "URL: https://rpc.blockdaemon.mainnet.arc.io/",
+    },
+  };
+  assert.equal(isUnauthorizedBlockdaemonRpc(error), true);
+  assert.equal(isUnauthorizedBlockdaemonRpc(new Error("execution reverted")), false);
 });
 
 test("native USDC preflight reserves the six-decimal amount plus gas", () => {

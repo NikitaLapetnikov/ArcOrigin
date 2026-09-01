@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAddress, isAddress, maxUint256, zeroAddress } from "viem";
-import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3 } from "@/lib/chains";
+import { createPublicClient, getAddress, http, isAddress, maxUint256, zeroAddress } from "viem";
+import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { factoryAbi, uniswapV3FactoryAbi, uniswapV3QuoterAbi } from "@/lib/contracts";
-import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
-import { getTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
-import { isRetryableRpcError, isRpcCapacityError } from "@/lib/rpc-errors";
+import { arcRpcUrls, createArcPublicClient } from "@/lib/onchain/arc-rpc";
+import { getCachedTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
+import { isRpcCapacityError } from "@/lib/rpc-errors";
 import { requestClientKey } from "@/lib/server/request-security";
 
 export const dynamic = "force-dynamic";
@@ -25,9 +25,17 @@ const MAX_QUOTE_CACHE_ENTRIES = 256;
 const MAX_PENDING_QUOTES = 256;
 const QUOTE_RATE_WINDOW_MS = 60_000;
 const MAX_QUOTES_PER_WINDOW = 120;
+const QUOTE_RPC_TIMEOUT_MS = 4_000;
+const QUOTE_RPC_HEDGE_DELAY_MS = 350;
 const quoteCache = new Map<string, { expiresAt: number; payload: QuotePayload }>();
 const pendingQuotes = new Map<string, Promise<QuotePayload>>();
 const quoteRates = new Map<string, { startedAt: number; count: number }>();
+const verifiedMarkets = new Set<string>();
+const quoteClients = arcRpcUrls(process.env.ARC_MAINNET_RPC_URL).map((url) => createPublicClient({
+  chain: arcChain,
+  transport: http(url, { retryCount: 0, timeout: QUOTE_RPC_TIMEOUT_MS }),
+}));
+const validationClient = createArcPublicClient(process.env.ARC_MAINNET_RPC_URL, QUOTE_RPC_TIMEOUT_MS, 0);
 
 class QuoteRequestError extends Error {
   constructor(message: string, readonly status: number, readonly stage: string) {
@@ -44,18 +52,12 @@ function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 4): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      if (!isRetryableRpcError(error) || attempt === attempts) throw error;
-      await wait(attempt * 400);
-    }
-  }
-  throw lastError;
+async function withHedgedRpc<T>(operation: (client: (typeof quoteClients)[number]) => Promise<T>) {
+  if (quoteClients.length === 0) throw new Error("No Arc quote RPC is configured.");
+  return Promise.any(quoteClients.map(async (client, index) => {
+    if (index > 0) await wait(index * QUOTE_RPC_HEDGE_DELAY_MS);
+    return operation(client);
+  }));
 }
 
 function readCachedQuote(key: string) {
@@ -93,44 +95,51 @@ function consumeQuoteRate(clientKey: string) {
 }
 
 async function readVerifiedQuote(token: `0x${string}`, pool: `0x${string}`, side: QuoteSide, amount: bigint): Promise<QuotePayload> {
-  const index = await getTokenIndexSnapshot();
-  const indexedToken = index.snapshot?.tokens.find((candidate) => candidate.address.toLowerCase() === token.toLowerCase());
-  const client = createArcPublicClient(
-    process.env.ARC_MAINNET_RPC_URL,
-    4_000,
-  );
-  if (indexedToken?.poolAddress?.toLowerCase() !== pool.toLowerCase()) {
-    const tokenInfo = await withRpcRetry(() => client.readContract({
-      address: ARC_ACTIVE_CONTRACTS.factory,
-      abi: factoryAbi,
-      functionName: "getTokenInfo",
-      args: [token],
-    }));
-    if (tokenInfo.token.toLowerCase() !== token.toLowerCase() || tokenInfo.pool.toLowerCase() !== pool.toLowerCase()) {
-      throw new QuoteRequestError("Token pool is not a verified ArcOrigin market.", 404, "validate-pool");
-    }
-  }
-
-  const canonicalPool = await withRpcRetry(() => client.readContract({
-    address: ARC_UNISWAP_V3.factory,
-    abi: uniswapV3FactoryAbi,
-    functionName: "getPool",
-    args: [token, ARC_ACTIVE_CONTRACTS.usdc, ARC_UNISWAP_V3.fee],
-  }));
-  if (canonicalPool === zeroAddress || canonicalPool.toLowerCase() !== pool.toLowerCase()) {
-    throw new QuoteRequestError("The canonical launch pool could not be verified.", 409, "verify-pool");
-  }
+  const index = await getCachedTokenIndexSnapshot();
+  const indexedToken = index?.tokens.find((candidate) => candidate.address.toLowerCase() === token.toLowerCase());
+  const marketKey = `${token.toLowerCase()}:${pool.toLowerCase()}`;
   const tokenIn = side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token;
   const tokenOut = side === "Buy" ? token : ARC_ACTIVE_CONTRACTS.usdc;
-  const { result } = await withRpcRetry(() => client.simulateContract({
+  const quotePromise = withHedgedRpc((client) => client.simulateContract({
     address: ARC_UNISWAP_V3.quoter,
     abi: uniswapV3QuoterAbi,
     functionName: "quoteExactInputSingle",
     args: [{ tokenIn, tokenOut, amountIn: amount, fee: ARC_UNISWAP_V3.fee, sqrtPriceLimitX96: 0n }],
   }));
+  let canonicalPool = pool;
+  let quoteResult: Awaited<typeof quotePromise>;
+  if (indexedToken?.poolAddress?.toLowerCase() !== pool.toLowerCase() && !verifiedMarkets.has(marketKey)) {
+    const [tokenInfo, verifiedPool, result] = await Promise.all([
+      validationClient.readContract({
+        address: ARC_ACTIVE_CONTRACTS.factory,
+        abi: factoryAbi,
+        functionName: "getTokenInfo",
+        args: [token],
+      }),
+      validationClient.readContract({
+        address: ARC_UNISWAP_V3.factory,
+        abi: uniswapV3FactoryAbi,
+        functionName: "getPool",
+        args: [token, ARC_ACTIVE_CONTRACTS.usdc, ARC_UNISWAP_V3.fee],
+      }),
+      quotePromise,
+    ]);
+    if (tokenInfo.token.toLowerCase() !== token.toLowerCase() || tokenInfo.pool.toLowerCase() !== pool.toLowerCase()) {
+      throw new QuoteRequestError("Token pool is not a verified ArcOrigin market.", 404, "validate-pool");
+    }
+    canonicalPool = verifiedPool;
+    if (canonicalPool === zeroAddress || canonicalPool.toLowerCase() !== pool.toLowerCase()) {
+      throw new QuoteRequestError("The canonical launch pool could not be verified.", 409, "verify-pool");
+    }
+    verifiedMarkets.add(marketKey);
+    quoteResult = result;
+  } else {
+    verifiedMarkets.add(marketKey);
+    quoteResult = await quotePromise;
+  }
   return {
     input: amount.toString(),
-    output: result[0].toString(),
+    output: quoteResult.result[0].toString(),
     fee: (amount * BigInt(ARC_UNISWAP_V3.fee) / 1_000_000n).toString(),
     venue: "uniswap-v3",
     spender: ARC_UNISWAP_V3.router,
