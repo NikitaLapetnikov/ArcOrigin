@@ -7,6 +7,7 @@ import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshotForToken } from "@/lib/onchain/token-index-snapshot";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
+import { getStoredBuybacks } from "@/lib/server/event-store";
 
 const buybackExecutedEvent = parseAbiItem("event BuybackExecuted(uint256 indexed positionId, address indexed keeper, uint256 quoteSpent, uint256 keeperReward, uint256 launchTokensBurned, uint256 remainingQuoteReserve)");
 const LOG_BLOCK_RANGE = 9_999n;
@@ -139,15 +140,38 @@ export async function getCachedBuybackSnapshot(tokenAddress: Address) {
   return persisted;
 }
 
-async function readBuybackEvents(locker: Address, positionId: bigint, indexedBlock: bigint) {
-  const events: Array<{
-    txHash: Hash;
-    blockNumber: bigint;
-    keeper: Address;
-    quoteSpent: bigint;
-    keeperReward: bigint;
-    launchTokensBurned: bigint;
-  }> = [];
+type IndexedBuybackEvent = {
+  txHash: Hash;
+  blockNumber: bigint;
+  timestamp?: number;
+  keeper: Address;
+  quoteSpent: bigint;
+  keeperReward: bigint;
+  launchTokensBurned: bigint;
+};
+
+async function readBuybackEvents(
+  locker: Address,
+  positionId: bigint,
+  indexedBlock: bigint,
+  tokenAddress: Address,
+) {
+  const stored = await getStoredBuybacks(tokenAddress);
+  const minimumStoredBlock = indexedBlock > 20n ? indexedBlock - 20n : 0n;
+  if (stored
+    && BigInt(stored.checkpoint.indexedBlock) >= ARC_ACTIVE_FACTORY_BLOCK
+    && BigInt(stored.checkpoint.indexedBlock) >= minimumStoredBlock) {
+    return stored.events.map((event): IndexedBuybackEvent => ({
+      txHash: event.transactionHash,
+      blockNumber: event.blockNumber,
+      timestamp: event.timestamp,
+      keeper: event.keeper,
+      quoteSpent: event.quoteSpent,
+      keeperReward: event.keeperReward,
+      launchTokensBurned: event.launchTokensBurned,
+    }));
+  }
+  const events: IndexedBuybackEvent[] = [];
   for (let fromBlock = ARC_ACTIVE_FACTORY_BLOCK; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
     const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
     const logs = await publicClient.getLogs({
@@ -215,19 +239,21 @@ async function loadBuybackSnapshot(tokenAddress: Address, forceRefresh: boolean)
       args: [positionId],
       blockNumber: indexedBlock,
     }),
-    readBuybackEvents(locker, positionId, indexedBlock),
+    readBuybackEvents(locker, positionId, indexedBlock, tokenAddress),
   ]);
   const latestEvent = events.at(-1);
   const configuredKeeper = configuredKeeperAddress();
   const keeperAddress = configuredKeeper ?? latestEvent?.keeper ?? null;
   const [latestBlock, keeperBalance] = await Promise.all([
-    latestEvent ? publicClient.getBlock({ blockNumber: latestEvent.blockNumber }) : null,
+    latestEvent && latestEvent.timestamp === undefined
+      ? publicClient.getBlock({ blockNumber: latestEvent.blockNumber })
+      : null,
     keeperAddress ? publicClient.getBalance({ address: keeperAddress, blockNumber: indexedBlock }) : null,
   ]);
   const latestExecution: BuybackExecution | null = latestEvent ? {
     txHash: latestEvent.txHash,
     blockNumber: latestEvent.blockNumber.toString(),
-    timestamp: Number(latestBlock?.timestamp ?? 0n),
+    timestamp: latestEvent.timestamp ?? Number(latestBlock?.timestamp ?? 0n),
     keeper: latestEvent.keeper,
     usdcSpent: Number(formatUnits(latestEvent.quoteSpent, 6)),
     keeperRewardUsdc: Number(formatUnits(latestEvent.keeperReward, 6)),

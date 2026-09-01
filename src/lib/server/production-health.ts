@@ -10,6 +10,7 @@ import { createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getTokenIndexCacheStatus } from "@/lib/onchain/token-index-snapshot";
 import { isRetryableRpcError } from "@/lib/rpc-errors";
 import { getPersistentCacheStatus } from "@/lib/server/persistent-cache";
+import { getEventStoreStatus } from "@/lib/server/event-store";
 
 const factoryHealthAbi = [
   {
@@ -87,6 +88,7 @@ async function loadProductionHealth() {
     // Keep Redis independent, but serialize Arc reads so the health probe does
     // not create its own burst against capacity-constrained public RPCs.
     const cachePromise = settle(() => getPersistentCacheStatus());
+    const eventStorePromise = settle(() => getEventStoreStatus());
     const [chainResult, blockResult] = await Promise.all([
       settleRpc(() => healthClient.getChainId()),
       settleRpc(() => healthClient.getBlockNumber()),
@@ -111,15 +113,25 @@ async function loadProductionHealth() {
       })),
     ]);
     const indexerResult = await settleRpc(() => getTokenIndexCacheStatus());
-    const cacheResult = await cachePromise;
+    const [cacheResult, eventStoreResult] = await Promise.all([cachePromise, eventStorePromise]);
 
     const chainId = chainResult.status === "fulfilled" ? chainResult.value : null;
     const latestBlock = blockResult.status === "fulfilled" ? blockResult.value : null;
     const bytecode = bytecodeResult.status === "fulfilled" ? bytecodeResult.value : null;
     const factoryOwner = factoryStateResult.status === "fulfilled" ? factoryStateResult.value[0] : null;
     const launchesPaused = factoryStateResult.status === "fulfilled" ? factoryStateResult.value[1] : null;
-    const indexer = indexerResult.status === "fulfilled" ? indexerResult.value : null;
+    const legacyIndexer = indexerResult.status === "fulfilled" ? indexerResult.value : null;
     const cache = cacheResult.status === "fulfilled" ? cacheResult.value : null;
+    const eventStore = eventStoreResult.status === "fulfilled" ? eventStoreResult.value : null;
+    const indexer = eventStore?.reachable && eventStore.indexedBlock
+      ? {
+          available: true,
+          indexedBlock: eventStore.indexedBlock,
+          ageSeconds: eventStore.ageSeconds,
+          checkpoint: "worker-verified" as const,
+          tokenCount: legacyIndexer?.tokenCount ?? null,
+        }
+      : legacyIndexer;
     const ownerMatches = owner && factoryOwner
       ? factoryOwner.toLowerCase() === owner.toLowerCase()
       : null;
@@ -145,6 +157,10 @@ async function loadProductionHealth() {
     if (!cache) warnings.push("persistent_cache_status_unavailable");
     else if (!cache.configured) warnings.push("persistent_cache_not_configured");
     else if (!cache.reachable) warnings.push("persistent_cache_unreachable");
+    if (!eventStore) warnings.push("event_store_status_unavailable");
+    else if (!eventStore.configured) warnings.push("event_store_not_configured");
+    else if (!eventStore.reachable) warnings.push("event_store_unreachable");
+    else if (!eventStore.indexedBlock) warnings.push("event_store_not_indexed");
     if (!owner) warnings.push("expected_factory_owner_not_configured");
 
     return {
@@ -164,6 +180,7 @@ async function loadProductionHealth() {
         ? { ...indexer, blockLag: blockLag?.toString() ?? null }
         : null,
       cache,
+      eventStore,
       errors,
       warnings,
     };
@@ -178,6 +195,7 @@ async function loadProductionHealth() {
       contracts: null,
       indexer: null,
       cache: null,
+      eventStore: null,
       errors: ["health_dependency_unavailable"],
       warnings,
     };

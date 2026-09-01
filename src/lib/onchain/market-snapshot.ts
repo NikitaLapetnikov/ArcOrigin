@@ -17,6 +17,7 @@ import {
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshotForToken } from "@/lib/onchain/token-index-snapshot";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
+import { getStoredSwaps } from "@/lib/server/event-store";
 import { isRetryableRpcError } from "@/lib/rpc-errors";
 import type { ChartPoint, TokenData, Trade } from "@/lib/types";
 
@@ -155,35 +156,53 @@ async function loadUniswapMarketSnapshot(baseToken: TokenData, indexedBlock: big
   ]);
   const tokenIsToken0 = poolToken0.toLowerCase() === tokenAddress.toLowerCase();
   const currentPrice = uniswapPriceFromSqrt(slot0[0], tokenIsToken0);
-  const events: IndexedTrade[] = [];
-  for (let fromBlock = launchBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
-    const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
-    const logs = await withRpcRetry(() => publicClient.getLogs({ address: pool, event: swapEvent, fromBlock, toBlock }));
-    for (const log of logs) {
-      const amount0 = log.args.amount0 ?? 0n;
-      const amount1 = log.args.amount1 ?? 0n;
-      const tokenDelta = tokenIsToken0 ? amount0 : amount1;
-      const usdcDelta = tokenIsToken0 ? amount1 : amount0;
-      if (tokenDelta === 0n || usdcDelta === 0n || (tokenDelta < 0n) === (usdcDelta < 0n)) continue;
-      events.push({
-        blockNumber: log.blockNumber ?? 0n,
-        logIndex: log.logIndex ?? 0,
-        hash: log.transactionHash as Hash,
-        wallet: (log.args.recipient ?? log.args.sender) as Address,
-        type: tokenDelta < 0n ? "Buy" : "Sell",
-        usdc: Number(formatUnits(usdcDelta < 0n ? -usdcDelta : usdcDelta, 6)),
-        tokens: Number(formatUnits(tokenDelta < 0n ? -tokenDelta : tokenDelta, 18)),
-        executionPrice: uniswapPriceFromSqrt(log.args.sqrtPriceX96 ?? slot0[0], tokenIsToken0),
-      });
+  const storedSwaps = await getStoredSwaps(tokenAddress);
+  const storedSwapBlock = storedSwaps ? BigInt(storedSwaps.checkpoint.indexedBlock) : 0n;
+  const minimumStoredBlock = indexedBlock > 20n ? indexedBlock - 20n : 0n;
+  let validEvents: IndexedTrade[];
+  if (storedSwaps && storedSwapBlock >= launchBlock && storedSwapBlock >= minimumStoredBlock) {
+    validEvents = storedSwaps.swaps.map((event) => ({
+      blockNumber: event.blockNumber,
+      logIndex: event.logIndex,
+      hash: event.transactionHash,
+      wallet: event.wallet,
+      type: event.side,
+      usdc: event.usdc,
+      tokens: event.tokens,
+      executionPrice: event.executionPrice,
+      timestamp: event.timestamp,
+    }));
+  } else {
+    const events: IndexedTrade[] = [];
+    for (let fromBlock = launchBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
+      const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
+      const logs = await withRpcRetry(() => publicClient.getLogs({ address: pool, event: swapEvent, fromBlock, toBlock }));
+      for (const log of logs) {
+        const amount0 = log.args.amount0 ?? 0n;
+        const amount1 = log.args.amount1 ?? 0n;
+        const tokenDelta = tokenIsToken0 ? amount0 : amount1;
+        const usdcDelta = tokenIsToken0 ? amount1 : amount0;
+        if (tokenDelta === 0n || usdcDelta === 0n || (tokenDelta < 0n) === (usdcDelta < 0n)) continue;
+        events.push({
+          blockNumber: log.blockNumber ?? 0n,
+          logIndex: log.logIndex ?? 0,
+          hash: log.transactionHash as Hash,
+          wallet: (log.args.recipient ?? log.args.sender) as Address,
+          type: tokenDelta < 0n ? "Buy" : "Sell",
+          usdc: Number(formatUnits(usdcDelta < 0n ? -usdcDelta : usdcDelta, 6)),
+          tokens: Number(formatUnits(tokenDelta < 0n ? -tokenDelta : tokenDelta, 18)),
+          executionPrice: uniswapPriceFromSqrt(log.args.sqrtPriceX96 ?? slot0[0], tokenIsToken0),
+        });
+      }
     }
+    const unique = new Map<string, IndexedTrade>();
+    for (const event of events) unique.set(`${event.hash.toLowerCase()}:${event.logIndex}`, event);
+    validEvents = [...unique.values()].filter((event) => event.tokens > 0).sort((left, right) => left.blockNumber === right.blockNumber
+      ? left.logIndex - right.logIndex
+      : left.blockNumber < right.blockNumber ? -1 : 1);
+    const timestamps = await loadBlockTimestamps(validEvents.map((event) => event.blockNumber));
+    for (const event of validEvents) event.timestamp = timestamps.get(event.blockNumber.toString());
   }
-  const unique = new Map<string, IndexedTrade>();
-  for (const event of events) unique.set(`${event.hash.toLowerCase()}:${event.logIndex}`, event);
-  const validEvents = [...unique.values()].filter((event) => event.tokens > 0).sort((left, right) => left.blockNumber === right.blockNumber
-    ? left.logIndex - right.logIndex
-    : left.blockNumber < right.blockNumber ? -1 : 1);
-  const timestamps = await loadBlockTimestamps(validEvents.map((event) => event.blockNumber));
-  for (const event of validEvents) event.timestamp = timestamps.get(event.blockNumber.toString());
 
   const totalSupply = baseToken.totalSupply;
   const launchPrice = ARCORIGIN_START_MARKET_CAP_USDC / totalSupply;
@@ -191,7 +210,19 @@ async function loadUniswapMarketSnapshot(baseToken: TokenData, indexedBlock: big
   const cutoff24h = Math.floor(Date.now() / 1_000) - 86_400;
   const recentEvents = validEvents.filter((event) => (event.timestamp ?? 0) >= cutoff24h);
   const firstInWindow = validEvents.findIndex((event) => (event.timestamp ?? 0) >= cutoff24h);
-  const comparisonPrice = firstInWindow < 0 ? currentPrice : firstInWindow > 0 ? validEvents[firstInWindow - 1].executionPrice : launchPrice;
+  const usingStoredSwaps = Boolean(storedSwaps && storedSwapBlock >= launchBlock && storedSwapBlock >= minimumStoredBlock);
+  const comparisonPrice = usingStoredSwaps ? storedSwaps?.stats24h.comparisonPrice
+    ?? (firstInWindow < 0 ? currentPrice : firstInWindow > 0 ? validEvents[firstInWindow - 1].executionPrice : launchPrice)
+    : (firstInWindow < 0 ? currentPrice : firstInWindow > 0 ? validEvents[firstInWindow - 1].executionPrice : launchPrice);
+  const volume24h = usingStoredSwaps ? storedSwaps?.stats24h.volume
+    ?? recentEvents.reduce((sum, event) => sum + event.usdc, 0)
+    : recentEvents.reduce((sum, event) => sum + event.usdc, 0);
+  const buyers24h = usingStoredSwaps ? storedSwaps?.stats24h.buyers
+    ?? recentEvents.filter((event) => event.type === "Buy").length
+    : recentEvents.filter((event) => event.type === "Buy").length;
+  const sellers24h = usingStoredSwaps ? storedSwaps?.stats24h.sellers
+    ?? recentEvents.filter((event) => event.type === "Sell").length
+    : recentEvents.filter((event) => event.type === "Sell").length;
   const tokenReserve = Number(formatUnits(tokenReserveRaw, 18));
   const trades: Trade[] = validEvents.slice(-TRADE_FEED_LIMIT).reverse().map((event) => ({
     time: `Block ${event.blockNumber}`,
@@ -212,14 +243,19 @@ async function loadUniswapMarketSnapshot(baseToken: TokenData, indexedBlock: big
       volume: event.usdc,
     })),
   ];
-  const checkpoint = await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
+  const checkpoint = storedSwaps && usingStoredSwaps && storedSwapBlock === indexedBlock
+    ? {
+        indexedBlock: storedSwaps.checkpoint.indexedBlock,
+        indexedBlockHash: storedSwaps.checkpoint.indexedBlockHash,
+      }
+    : await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
   return {
     price: currentPrice,
     priceChange: comparisonPrice > 0 ? (currentPrice / comparisonPrice - 1) * 100 : 0,
     marketCap,
-    volume: recentEvents.reduce((sum, event) => sum + event.usdc, 0),
-    buyers: recentEvents.filter((event) => event.type === "Buy").length,
-    sellers: recentEvents.filter((event) => event.type === "Sell").length,
+    volume: volume24h,
+    buyers: buyers24h,
+    sellers: sellers24h,
     raisedUsdc: marketCap,
     targetUsdc: ARCORIGIN_CROSS_MARKET_CAP_USDC,
     progress: Math.min(100, marketCap / ARCORIGIN_CROSS_MARKET_CAP_USDC * 100),

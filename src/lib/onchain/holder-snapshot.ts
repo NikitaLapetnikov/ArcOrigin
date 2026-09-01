@@ -14,6 +14,11 @@ import {
   upgradeLegacyCanonicalCheckpoint,
 } from "@/lib/onchain/canonical-checkpoint";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
+import {
+  getStoredFactoryLaunch,
+  getStoredFactoryLaunchIndex,
+  getStoredHolderBalances,
+} from "@/lib/server/event-store";
 import { isRetryableRpcError } from "@/lib/rpc-errors";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed pool, address indexed creator, string name, string symbol, uint256 positionId)");
@@ -261,6 +266,10 @@ async function getFactoryLaunches(indexedBlock: bigint, forceRefresh: boolean) {
 }
 
 export async function getVerifiedFactoryLaunch(tokenAddress: Address, forceRefresh = false) {
+  const stored = await getStoredFactoryLaunch(tokenAddress);
+  if (stored) {
+    return { launch: stored.launch, indexedBlock: BigInt(stored.checkpoint.indexedBlock) };
+  }
   const factoryCacheIsFresh = !forceRefresh
     && state.factoryIndexedBlock > 0n
     && Date.now() - state.factoryCachedAt < FACTORY_CACHE_TTL_MS;
@@ -278,7 +287,25 @@ export async function getVerifiedFactoryLaunch(tokenAddress: Address, forceRefre
 }
 
 export async function getFactoryLaunchIndex(forceRefresh = false) {
-  const indexedBlock = await withRpcRetry(() => publicClient.getBlockNumber());
+  const stored = await getStoredFactoryLaunchIndex();
+  let indexedBlock: bigint;
+  try {
+    indexedBlock = await withRpcRetry(() => publicClient.getBlockNumber(), 2);
+  } catch (error) {
+    if (stored) {
+      state.factoryLaunches = new Map(stored.launches.map((launch) => [launch.token.toLowerCase(), launch]));
+      state.factoryCachedAt = Date.now();
+      state.factoryIndexedBlock = BigInt(stored.checkpoint.indexedBlock);
+      return { launches: stored.launches, indexedBlock: state.factoryIndexedBlock };
+    }
+    throw error;
+  }
+  if (stored && indexedBlock - BigInt(stored.checkpoint.indexedBlock) <= 20n) {
+    state.factoryLaunches = new Map(stored.launches.map((launch) => [launch.token.toLowerCase(), launch]));
+    state.factoryCachedAt = Date.now();
+    state.factoryIndexedBlock = BigInt(stored.checkpoint.indexedBlock);
+    return { launches: stored.launches, indexedBlock: state.factoryIndexedBlock };
+  }
   const launches = await getFactoryLaunches(indexedBlock, forceRefresh);
   state.factoryIndexedBlock = indexedBlock;
   return { launches: [...launches.values()], indexedBlock };
@@ -337,21 +364,12 @@ function percentOf(part: bigint, total: bigint) {
 }
 
 async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint): Promise<HolderSnapshot> {
-  const { launch, indexedBlock } = hint
+  const verified = hint
     ? await verifyLaunchHint(tokenAddress, hint)
     : await getVerifiedFactoryLaunch(tokenAddress);
-
-  let explorerLogs;
-  try {
-    explorerLogs = await getArcscanLogs({
-      address: launch.token,
-      fromBlock: launch.launchBlock,
-      toBlock: indexedBlock,
-      topic0: toEventSelector(transferEvent),
-    });
-  } catch {
-    explorerLogs = null;
-  }
+  const { launch } = verified;
+  let indexedBlock = verified.indexedBlock;
+  const storedBalances = await getStoredHolderBalances(tokenAddress);
 
   const balances = new Map<string, bigint>();
   const seenTransfers = new Set<string>();
@@ -368,38 +386,58 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
     if (from !== ZERO_ADDRESS) balances.set(from, (balances.get(from) ?? 0n) - value);
     if (to !== ZERO_ADDRESS) balances.set(to, (balances.get(to) ?? 0n) + value);
   };
-  if (explorerLogs && explorerLogs.length > 0) {
-    for (const log of explorerLogs) {
-      const decoded = decodeEventLog({ abi: [transferEvent], data: log.data, topics: log.topics });
-      const from = decoded.args.from.toLowerCase();
-      const to = decoded.args.to.toLowerCase();
-      applyTransfer(log.transactionHash, log.logIndex, from, to, decoded.args.value);
+  const storedBalanceBlock = storedBalances ? BigInt(storedBalances.checkpoint.indexedBlock) : 0n;
+  const minimumStoredBlock = indexedBlock > 20n ? indexedBlock - 20n : 0n;
+  if (storedBalances && storedBalanceBlock >= launch.launchBlock && storedBalanceBlock >= minimumStoredBlock) {
+    indexedBlock = BigInt(storedBalances.checkpoint.indexedBlock);
+    for (const holder of storedBalances.balances) {
+      balances.set(holder.address.toLowerCase(), holder.balance);
     }
   } else {
-    const logRanges: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
-    for (let fromBlock = launch.launchBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
-      const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
-      logRanges.push({ fromBlock, toBlock });
-    }
-    for (const { fromBlock, toBlock } of logRanges) {
-      const logs = await withRpcRetry(() => publicClient.getLogs({
+    let explorerLogs;
+    try {
+      explorerLogs = await getArcscanLogs({
         address: launch.token,
-        event: transferEvent,
-        fromBlock,
-        toBlock,
-      }));
-      for (const log of logs) {
-        const from = (log.args.from ?? ZERO_ADDRESS).toLowerCase();
-        const to = (log.args.to ?? ZERO_ADDRESS).toLowerCase();
-        applyTransfer(
-          log.transactionHash as Hash,
-          log.logIndex ?? 0,
-          from,
-          to,
-          log.args.value ?? 0n,
-        );
+        fromBlock: launch.launchBlock,
+        toBlock: indexedBlock,
+        topic0: toEventSelector(transferEvent),
+      });
+    } catch {
+      explorerLogs = null;
+    }
+    if (explorerLogs && explorerLogs.length > 0) {
+      for (const log of explorerLogs) {
+        const decoded = decodeEventLog({ abi: [transferEvent], data: log.data, topics: log.topics });
+        const from = decoded.args.from.toLowerCase();
+        const to = decoded.args.to.toLowerCase();
+        applyTransfer(log.transactionHash, log.logIndex, from, to, decoded.args.value);
       }
-      await wait(RPC_REQUEST_GAP_MS);
+    } else {
+      const logRanges: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
+      for (let fromBlock = launch.launchBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
+        const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
+        logRanges.push({ fromBlock, toBlock });
+      }
+      for (const { fromBlock, toBlock } of logRanges) {
+        const logs = await withRpcRetry(() => publicClient.getLogs({
+          address: launch.token,
+          event: transferEvent,
+          fromBlock,
+          toBlock,
+        }));
+        for (const log of logs) {
+          const from = (log.args.from ?? ZERO_ADDRESS).toLowerCase();
+          const to = (log.args.to ?? ZERO_ADDRESS).toLowerCase();
+          applyTransfer(
+            log.transactionHash as Hash,
+            log.logIndex ?? 0,
+            from,
+            to,
+            log.args.value ?? 0n,
+          );
+        }
+        await wait(RPC_REQUEST_GAP_MS);
+      }
     }
   }
 
@@ -430,7 +468,12 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
           : "Holder",
     }));
 
-  const checkpoint = await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
+  const checkpoint = storedBalances && storedBalanceBlock === indexedBlock
+    ? {
+        indexedBlock: storedBalances.checkpoint.indexedBlock,
+        indexedBlockHash: storedBalances.checkpoint.indexedBlockHash,
+      }
+    : await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
   return {
     holders: visibleHolders.length,
     topHolders,

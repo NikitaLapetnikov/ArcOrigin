@@ -5,6 +5,7 @@ set -eu
 root="${ARCORIGIN_ROOT:-/opt/arcorigin}"
 service_name="${ARCORIGIN_SERVICE:-arcorigin.service}"
 health_timer="${ARCORIGIN_HEALTH_TIMER:-arcorigin-healthcheck.timer}"
+indexer_service="${ARCORIGIN_INDEXER_SERVICE:-}"
 port="${ARCORIGIN_PORT:-3100}"
 
 if [ "$#" -ne 1 ]; then
@@ -51,6 +52,9 @@ activate() {
   chown -h arcorigin:arcorigin "$root/current.next"
   mv -Tf "$root/current.next" "$root/current"
   systemctl restart "$service_name"
+  if [ -n "$indexer_service" ]; then
+    systemctl restart "$indexer_service"
+  fi
 }
 
 healthy() {

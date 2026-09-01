@@ -177,8 +177,17 @@ export function useBuybackSnapshot(
       if (detail.address?.toLowerCase() !== tokenAddress.toLowerCase() || !detail.cached) return;
       setSnapshot(detail.cached.snapshot);
     };
+    const handleIndexerBuyback = (event: Event) => {
+      const detail = (event as CustomEvent<{ tokenAddress?: string }>).detail;
+      if (detail?.tokenAddress?.toLowerCase() !== tokenAddress.toLowerCase()) return;
+      void refresh(true, true);
+    };
     window.addEventListener("arcorigin:buybacks-updated", handleUpdate);
-    return () => window.removeEventListener("arcorigin:buybacks-updated", handleUpdate);
+    window.addEventListener("arcorigin:buyback-event", handleIndexerBuyback);
+    return () => {
+      window.removeEventListener("arcorigin:buybacks-updated", handleUpdate);
+      window.removeEventListener("arcorigin:buyback-event", handleIndexerBuyback);
+    };
   }, [enabled, initialSnapshot, refresh, tokenAddress]);
 
   useLiveRefresh({

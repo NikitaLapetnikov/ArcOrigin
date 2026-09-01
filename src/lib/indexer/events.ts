@@ -1,4 +1,4 @@
-export const indexedEventNames = ["TokenLaunched", "TokenCrossed", "PermanentLiquidityLocked", "Swap", "FeesCollected", "FeeReceived", "FeeWithdrawn", "CreatorRegistered", "Transfer"] as const;
+export const indexedEventNames = ["TokenLaunched", "AutomaticBuybackConfigured", "TokenCrossed", "PermanentLiquidityLocked", "Swap", "FeesCollected", "BuybackFeesReserved", "BuybackExecuted", "FeeReceived", "FeeWithdrawn", "CreatorRegistered", "Transfer"] as const;
 export type IndexedEventName = (typeof indexedEventNames)[number];
 export type IndexedEvent = {
   name: IndexedEventName;

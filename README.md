@@ -13,6 +13,7 @@ The deployment gate, reviewed invariants, findings, and residual risks are docum
 - Fees: ordinary launches split collected LP fees 70% to the creator and 30% to the protocol Fee Vault.
 - Automatic buyback: a creator may irreversibly opt in at launch. The creator's 70% token-side fees burn immediately; its USDC-side fees fund permissionless TWAP-protected token buybacks and burns. The protocol share remains 30%.
 - Indexing: the app indexes only the configured active Factory and canonical Uniswap `Swap` events. Previous deployments and token lists are not loaded.
+- Live delivery: a dedicated worker writes canonical events and materialized holder balances to Postgres, publishes hot events through Redis, and streams them to the frontend over SSE. Polling remains a recovery path.
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for contract invariants and integration details.
 
@@ -26,7 +27,15 @@ npm install
 npm run dev
 ```
 
-`PINATA_JWT` is server-only and enables wallet-authorized image and metadata uploads to public IPFS. Redis is optional but recommended in production for persistent index snapshots.
+`PINATA_JWT` is server-only and enables wallet-authorized image and metadata uploads to public IPFS. Production uses Postgres as the canonical event store and Redis for snapshots, indexer status, SSE replay and pub/sub. If either live component is unavailable, the existing bounded RPC scans and browser polling remain available as fallbacks.
+
+Run the dedicated indexer next to the web application:
+
+```bash
+DATABASE_URL=postgresql://... REDIS_URL=redis://... npm run indexer:events
+```
+
+The worker applies `deploy/postgres/001_event_store.sql` idempotently, resumes from its last canonical checkpoint, rolls back orphaned blocks, and indexes ArcOrigin launches, Uniswap swaps, ERC-20 holder changes and automatic buybacks. The frontend consumes `/api/onchain/events` over SSE and keeps polling as a recovery path.
 
 Set `NEXT_PUBLIC_ARC_MAINNET_RPC_FALLBACK_URLS` to a comma-separated list of independently operated Arc RPC endpoints. Browser reads, quotes, simulations, server snapshots, and the optional keeper fail over in order when the primary RPC is rate-limited or unavailable. Background UI polling reuses bounded server snapshots; explicit refreshes and confirmed-transaction reconciliation still request current chain state.
 

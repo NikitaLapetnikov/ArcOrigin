@@ -59,6 +59,15 @@ const {
 const {
   transientRpcFailure,
 } = require("./run-buyback-keeper.cjs");
+const {
+  eventId: workerEventId,
+  swapPayload,
+  tokenIsToken0,
+} = require("./run-event-indexer.cjs");
+const {
+  isLiveIndexerEvent,
+  tradeDetailFromIndexerEvent,
+} = loadTypeScriptModule("src/lib/indexer/live-event.ts");
 
 const address = "0x1111111111111111111111111111111111111111";
 
@@ -210,4 +219,55 @@ test("keeper recognizes Arc provider capacity failures before retrying", () => {
   assert.equal(transientRpcFailure({ code: -32005, details: "Request exceeds defined limit." }), true);
   assert.equal(transientRpcFailure({ details: "all upstream temporarily out of capacity" }), true);
   assert.equal(transientRpcFailure(new Error("execution reverted")), false);
+});
+
+test("dedicated indexer derives a stable log identity and Arc swap direction", () => {
+  const transactionHash = `0x${"a".repeat(64)}`;
+  assert.equal(workerEventId({ transactionHash, logIndex: 7 }), `${transactionHash}:7`);
+  const token = "0xce9c0e29f8d5904bfac3c8a79a0c9af00e6bdccb";
+  const usdc = "0x3600000000000000000000000000000000000000";
+  assert.equal(tokenIsToken0(token, usdc), false);
+  const payload = swapPayload({
+    sender: address,
+    recipient: "0x2222222222222222222222222222222222222222",
+    amount0: 100_000_000n,
+    amount1: -20_000_000_000_000_000_000n,
+    sqrtPriceX96: 1n << 96n,
+    tick: 0,
+  }, { tokenAddress: token }, usdc);
+  assert.equal(payload.side, "Buy");
+  assert.equal(payload.usdc, 100);
+  assert.equal(payload.tokens, 20);
+  assert.equal(payload.wallet, "0x2222222222222222222222222222222222222222");
+});
+
+test("SSE events are validated before they update client state", () => {
+  const liveEvent = {
+    id: `${"0x" + "a".repeat(64)}:1`,
+    kind: "swap",
+    blockNumber: "42",
+    blockHash: `0x${"b".repeat(64)}`,
+    transactionHash: `0x${"a".repeat(64)}`,
+    logIndex: 1,
+    timestamp: 1_788_000_000,
+    tokenAddress: address,
+    poolAddress: "0x2222222222222222222222222222222222222222",
+    side: "Buy",
+    wallet: "0x3333333333333333333333333333333333333333",
+    usdc: 12.5,
+    tokens: 25,
+  };
+  assert.equal(isLiveIndexerEvent(liveEvent), true);
+  assert.deepEqual(tradeDetailFromIndexerEvent(liveEvent), {
+    tokenAddress: address,
+    transactionHash: liveEvent.transactionHash,
+    side: "Buy",
+    wallet: liveEvent.wallet,
+    blockNumber: "42",
+    timestamp: liveEvent.timestamp,
+    usdc: 12.5,
+    fee: 0,
+    tokens: 25,
+  });
+  assert.equal(isLiveIndexerEvent({ ...liveEvent, transactionHash: "bad" }), false);
 });

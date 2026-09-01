@@ -5,6 +5,7 @@ import { fallback, http } from "viem";
 import { WagmiProvider, createConfig } from "wagmi";
 import { injected } from "@wagmi/core";
 import { useEffect, useState, type ReactNode } from "react";
+import { LiveIndexerBridge } from "@/components/live-indexer-bridge";
 import { arcMainnet } from "@/lib/chains";
 import { getSafeAppContext, safeAppConnector } from "@/lib/wallet/safe-app-connector";
 
@@ -41,5 +42,5 @@ export function Providers({ children }: { children: ReactNode }) {
       // interrupted or the Safe parent was not ready yet.
     });
   }, []);
-  return <WagmiProvider config={config}><QueryClientProvider client={queryClient}>{children}</QueryClientProvider></WagmiProvider>;
+  return <WagmiProvider config={config}><QueryClientProvider client={queryClient}><LiveIndexerBridge />{children}</QueryClientProvider></WagmiProvider>;
 }

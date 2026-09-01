@@ -251,6 +251,7 @@ export function useHolderSnapshot(
   useEffect(() => {
     if (!token || !address) return;
     const retryTimers: Array<ReturnType<typeof setTimeout>> = [];
+    let holderEventTimer: ReturnType<typeof setTimeout> | undefined;
     const handleTrade = (event: Event) => {
       const detail = (event as CustomEvent<{
         tokenAddress?: string;
@@ -277,9 +278,18 @@ export function useHolderSnapshot(
         retryTimers.push(setTimeout(() => void refresh(true), delay));
       }
     };
+    const handleHolderEvent = (event: Event) => {
+      const detail = (event as CustomEvent<{ tokenAddress?: string }>).detail;
+      if (detail?.tokenAddress?.toLowerCase() !== address.toLowerCase()) return;
+      if (holderEventTimer) clearTimeout(holderEventTimer);
+      holderEventTimer = setTimeout(() => void refresh(true, true), 350);
+    };
     window.addEventListener("arcforge:trade-confirmed", handleTrade);
+    window.addEventListener("arcorigin:holder-event", handleHolderEvent);
     return () => {
       window.removeEventListener("arcforge:trade-confirmed", handleTrade);
+      window.removeEventListener("arcorigin:holder-event", handleHolderEvent);
+      if (holderEventTimer) clearTimeout(holderEventTimer);
       retryTimers.forEach(clearTimeout);
     };
   }, [address, refresh, token]);

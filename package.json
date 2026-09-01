@@ -21,6 +21,7 @@
     "test:indexer-resilience": "node --test scripts/test-indexer-resilience.cjs",
     "test:production-health": "node --test scripts/test-production-health.cjs",
     "monitor:production": "node scripts/monitor-production-health.cjs",
+    "indexer:events": "node scripts/run-event-indexer.cjs",
     "keeper:buyback": "node scripts/run-buyback-keeper.cjs",
     "test": "npm run contracts:test && npm run test:indexer-resilience && npm run test:production-health"
   },
@@ -40,6 +41,7 @@
     "lightweight-charts": "^5.2.0",
     "lucide-react": "^0.525.0",
     "next": "^15.5.21",
+    "pg": "^8.23.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "redis": "^6.1.0",
@@ -53,6 +55,7 @@
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/contracts": "^5.4.0",
     "@types/node": "^22.16.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "autoprefixer": "^10.4.21",

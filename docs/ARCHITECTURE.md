@@ -38,6 +38,16 @@ The VPS keeper only automates this permissionless call. It owns no LP, has no co
 
 Indexers can discover the market from the canonical Uniswap V3 `PoolCreated`, `Mint`, and `Swap` events in the launch block. ArcOrigin indexes the `TokenLaunched` event, validates the canonical pool, quotes through the official Quoter, trades through the official Router, and builds charts from pool `Swap` events.
 
+### Dedicated event pipeline
+
+Production uses this event path:
+
+`Arc RPC pool → event indexer worker → Postgres event store → Redis hot cache/pub-sub → SSE → frontend`
+
+The worker starts at the active Factory deployment block and indexes only the active ArcOrigin Factory, its launched tokens, canonical pools, and liquidity locker. Event identity is `transactionHash:logIndex`, so overlapping batches and restarts are idempotent. A two-block confirmation buffer is used by default. Every checkpoint stores the block hash; if that hash becomes non-canonical, the worker rolls back orphaned events, rebuilds launch and holder materializations, and resumes from the latest common block.
+
+Postgres stores normalized `TokenLaunched`, `AutomaticBuybackConfigured`, `Swap`, `Transfer`, and `BuybackExecuted` events. Holder balances are incrementally materialized from confirmed transfers. Redis stores the latest worker status and a bounded replay list, then publishes new `launch`, `swap`, `holder_change`, and `buyback` messages to `/api/onchain/events`. The frontend applies these messages immediately and continues bounded HTTP polling in the background. If Postgres, Redis, SSE, or the worker is unavailable, existing RPC/explorer snapshot paths remain the fallback rather than returning unverified data.
+
 ## Deployment gate
 
 The Factory starts paused. The deployment script only creates a paused candidate owned directly by the production 2-of-3 Governance Safe; the deployer never receives Factory ownership. Activation requires a separate reviewed Safe batch that authorizes FeeVault access, selects the Factory in CreatorRegistry, and unpauses launches. Do not activate a candidate without reproducible creation-bytecode verification against the published source commit, an independent contract review, a mainnet-fork test launch, and a coordinated UI/indexer cutover. Arc mainnet explorer source verification is currently unavailable.
