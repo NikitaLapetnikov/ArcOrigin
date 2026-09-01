@@ -104,6 +104,42 @@ function swapPayload(args, market, usdcAddress) {
   };
 }
 
+function transferFlowKey(tokenAddress, transactionHash) {
+  return `${normalizeHex(tokenAddress)}:${normalizeHex(transactionHash)}`;
+}
+
+function traderFromTransferFlow(side, poolAddress, transfers) {
+  if (side !== "Buy" && side !== "Sell") return null;
+  const deltas = new Map();
+  for (const transfer of transfers ?? []) {
+    if (!transfer || typeof transfer.from !== "string" || typeof transfer.to !== "string") continue;
+    let value;
+    try {
+      value = BigInt(transfer.value);
+    } catch {
+      continue;
+    }
+    if (value <= 0n) continue;
+    const from = normalizeHex(transfer.from);
+    const to = normalizeHex(transfer.to);
+    deltas.set(from, (deltas.get(from) ?? 0n) - value);
+    deltas.set(to, (deltas.get(to) ?? 0n) + value);
+  }
+  const pool = normalizeHex(poolAddress);
+  const candidates = [...deltas.entries()].filter(([address, delta]) => (
+    address !== ZERO_ADDRESS
+      && address !== pool
+      && (side === "Buy" ? delta > 0n : delta < 0n)
+  ));
+  candidates.sort(([leftAddress, leftDelta], [rightAddress, rightDelta]) => {
+    const leftMagnitude = leftDelta < 0n ? -leftDelta : leftDelta;
+    const rightMagnitude = rightDelta < 0n ? -rightDelta : rightDelta;
+    if (leftMagnitude !== rightMagnitude) return leftMagnitude > rightMagnitude ? -1 : 1;
+    return leftAddress.localeCompare(rightAddress);
+  });
+  return candidates[0]?.[0] ?? null;
+}
+
 function rpcUrls() {
   const urls = [
     process.env.ARC_MAINNET_RPC_URL,
@@ -270,6 +306,18 @@ async function readRange(publicClient, database, config, fromBlock, toBlock) {
   const allLogs = [...launchLogs, ...configLogs, ...poolLogs, ...transferLogs, ...buybackLogs];
   const blocks = await fetchBlockMap(publicClient, allLogs, toBlock);
   const events = [];
+  const transfersByTransaction = new Map();
+  for (const log of transferLogs) {
+    const tokenAddress = normalizeHex(log.address);
+    const key = transferFlowKey(tokenAddress, log.transactionHash);
+    const transfers = transfersByTransaction.get(key) ?? [];
+    transfers.push({
+      from: normalizeHex(log.args.from),
+      to: normalizeHex(log.args.to),
+      value: String(log.args.value),
+    });
+    transfersByTransaction.set(key, transfers);
+  }
   for (const log of launchLogs) {
     const block = blocks.get(BigInt(log.blockNumber).toString());
     const tokenAddress = normalizeHex(log.args.token);
@@ -303,6 +351,11 @@ async function readRange(publicClient, database, config, fromBlock, toBlock) {
     if (!market) continue;
     const payload = swapPayload(log.args, market, config.usdc);
     if (!payload) continue;
+    payload.wallet = traderFromTransferFlow(
+      payload.side,
+      market.poolAddress,
+      transfersByTransaction.get(transferFlowKey(market.tokenAddress, log.transactionHash)),
+    ) ?? payload.wallet;
     events.push(baseEvent(log, blocks.get(BigInt(log.blockNumber).toString()), "Swap", {
       tokenAddress: market.tokenAddress,
       poolAddress: market.poolAddress,
@@ -682,4 +735,15 @@ if (require.main === module) {
   });
 }
 
-module.exports = { eventId, jsonSafe, priceFromSqrt, swapPayload, tokenIsToken0 };
+module.exports = {
+  createArcClient,
+  eventId,
+  jsonSafe,
+  priceFromSqrt,
+  rpcUrls,
+  swapPayload,
+  tokenIsToken0,
+  traderFromTransferFlow,
+  transferFlowKey,
+  withRetry,
+};

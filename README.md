@@ -37,6 +37,8 @@ DATABASE_URL=postgresql://... REDIS_URL=redis://... npm run indexer:events
 
 The worker applies `deploy/postgres/001_event_store.sql` idempotently, resumes from its last canonical checkpoint, rolls back orphaned blocks, and indexes ArcOrigin launches, Uniswap swaps, ERC-20 holder changes and automatic buybacks. Market snapshots and profile balances use that confirmed Postgres checkpoint directly; the frontend consumes `/api/onchain/events` over SSE and keeps polling plus direct RPC reads as recovery paths.
 
+Swap traders are attributed from the indexed token transfer flow, not from Uniswap's intermediary `recipient`. Run `npm run backfill:trader-wallets` to preview historical corrections, then `npm run backfill:trader-wallets -- --apply` to update stored Swap wallets and invalidate affected analytics caches. The backfill uses `tx.from` only when the indexed transfer flow is incomplete.
+
 Set `NEXT_PUBLIC_ARC_MAINNET_RPC_FALLBACK_URLS` to a comma-separated list of independently operated Arc RPC endpoints. Browser reads, simulations, server snapshots, and the optional keeper fail over in order when the primary RPC is rate-limited or unavailable. Live quotes prefer the deduplicated server endpoint and start a short browser-side hedged read only when that endpoint is slow, so routine quote polling does not exhaust a wallet user's public-RPC allowance. Background UI polling reuses bounded server snapshots; explicit refreshes and confirmed-transaction reconciliation still request current chain state.
 
 Useful checks:

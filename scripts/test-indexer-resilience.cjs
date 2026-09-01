@@ -65,6 +65,7 @@ const {
   eventId: workerEventId,
   swapPayload,
   tokenIsToken0,
+  traderFromTransferFlow,
 } = require("./run-event-indexer.cjs");
 const {
   isLiveIndexerEvent,
@@ -266,6 +267,32 @@ test("dedicated indexer derives a stable log identity and Arc swap direction", (
   assert.equal(payload.usdc, 100);
   assert.equal(payload.tokens, 20);
   assert.equal(payload.wallet, "0x2222222222222222222222222222222222222222");
+});
+
+test("trader attribution follows net token flow through settlement contracts", () => {
+  const pool = "0x9999999999999999999999999999999999999999";
+  const trader = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const settlement = "0x7777777777777777777777777777777777777777";
+  assert.equal(traderFromTransferFlow("Sell", pool, [
+    { from: trader, to: settlement, value: "900" },
+    { from: settlement, to: pool, value: "900" },
+  ]), trader);
+  assert.equal(traderFromTransferFlow("Buy", pool, [
+    { from: pool, to: settlement, value: "700" },
+    { from: settlement, to: trader, value: "700" },
+  ]), trader);
+});
+
+test("trader attribution supports direct swaps and rejects incomplete flows", () => {
+  const pool = "0x9999999999999999999999999999999999999999";
+  const trader = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  assert.equal(traderFromTransferFlow("Sell", pool, [
+    { from: trader, to: pool, value: "500" },
+  ]), trader);
+  assert.equal(traderFromTransferFlow("Buy", pool, [
+    { from: pool, to: trader, value: "500" },
+  ]), trader);
+  assert.equal(traderFromTransferFlow("Sell", pool, []), null);
 });
 
 test("SSE events are validated before they update client state", () => {
