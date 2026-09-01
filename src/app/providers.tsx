@@ -7,6 +7,7 @@ import { injected } from "@wagmi/core";
 import { useEffect, useState, type ReactNode } from "react";
 import { LiveIndexerBridge } from "@/components/live-indexer-bridge";
 import { arcMainnet } from "@/lib/chains";
+import { ARC_RPC_RELAY_URL } from "@/lib/onchain/browser-arc-rpc";
 import { getSafeAppContext, safeAppConnector } from "@/lib/wallet/safe-app-connector";
 
 function connectors() {
@@ -36,7 +37,7 @@ const config = createConfig({
   chains: [arcMainnet],
   connectors: connectors(),
   multiInjectedProviderDiscovery: true,
-  transports: { [arcMainnet.id]: rpcTransport(arcMainnet.rpcUrls.default.http) },
+  transports: { [arcMainnet.id]: rpcTransport([ARC_RPC_RELAY_URL, ...arcMainnet.rpcUrls.default.http]) },
   ssr: true,
 });
 

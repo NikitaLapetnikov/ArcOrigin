@@ -9,7 +9,7 @@ import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { erc20Abi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
 import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText, walletRpcPreflightDecision } from "@/lib/rpc-errors";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
-import { createBrowserArcReadClient } from "@/lib/onchain/browser-arc-rpc";
+import { ARC_RPC_RELAY_URL, arcWalletChain, createBrowserArcReadClient } from "@/lib/onchain/browser-arc-rpc";
 import type { TokenData } from "@/lib/types";
 import { tickerLabel } from "@/lib/utils";
 import { ArcscanLink, Badge, Button } from "./ui";
@@ -49,10 +49,10 @@ const MAX_EXECUTION_QUOTE_AGE_MS = 8_000;
 const DIRECT_QUOTE_TIMEOUT_MS = 6_000;
 const DIRECT_QUOTE_HEDGE_DELAY_MS = 125;
 const DIRECT_QUOTE_START_DELAY_MS = 350;
-const FAST_RPC_READ_TIMEOUT_MS = 2_000;
+const FAST_RPC_READ_TIMEOUT_MS = 10_000;
 const APPROVAL_GAS_FALLBACK = 100_000n;
 const TRADE_GAS_FALLBACK = 500_000n;
-const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
+const ARC_WALLET_RPC_URL = ARC_RPC_RELAY_URL;
 const MAX_INPUT_CHARACTERS = 80;
 const directQuoteClients = arcChain.rpcUrls.default.http.map((url) => createPublicClient({
   chain: arcChain,
@@ -329,11 +329,14 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     } catch (error) {
       const decision = walletRpcPreflightDecision(error);
       if (decision === "continue") {
-        // All nonce, balance, fee and simulation reads below use ArcOrigin's
-        // failover client. A temporary limit on the wallet's read transport
-        // must not block a fully prepared transaction from reaching the wallet.
-        verifiedWalletRpcRef.current = checkKey;
-        return;
+        try {
+          await walletClient.addChain({ chain: arcWalletChain });
+          await walletClient.switchChain({ id: arcChain.id });
+          verifiedWalletRpcRef.current = checkKey;
+          return;
+        } catch (repairError) {
+          if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(repairError))) throw repairError;
+        }
       }
       if (decision === "fail") throw error;
     }
@@ -341,7 +344,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     setNotice(`Your wallet has an outdated Arc RPC. Approve the network update to ${ARC_WALLET_RPC_URL}.`);
     setNoticeIsError(false);
     try {
-      await walletClient.addChain({ chain: arcChain });
+      await walletClient.addChain({ chain: arcWalletChain });
     } catch (error) {
       if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(error))) throw error;
       // Some wallets report "already added" instead of updating in place.

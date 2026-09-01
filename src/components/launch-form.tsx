@@ -47,7 +47,7 @@ import {
   walletRpcPreflightDecision,
 } from "@/lib/rpc-errors";
 import { arcOriginPoolQuoteState, quoteArcOriginExactInput } from "@/lib/onchain/arc-origin-v3-quote";
-import { createBrowserArcReadClient } from "@/lib/onchain/browser-arc-rpc";
+import { ARC_RPC_RELAY_URL, arcWalletChain, createBrowserArcReadClient } from "@/lib/onchain/browser-arc-rpc";
 import { shortAddress, tickerLabel } from "@/lib/utils";
 import { getSafeAppContext } from "@/lib/wallet/safe-app-connector";
 import { Button, LinkButton, WarningBox } from "./ui";
@@ -125,11 +125,11 @@ const MAX_INITIAL_BUY_USDC = 100n * 10n ** 6n;
 const INITIAL_BUY_SLIPPAGE_BPS = 1_000n;
 const INITIAL_BUY_PRESETS = [10, 25, 50, 100] as const;
 const DISPLAY_NUMBER_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
-const FAST_RPC_READ_TIMEOUT_MS = 2_000;
+const FAST_RPC_READ_TIMEOUT_MS = 10_000;
 const APPROVAL_GAS_FALLBACK = 100_000n;
 const LAUNCH_GAS_FALLBACK = 9_000_000n;
 const INITIAL_BUY_GAS_FALLBACK = 500_000n;
-const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
+const ARC_WALLET_RPC_URL = ARC_RPC_RELAY_URL;
 const primaryReadClient = createBrowserArcReadClient();
 
 class RpcReadTimeoutError extends Error {
@@ -611,14 +611,20 @@ export function LaunchForm() {
     } catch (rpcError) {
       const decision = walletRpcPreflightDecision(rpcError);
       if (decision === "continue") {
-        verifiedWalletRpcRef.current = checkKey;
-        return;
+        try {
+          await walletClient.addChain({ chain: arcWalletChain });
+          await walletClient.switchChain({ id: arcChain.id });
+          verifiedWalletRpcRef.current = checkKey;
+          return;
+        } catch (repairError) {
+          if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(repairError))) throw repairError;
+        }
       }
       if (decision === "fail") throw rpcError;
     }
 
     try {
-      await walletClient.addChain({ chain: arcChain });
+      await walletClient.addChain({ chain: arcWalletChain });
     } catch (rpcUpdateError) {
       if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(rpcUpdateError))) {
         throw rpcUpdateError;
