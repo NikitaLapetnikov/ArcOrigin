@@ -325,19 +325,39 @@ function FeeEconomics({ snapshot, rangeLabel }: { snapshot: ProtocolAnalyticsSna
   const economics = snapshot.economics;
   return <section className="mt-4 overflow-hidden rounded-[22px] border border-line bg-panel shadow-glow">
     <header className="flex flex-col gap-3 border-b border-line px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
-      <div><p className="eyebrow mb-2">Fee economics</p><h2 className="text-xl font-semibold tracking-[-.035em] text-white">Where every trading fee goes</h2><p className="mt-2 text-[11px] text-slate-500">{rangeLabel} fee-equivalent routing from indexed swap volume.</p></div>
+      <div><p className="eyebrow mb-2">Fee economics</p><h2 className="text-xl font-semibold tracking-[-.035em] text-white">Fee routing and permanent burn impact</h2><p className="mt-2 text-[11px] text-slate-500">{rangeLabel} fee-equivalent routing and confirmed onchain outcomes.</p></div>
       <span className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan/20 bg-cyan/[.06] px-3 py-1.5 text-[10px] font-semibold text-cyan"><ShieldCheck className="size-3.5" />Immutable 70 / 30 split</span>
     </header>
     <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-4">
       <EconomicsCard icon={Zap} label="Trading fee equivalent" value={money(economics.feeEquivalentUsdc)} detail="1% pool fee tier" tone="cyan" />
       <EconomicsCard icon={WalletCards} label="Creator routing" value={money(economics.creatorEarningsEquivalentUsdc)} detail="70% on standard launches" />
       <EconomicsCard icon={ShieldCheck} label="Protocol routing" value={money(economics.protocolRevenueEquivalentUsdc)} detail="30% of fee equivalent" />
-      <EconomicsCard icon={Flame} label="Buyback allocation" value={money(economics.buybackAllocationEquivalentUsdc)} detail="70% on opted-in launches" tone="violet" />
+      <EconomicsCard icon={Flame} label="Buyback fee impact" value={money(economics.buybackAllocationEquivalentUsdc)} detail="Estimated USDC equivalent · not pending debt" tone="violet" />
     </div>
-    <div className="grid border-t border-line md:grid-cols-3">
-      <ImpactMetric label="Executed buybacks" value={money(economics.buybackSpentUsdc)} note={`${economics.buybackExecutions} confirmed executions`} icon={Repeat2} />
-      <ImpactMetric label="Bought & burned" value={`${number(economics.tokensBurned)} tokens`} note="Permanent supply reduction" icon={Flame} />
-      <ImpactMetric label="Automation" value="Permissionless" note="Protected by TWAP and impact limits" icon={Activity} />
+    <div className="border-t border-line p-4 sm:p-5">
+      <div className="grid gap-3 xl:grid-cols-[1.35fr_.65fr]">
+        <article className="relative overflow-hidden rounded-2xl border border-violet/25 bg-violet/[.055] p-5 sm:p-6">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(520px_240px_at_100%_0%,rgba(117,103,255,.18),transparent_68%),radial-gradient(360px_220px_at_0%_100%,rgba(57,189,248,.12),transparent_72%)]" />
+          <div className="relative">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[.1em] text-violet">Permanent supply reduction · {rangeLabel}</p>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/20 bg-emerald-300/[.07] px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[.08em] text-emerald-300"><Flame className="size-3" />100% of buyback output burned</span>
+            </div>
+            <p className="mt-5 text-[38px] font-semibold leading-none tracking-[-.055em] text-white sm:text-[50px]">{number(economics.tokensBurned)} <span className="text-[17px] tracking-[-.025em] text-slate-400 sm:text-xl">tokens</span></p>
+            <p className="mt-3 max-w-xl text-xs leading-5 text-slate-400">Permanently removed from circulation. Every token acquired by an automatic buyback is burned in the same onchain execution.</p>
+            <div className="mt-6 flex flex-col gap-3 rounded-xl border border-white/[.07] bg-black/15 px-4 py-3.5 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1"><p className="text-[9px] font-semibold uppercase tracking-[.08em] text-slate-500">USDC converted into burns</p><p className="mt-1 font-mono text-lg font-semibold text-white">{money(economics.buybackSpentUsdc)}</p></div>
+              <ArrowRight className="hidden size-4 shrink-0 text-violet sm:block" />
+              <div className="min-w-0 flex-1 sm:text-right"><p className="text-[9px] font-semibold uppercase tracking-[.08em] text-slate-500">Confirmed executions</p><p className="mt-1 font-mono text-lg font-semibold text-white">{number(economics.buybackExecutions)}</p></div>
+            </div>
+          </div>
+        </article>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <BuybackProofCard icon={Repeat2} label="Onchain conversion" value={`${money(economics.buybackSpentUsdc)} spent`} note="Actual USDC used by confirmed buybacks in the selected period." />
+          <BuybackProofCard icon={Activity} label="Protected automation" value="Permissionless" note="TWAP, cooldown and price-impact limits protect every execution." />
+        </div>
+      </div>
+      <p className="mt-3 text-[10px] leading-5 text-slate-500">The fee-impact figure is an estimated USDC equivalent, not an unpaid balance. Launch-token LP fees are burned directly when collected and are additional to the confirmed buyback output shown above.</p>
     </div>
   </section>;
 }
@@ -354,11 +374,12 @@ function EconomicsCard({ icon: Icon, label, value, detail, tone }: { icon: Lucid
   </article>;
 }
 
-function ImpactMetric({ label, value, note, icon: Icon }: { label: string; value: string; note: string; icon: LucideIcon }) {
-  return <div className="flex items-start gap-3 border-line px-5 py-5 md:border-r md:last:border-r-0">
-    <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-line bg-white/[.03] text-cyan"><Icon className="size-4" /></span>
-    <div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[.08em] text-slate-500">{label}</p><p className="mt-1.5 truncate text-base font-semibold text-white">{value}</p><p className="mt-0.5 text-[10px] text-slate-500">{note}</p></div>
-  </div>;
+function BuybackProofCard({ label, value, note, icon: Icon }: { label: string; value: string; note: string; icon: LucideIcon }) {
+  return <article className="rounded-2xl border border-line bg-black/15 p-4 sm:p-5">
+    <div className="flex items-start justify-between gap-3"><p className="text-[10px] font-semibold uppercase tracking-[.08em] text-slate-500">{label}</p><span className="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-white/[.03] text-cyan"><Icon className="size-3.5" /></span></div>
+    <p className="mt-5 text-xl font-semibold tracking-[-.035em] text-white">{value}</p>
+    <p className="mt-2 text-[10px] leading-5 text-slate-500">{note}</p>
+  </article>;
 }
 
 function LaunchModePanel({ snapshot }: { snapshot: ProtocolAnalyticsSnapshot }) {
