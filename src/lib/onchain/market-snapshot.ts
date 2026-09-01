@@ -47,6 +47,7 @@ export type MarketSnapshot = {
   tokenReserve: number;
   chart: ChartPoint[];
   trades: Trade[];
+  tradeCount?: number;
   indexedBlock: string;
   indexedBlockHash?: Hash;
   generatedAt: string;
@@ -200,6 +201,7 @@ function createMarketSnapshot({
     tokenReserve,
     chart,
     trades,
+    tradeCount: events.length,
     ...checkpoint,
     generatedAt: new Date().toISOString(),
   };

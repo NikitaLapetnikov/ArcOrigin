@@ -8,6 +8,8 @@ import { getCachedTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot"
 
 type Props = { params: Promise<{ address: string }> };
 
+const INITIAL_TRADE_LIMIT = 50;
+
 export const metadata: Metadata = { title: "Onchain Token" };
 export const dynamic = "force-dynamic";
 
@@ -25,10 +27,17 @@ export default async function TokenDetailPage({ params }: Props) {
       (token) => token.address.toLowerCase() === normalizedAddress.toLowerCase(),
     ) ?? null
     : null;
+  const compactInitialMarketSnapshot = initialMarketSnapshot
+    ? {
+        ...initialMarketSnapshot,
+        tradeCount: initialMarketSnapshot.tradeCount ?? initialMarketSnapshot.trades.length,
+        trades: initialMarketSnapshot.trades.slice(0, INITIAL_TRADE_LIMIT),
+      }
+    : null;
   return <IndexedTokenDetail
     address={address}
     initialToken={initialToken}
-    initialMarketSnapshot={initialMarketSnapshot}
+    initialMarketSnapshot={compactInitialMarketSnapshot}
     initialHolderSnapshot={initialHolderSnapshot}
     initialBuybackSnapshot={initialBuybackSnapshot}
   />;

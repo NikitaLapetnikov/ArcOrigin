@@ -19,6 +19,7 @@ import { money, number, tickerLabel, utcDateTime } from "@/lib/utils";
 export type OnchainTokenSnapshot = MarketSnapshot;
 type TerminalTab = "Trades" | "My position" | "Top traders" | "Holders" | "Market";
 const MARKET_POLL_INTERVAL_MS = 5_000;
+const TRADE_PAGE_SIZE = 50;
 
 type TraderSummary = {
   wallet: string;
@@ -47,6 +48,7 @@ function createIndexedFallback(token: TokenData): OnchainTokenSnapshot {
     tokenReserve: totalSupply,
     chart: token.chartData.length > 0 ? token.chartData : [{ time: "Launch", price: token.price, volume: 0 }],
     trades: token.recentTrades,
+    tradeCount: token.recentTrades.length,
     indexedBlock: String(token.launchBlock ?? "Factory"),
     generatedAt: new Date().toISOString(),
   };
@@ -78,7 +80,9 @@ export function useOnchainTokenSnapshot(
         if (!next.trades.some((trade) => trade.txHash.toLowerCase() === hash)) return current;
         pendingTradeHashes.current.delete(hash);
       }
-      if (current.indexedBlock === next.indexedBlock && current.generatedAt === next.generatedAt) return current;
+      if (current.indexedBlock === next.indexedBlock
+        && current.generatedAt === next.generatedAt
+        && current.trades.length >= next.trades.length) return current;
       return next;
     });
   }, []);
@@ -204,6 +208,7 @@ export function useOnchainTokenSnapshot(
             tokenReserve: Math.max(0, current.tokenReserve + (side === "Buy" ? -tokens : tokens)),
             chart: [...current.chart, { time: "Now", timestamp, price, volume: usdc }],
             trades: [trade, ...current.trades],
+            tradeCount: (current.tradeCount ?? current.trades.length) + 1,
             generatedAt: new Date().toISOString(),
         };
       });
@@ -233,6 +238,7 @@ export function OnchainTokenDashboard({
 }) {
   const { snapshot, loading, error, stale, refresh } = useOnchainTokenSnapshot(token, initialMarketSnapshot ?? null);
   const [activeTab, setActiveTab] = useState<TerminalTab>("Trades");
+  const [visibleTradeCount, setVisibleTradeCount] = useState(TRADE_PAGE_SIZE);
   const { address } = useAccount();
   const {
     snapshot: holderSnapshot,
@@ -278,7 +284,7 @@ export function OnchainTokenDashboard({
     ? walletSold + walletValue - walletBought
     : null;
   const tabs: Array<{ label: TerminalTab; count?: string }> = [
-    { label: "Trades", count: String(snapshot.trades.length) },
+    { label: "Trades", count: String(snapshot.tradeCount ?? snapshot.trades.length) },
     { label: "My position", count: address && walletHolder ? "1" : undefined },
     { label: "Top traders", count: traderSummaries.length > 0 ? String(traderSummaries.length) : undefined },
     { label: "Holders", count: holderSnapshot ? number(holderSnapshot.holders) : token.holders > 0 ? number(token.holders) : undefined },
@@ -343,9 +349,14 @@ export function OnchainTokenDashboard({
       {activeTab === "Trades" && <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-xs">
           <thead><tr className="border-b border-line font-mono text-[9px] uppercase tracking-wider text-slate-600"><th className="px-4 py-3">Time</th><th>Type</th><th>Wallet</th><th>USDC</th><th>Tokens</th><th>Price</th><th>Transaction</th></tr></thead>
-          <tbody>{snapshot.trades.map((trade) => <tr key={trade.txHash} className="border-b border-line/60 last:border-0 hover:bg-white/[.02]"><td className="min-w-[150px] px-4 py-3">{trade.timestamp ? <time dateTime={new Date(trade.timestamp * 1_000).toISOString()} className="block whitespace-nowrap text-[10px] text-slate-400">{utcDateTime(trade.timestamp)}</time> : <span className="block text-[10px] text-slate-700">Time unavailable</span>}</td><td><Badge tone={trade.type === "Buy" ? "good" : "bad"}>{trade.type}</Badge></td><td><AddressPill address={trade.wallet}/></td><td className={trade.type === "Buy" ? "text-emerald-300" : "text-rose-300"}>{money(trade.usdc)}</td><td className="text-slate-300">{number(trade.tokens)}</td><td className="text-slate-400">{tokenPrice(trade.price)}</td><td><ArcscanLink hash={trade.txHash}/></td></tr>)}
+          <tbody>{snapshot.trades.slice(0, visibleTradeCount).map((trade) => <tr key={trade.txHash} className="border-b border-line/60 last:border-0 hover:bg-white/[.02]"><td className="min-w-[150px] px-4 py-3">{trade.timestamp ? <time dateTime={new Date(trade.timestamp * 1_000).toISOString()} className="block whitespace-nowrap text-[10px] text-slate-400">{utcDateTime(trade.timestamp)}</time> : <span className="block text-[10px] text-slate-700">Time unavailable</span>}</td><td><Badge tone={trade.type === "Buy" ? "good" : "bad"}>{trade.type}</Badge></td><td><AddressPill address={trade.wallet}/></td><td className={trade.type === "Buy" ? "text-emerald-300" : "text-rose-300"}>{money(trade.usdc)}</td><td className="text-slate-300">{number(trade.tokens)}</td><td className="text-slate-400">{tokenPrice(trade.price)}</td><td><ArcscanLink hash={trade.txHash}/></td></tr>)}
           {snapshot.trades.length === 0 && <tr><td colSpan={7} className="px-5 py-12 text-center text-sm text-slate-500">No confirmed trades yet. The first buy will appear here onchain.</td></tr>}</tbody>
         </table>
+        {snapshot.trades.length > visibleTradeCount && <div className="flex justify-center border-t border-line/60 p-4">
+          <Button variant="secondary" className="h-9 px-4 text-xs" onClick={() => setVisibleTradeCount((count) => count + TRADE_PAGE_SIZE)}>
+            Show {Math.min(TRADE_PAGE_SIZE, snapshot.trades.length - visibleTradeCount)} more
+          </Button>
+        </div>}
       </div>}
 
       {activeTab === "My position" && <div className="p-5">
