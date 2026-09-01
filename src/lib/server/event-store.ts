@@ -34,6 +34,11 @@ export type StoredHolderBalance = {
   balance: bigint;
 };
 
+export type StoredWalletBalance = {
+  tokenAddress: Address;
+  balance: bigint;
+};
+
 export type StoredBuyback = {
   blockNumber: bigint;
   blockHash: Hash;
@@ -242,6 +247,54 @@ export async function getStoredHolderBalances(tokenAddress: Address): Promise<{
     for (const row of result.rows) {
       if (!isAddress(row.holder_address)) return null;
       balances.push({ address: getAddress(row.holder_address), balance: BigInt(row.balance) });
+    }
+    return { balances, checkpoint };
+  });
+}
+
+export async function getStoredTokenBalance(tokenAddress: Address, holderAddress: Address): Promise<{
+  balance: bigint;
+  checkpoint: EventStoreCheckpoint;
+} | null> {
+  return optionalQuery(async (pool) => {
+    const [checkpoint, result] = await Promise.all([
+      queryCheckpoint(pool),
+      pool.query(`
+        SELECT balance
+          FROM arc_holder_balances
+         WHERE token_address = $1 AND holder_address = $2
+         LIMIT 1
+      `, [tokenAddress.toLowerCase(), holderAddress.toLowerCase()]),
+    ]);
+    if (!checkpoint) return null;
+    const rawBalance = result.rows[0]?.balance;
+    const balance = rawBalance === undefined ? 0n : BigInt(rawBalance);
+    if (balance < 0n) return null;
+    return { balance, checkpoint };
+  });
+}
+
+export async function getStoredWalletBalances(holderAddress: Address): Promise<{
+  balances: StoredWalletBalance[];
+  checkpoint: EventStoreCheckpoint;
+} | null> {
+  return optionalQuery(async (pool) => {
+    const [checkpoint, result] = await Promise.all([
+      queryCheckpoint(pool),
+      pool.query(`
+        SELECT token_address, balance
+          FROM arc_holder_balances
+         WHERE holder_address = $1 AND balance > 0
+         ORDER BY token_address ASC
+      `, [holderAddress.toLowerCase()]),
+    ]);
+    if (!checkpoint) return null;
+    const balances: StoredWalletBalance[] = [];
+    for (const row of result.rows) {
+      if (!isAddress(row.token_address)) return null;
+      const balance = BigInt(row.balance);
+      if (balance <= 0n) continue;
+      balances.push({ tokenAddress: getAddress(row.token_address), balance });
     }
     return { balances, checkpoint };
   });

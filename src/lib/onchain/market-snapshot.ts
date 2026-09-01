@@ -1,6 +1,6 @@
 import "server-only";
 
-import { formatUnits, parseAbiItem, type Address, type Hash } from "viem";
+import { formatUnits, isHash, parseAbiItem, type Address, type Hash } from "viem";
 import {
   ARCORIGIN_CROSS_MARKET_CAP_USDC,
   ARCORIGIN_NETWORK,
@@ -13,11 +13,12 @@ import {
   createCanonicalCheckpoint,
   getCanonicalCheckpointStatus,
   upgradeLegacyCanonicalCheckpoint,
+  type CanonicalCheckpoint,
 } from "@/lib/onchain/canonical-checkpoint";
 import { FactoryTokenNotFoundError } from "@/lib/onchain/holder-snapshot";
 import { getTokenIndexSnapshotForToken } from "@/lib/onchain/token-index-snapshot";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
-import { getStoredSwaps } from "@/lib/server/event-store";
+import { getStoredSwaps, getStoredTokenBalance } from "@/lib/server/event-store";
 import { isRetryableRpcError } from "@/lib/rpc-errors";
 import type { ChartPoint, TokenData, Trade } from "@/lib/types";
 
@@ -141,89 +142,31 @@ async function loadBlockTimestamps(blockNumbers: bigint[]) {
   return timestamps;
 }
 
-async function loadUniswapMarketSnapshot(baseToken: TokenData, indexedBlock: bigint): Promise<MarketSnapshot> {
-  if (!baseToken.poolAddress || baseToken.launchBlock === undefined || baseToken.launchedAt === undefined || baseToken.totalSupply === undefined) {
-    throw new Error("Factory token configuration is incomplete.");
-  }
-  const tokenAddress = baseToken.address as Address;
-  const pool = baseToken.poolAddress as Address;
-  const launchBlock = BigInt(baseToken.launchBlock);
-  const [poolToken0, slot0, tokenReserveRaw] = await Promise.all([
-    withRpcRetry(() => publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "token0", blockNumber: indexedBlock }), 2),
-    withRpcRetry(() => publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "slot0", blockNumber: indexedBlock }), 2),
-    withRpcRetry(() => publicClient.readContract({ address: tokenAddress, abi: erc20Abi, functionName: "balanceOf", args: [pool], blockNumber: indexedBlock }), 2),
-  ]);
-  const tokenIsToken0 = poolToken0.toLowerCase() === tokenAddress.toLowerCase();
-  const currentPrice = uniswapPriceFromSqrt(slot0[0], tokenIsToken0);
-  const storedSwaps = await getStoredSwaps(tokenAddress);
-  const storedSwapBlock = storedSwaps ? BigInt(storedSwaps.checkpoint.indexedBlock) : 0n;
-  const minimumStoredBlock = indexedBlock > 20n ? indexedBlock - 20n : 0n;
-  let validEvents: IndexedTrade[];
-  if (storedSwaps && storedSwapBlock >= launchBlock && storedSwapBlock >= minimumStoredBlock) {
-    validEvents = storedSwaps.swaps.map((event) => ({
-      blockNumber: event.blockNumber,
-      logIndex: event.logIndex,
-      hash: event.transactionHash,
-      wallet: event.wallet,
-      type: event.side,
-      usdc: event.usdc,
-      tokens: event.tokens,
-      executionPrice: event.executionPrice,
-      timestamp: event.timestamp,
-    }));
-  } else {
-    const events: IndexedTrade[] = [];
-    for (let fromBlock = launchBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
-      const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
-      const logs = await withRpcRetry(() => publicClient.getLogs({ address: pool, event: swapEvent, fromBlock, toBlock }));
-      for (const log of logs) {
-        const amount0 = log.args.amount0 ?? 0n;
-        const amount1 = log.args.amount1 ?? 0n;
-        const tokenDelta = tokenIsToken0 ? amount0 : amount1;
-        const usdcDelta = tokenIsToken0 ? amount1 : amount0;
-        if (tokenDelta === 0n || usdcDelta === 0n || (tokenDelta < 0n) === (usdcDelta < 0n)) continue;
-        events.push({
-          blockNumber: log.blockNumber ?? 0n,
-          logIndex: log.logIndex ?? 0,
-          hash: log.transactionHash as Hash,
-          wallet: (log.args.recipient ?? log.args.sender) as Address,
-          type: tokenDelta < 0n ? "Buy" : "Sell",
-          usdc: Number(formatUnits(usdcDelta < 0n ? -usdcDelta : usdcDelta, 6)),
-          tokens: Number(formatUnits(tokenDelta < 0n ? -tokenDelta : tokenDelta, 18)),
-          executionPrice: uniswapPriceFromSqrt(log.args.sqrtPriceX96 ?? slot0[0], tokenIsToken0),
-        });
-      }
-    }
-    const unique = new Map<string, IndexedTrade>();
-    for (const event of events) unique.set(`${event.hash.toLowerCase()}:${event.logIndex}`, event);
-    validEvents = [...unique.values()].filter((event) => event.tokens > 0).sort((left, right) => left.blockNumber === right.blockNumber
-      ? left.logIndex - right.logIndex
-      : left.blockNumber < right.blockNumber ? -1 : 1);
-    const timestamps = await loadBlockTimestamps(validEvents.map((event) => event.blockNumber));
-    for (const event of validEvents) event.timestamp = timestamps.get(event.blockNumber.toString());
-  }
-
-  const totalSupply = baseToken.totalSupply;
+function createMarketSnapshot({
+  baseToken,
+  events,
+  currentPrice,
+  tokenReserve,
+  checkpoint,
+  stats24h,
+}: {
+  baseToken: TokenData;
+  events: IndexedTrade[];
+  currentPrice: number;
+  tokenReserve: number;
+  checkpoint: CanonicalCheckpoint;
+  stats24h?: { volume: number; buyers: number; sellers: number; comparisonPrice: number | null };
+}): MarketSnapshot {
+  const totalSupply = baseToken.totalSupply ?? 0;
+  if (totalSupply <= 0) throw new Error("Factory token supply is invalid.");
   const launchPrice = ARCORIGIN_START_MARKET_CAP_USDC / totalSupply;
   const marketCap = currentPrice * totalSupply;
   const cutoff24h = Math.floor(Date.now() / 1_000) - 86_400;
-  const recentEvents = validEvents.filter((event) => (event.timestamp ?? 0) >= cutoff24h);
-  const firstInWindow = validEvents.findIndex((event) => (event.timestamp ?? 0) >= cutoff24h);
-  const usingStoredSwaps = Boolean(storedSwaps && storedSwapBlock >= launchBlock && storedSwapBlock >= minimumStoredBlock);
-  const comparisonPrice = usingStoredSwaps ? storedSwaps?.stats24h.comparisonPrice
-    ?? (firstInWindow < 0 ? currentPrice : firstInWindow > 0 ? validEvents[firstInWindow - 1].executionPrice : launchPrice)
-    : (firstInWindow < 0 ? currentPrice : firstInWindow > 0 ? validEvents[firstInWindow - 1].executionPrice : launchPrice);
-  const volume24h = usingStoredSwaps ? storedSwaps?.stats24h.volume
-    ?? recentEvents.reduce((sum, event) => sum + event.usdc, 0)
-    : recentEvents.reduce((sum, event) => sum + event.usdc, 0);
-  const buyers24h = usingStoredSwaps ? storedSwaps?.stats24h.buyers
-    ?? recentEvents.filter((event) => event.type === "Buy").length
-    : recentEvents.filter((event) => event.type === "Buy").length;
-  const sellers24h = usingStoredSwaps ? storedSwaps?.stats24h.sellers
-    ?? recentEvents.filter((event) => event.type === "Sell").length
-    : recentEvents.filter((event) => event.type === "Sell").length;
-  const tokenReserve = Number(formatUnits(tokenReserveRaw, 18));
-  const trades: Trade[] = validEvents.slice(-TRADE_FEED_LIMIT).reverse().map((event) => ({
+  const recentEvents = events.filter((event) => (event.timestamp ?? 0) >= cutoff24h);
+  const firstInWindow = events.findIndex((event) => (event.timestamp ?? 0) >= cutoff24h);
+  const comparisonPrice = stats24h?.comparisonPrice
+    ?? (firstInWindow < 0 ? currentPrice : firstInWindow > 0 ? events[firstInWindow - 1].executionPrice : launchPrice);
+  const trades: Trade[] = events.slice(-TRADE_FEED_LIMIT).reverse().map((event) => ({
     time: `Block ${event.blockNumber}`,
     timestamp: event.timestamp,
     type: event.type,
@@ -235,26 +178,20 @@ async function loadUniswapMarketSnapshot(baseToken: TokenData, indexedBlock: big
   }));
   const chart: ChartPoint[] = [
     { time: "Launch", timestamp: baseToken.launchedAt, price: launchPrice, volume: 0 },
-    ...validEvents.map((event) => ({
+    ...events.map((event) => ({
       time: `#${event.blockNumber % 100_000n}`,
       timestamp: event.timestamp,
       price: event.executionPrice,
       volume: event.usdc,
     })),
   ];
-  const checkpoint = storedSwaps && usingStoredSwaps && storedSwapBlock === indexedBlock
-    ? {
-        indexedBlock: storedSwaps.checkpoint.indexedBlock,
-        indexedBlockHash: storedSwaps.checkpoint.indexedBlockHash,
-      }
-    : await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
   return {
     price: currentPrice,
     priceChange: comparisonPrice > 0 ? (currentPrice / comparisonPrice - 1) * 100 : 0,
     marketCap,
-    volume: volume24h,
-    buyers: buyers24h,
-    sellers: sellers24h,
+    volume: stats24h?.volume ?? recentEvents.reduce((sum, event) => sum + event.usdc, 0),
+    buyers: stats24h?.buyers ?? recentEvents.filter((event) => event.type === "Buy").length,
+    sellers: stats24h?.sellers ?? recentEvents.filter((event) => event.type === "Sell").length,
     raisedUsdc: marketCap,
     targetUsdc: ARCORIGIN_CROSS_MARKET_CAP_USDC,
     progress: Math.min(100, marketCap / ARCORIGIN_CROSS_MARKET_CAP_USDC * 100),
@@ -268,13 +205,102 @@ async function loadUniswapMarketSnapshot(baseToken: TokenData, indexedBlock: big
   };
 }
 
+async function loadUniswapMarketSnapshot(baseToken: TokenData, indexedBlock: bigint): Promise<MarketSnapshot> {
+  if (!baseToken.poolAddress || baseToken.launchBlock === undefined || baseToken.launchedAt === undefined || baseToken.totalSupply === undefined) {
+    throw new Error("Factory token configuration is incomplete.");
+  }
+  const tokenAddress = baseToken.address as Address;
+  const pool = baseToken.poolAddress as Address;
+  const launchBlock = BigInt(baseToken.launchBlock);
+  const [storedSwaps, storedPoolBalance] = await Promise.all([
+    getStoredSwaps(tokenAddress),
+    getStoredTokenBalance(tokenAddress, pool),
+  ]);
+  const storedCheckpointMatches = storedSwaps
+    && storedPoolBalance
+    && storedSwaps.checkpoint.indexedBlock === storedPoolBalance.checkpoint.indexedBlock
+    && storedSwaps.checkpoint.indexedBlockHash.toLowerCase() === storedPoolBalance.checkpoint.indexedBlockHash.toLowerCase();
+  const storedBlock = storedCheckpointMatches ? BigInt(storedSwaps.checkpoint.indexedBlock) : 0n;
+  if (storedSwaps && storedPoolBalance && storedCheckpointMatches && storedBlock >= launchBlock && storedBlock >= indexedBlock) {
+    const events: IndexedTrade[] = storedSwaps.swaps.map((event) => ({
+      blockNumber: event.blockNumber,
+      logIndex: event.logIndex,
+      hash: event.transactionHash,
+      wallet: event.wallet,
+      type: event.side,
+      usdc: event.usdc,
+      tokens: event.tokens,
+      executionPrice: event.executionPrice,
+      timestamp: event.timestamp,
+    }));
+    const totalSupply = baseToken.totalSupply;
+    const launchPrice = ARCORIGIN_START_MARKET_CAP_USDC / totalSupply;
+    const currentPrice = events.at(-1)?.executionPrice ?? launchPrice;
+    return createMarketSnapshot({
+      baseToken,
+      events,
+      currentPrice,
+      tokenReserve: Number(formatUnits(storedPoolBalance.balance, 18)),
+      checkpoint: {
+        indexedBlock: storedSwaps.checkpoint.indexedBlock,
+        indexedBlockHash: storedSwaps.checkpoint.indexedBlockHash,
+      },
+      stats24h: storedSwaps.stats24h,
+    });
+  }
+
+  const [poolToken0, slot0, tokenReserveRaw] = await Promise.all([
+    withRpcRetry(() => publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "token0", blockNumber: indexedBlock }), 2),
+    withRpcRetry(() => publicClient.readContract({ address: pool, abi: uniswapV3PoolAbi, functionName: "slot0", blockNumber: indexedBlock }), 2),
+    withRpcRetry(() => publicClient.readContract({ address: tokenAddress, abi: erc20Abi, functionName: "balanceOf", args: [pool], blockNumber: indexedBlock }), 2),
+  ]);
+  const tokenIsToken0 = poolToken0.toLowerCase() === tokenAddress.toLowerCase();
+  const currentPrice = uniswapPriceFromSqrt(slot0[0], tokenIsToken0);
+  const events: IndexedTrade[] = [];
+  for (let fromBlock = launchBlock; fromBlock <= indexedBlock; fromBlock += LOG_BLOCK_RANGE + 1n) {
+    const toBlock = fromBlock + LOG_BLOCK_RANGE < indexedBlock ? fromBlock + LOG_BLOCK_RANGE : indexedBlock;
+    const logs = await withRpcRetry(() => publicClient.getLogs({ address: pool, event: swapEvent, fromBlock, toBlock }));
+    for (const log of logs) {
+      const amount0 = log.args.amount0 ?? 0n;
+      const amount1 = log.args.amount1 ?? 0n;
+      const tokenDelta = tokenIsToken0 ? amount0 : amount1;
+      const usdcDelta = tokenIsToken0 ? amount1 : amount0;
+      if (tokenDelta === 0n || usdcDelta === 0n || (tokenDelta < 0n) === (usdcDelta < 0n)) continue;
+      events.push({
+        blockNumber: log.blockNumber ?? 0n,
+        logIndex: log.logIndex ?? 0,
+        hash: log.transactionHash as Hash,
+        wallet: (log.args.recipient ?? log.args.sender) as Address,
+        type: tokenDelta < 0n ? "Buy" : "Sell",
+        usdc: Number(formatUnits(usdcDelta < 0n ? -usdcDelta : usdcDelta, 6)),
+        tokens: Number(formatUnits(tokenDelta < 0n ? -tokenDelta : tokenDelta, 18)),
+        executionPrice: uniswapPriceFromSqrt(log.args.sqrtPriceX96 ?? slot0[0], tokenIsToken0),
+      });
+    }
+  }
+  const unique = new Map<string, IndexedTrade>();
+  for (const event of events) unique.set(`${event.hash.toLowerCase()}:${event.logIndex}`, event);
+  const validEvents = [...unique.values()].filter((event) => event.tokens > 0).sort((left, right) => left.blockNumber === right.blockNumber
+    ? left.logIndex - right.logIndex
+    : left.blockNumber < right.blockNumber ? -1 : 1);
+  const timestamps = await loadBlockTimestamps(validEvents.map((event) => event.blockNumber));
+  for (const event of validEvents) event.timestamp = timestamps.get(event.blockNumber.toString());
+  return createMarketSnapshot({
+    baseToken,
+    events: validEvents,
+    currentPrice,
+    tokenReserve: Number(formatUnits(tokenReserveRaw, 18)),
+    checkpoint: await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock),
+  });
+}
+
 async function loadMarketSnapshot(tokenAddress: Address, forceRefresh: boolean) {
   const indexResult = await getTokenIndexSnapshotForToken(tokenAddress, forceRefresh);
   const indexSnapshot = indexResult.snapshot;
   if (!indexSnapshot) throw new Error("Factory token index is unavailable.");
   const baseToken = indexSnapshot.tokens.find((token) => token.address.toLowerCase() === tokenAddress.toLowerCase());
   if (!baseToken) throw new FactoryTokenNotFoundError("Token was not launched by the configured ArcOrigin factory.");
-  const indexedBlock = forceRefresh ? await withRpcRetry(() => publicClient.getBlockNumber(), 2) : BigInt(indexSnapshot.indexedBlock);
+  const indexedBlock = BigInt(indexSnapshot.indexedBlock);
   return loadUniswapMarketSnapshot(baseToken, indexedBlock);
 }
 
@@ -301,21 +327,26 @@ export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = fa
       persisted = upgraded;
       void writePersistentSnapshot(persistentKey, upgraded);
     }
-    const checkpointStatus = persisted ? await getCanonicalCheckpointStatus(persisted, readCanonicalBlock) : "invalid";
-    if (persisted?.indexedBlock && Array.isArray(persisted.trades) && (checkpointStatus === "canonical" || checkpointStatus === "unavailable")) {
+    if (persisted?.indexedBlock
+      && typeof persisted.indexedBlockHash === "string"
+      && isHash(persisted.indexedBlockHash)
+      && Array.isArray(persisted.trades)) {
       cache.snapshot = persisted;
       cache.cachedAt = Date.parse(persisted.generatedAt) || 0;
-      cache.canonicalCheckedAt = Date.now();
+      cache.canonicalCheckedAt = 0;
     }
   }
   const now = Date.now();
   if (cache.snapshot && now - cache.canonicalCheckedAt >= MIN_REFRESH_INTERVAL_MS) {
-    const checkpointStatus = await getCanonicalCheckpointStatus(cache.snapshot, readCanonicalBlock);
+    const snapshotToCheck = cache.snapshot;
     cache.canonicalCheckedAt = now;
-    if (checkpointStatus === "orphaned" || checkpointStatus === "invalid") {
-      cache.snapshot = null;
-      cache.cachedAt = 0;
-    }
+    void getCanonicalCheckpointStatus(snapshotToCheck, readCanonicalBlock).then((checkpointStatus) => {
+      if (cache.snapshot !== snapshotToCheck) return;
+      if (checkpointStatus === "orphaned" || checkpointStatus === "invalid") {
+        cache.snapshot = null;
+        cache.cachedAt = 0;
+      }
+    });
   }
   const isFresh = cache.snapshot && now - cache.cachedAt < CACHE_TTL_MS;
   const refreshThrottled = cache.snapshot && now - cache.lastAttemptAt < (forceRefresh ? FORCE_REFRESH_INTERVAL_MS : MIN_REFRESH_INTERVAL_MS);

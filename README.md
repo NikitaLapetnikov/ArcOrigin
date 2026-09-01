@@ -35,7 +35,7 @@ Run the dedicated indexer next to the web application:
 DATABASE_URL=postgresql://... REDIS_URL=redis://... npm run indexer:events
 ```
 
-The worker applies `deploy/postgres/001_event_store.sql` idempotently, resumes from its last canonical checkpoint, rolls back orphaned blocks, and indexes ArcOrigin launches, Uniswap swaps, ERC-20 holder changes and automatic buybacks. The frontend consumes `/api/onchain/events` over SSE and keeps polling as a recovery path.
+The worker applies `deploy/postgres/001_event_store.sql` idempotently, resumes from its last canonical checkpoint, rolls back orphaned blocks, and indexes ArcOrigin launches, Uniswap swaps, ERC-20 holder changes and automatic buybacks. Market snapshots and profile balances use that confirmed Postgres checkpoint directly; the frontend consumes `/api/onchain/events` over SSE and keeps polling plus direct RPC reads as recovery paths.
 
 Set `NEXT_PUBLIC_ARC_MAINNET_RPC_FALLBACK_URLS` to a comma-separated list of independently operated Arc RPC endpoints. Browser reads, simulations, server snapshots, and the optional keeper fail over in order when the primary RPC is rate-limited or unavailable. Live quotes use a short browser-side hedged read across the same pool, with the server endpoint as fallback, so a slow provider or a shared VPS rate limit does not block the trade panel. Background UI polling reuses bounded server snapshots; explicit refreshes and confirmed-transaction reconciliation still request current chain state.
 

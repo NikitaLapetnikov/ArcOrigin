@@ -288,27 +288,25 @@ export async function getVerifiedFactoryLaunch(tokenAddress: Address, forceRefre
 
 export async function getFactoryLaunchIndex(forceRefresh = false) {
   const stored = await getStoredFactoryLaunchIndex();
+  if (stored) {
+    state.factoryLaunches = new Map(stored.launches.map((launch) => [launch.token.toLowerCase(), launch]));
+    state.factoryCachedAt = Date.now();
+    state.factoryIndexedBlock = BigInt(stored.checkpoint.indexedBlock);
+    return {
+      launches: stored.launches,
+      indexedBlock: state.factoryIndexedBlock,
+      indexedBlockHash: stored.checkpoint.indexedBlockHash,
+    };
+  }
   let indexedBlock: bigint;
   try {
     indexedBlock = await withRpcRetry(() => publicClient.getBlockNumber(), 2);
   } catch (error) {
-    if (stored) {
-      state.factoryLaunches = new Map(stored.launches.map((launch) => [launch.token.toLowerCase(), launch]));
-      state.factoryCachedAt = Date.now();
-      state.factoryIndexedBlock = BigInt(stored.checkpoint.indexedBlock);
-      return { launches: stored.launches, indexedBlock: state.factoryIndexedBlock };
-    }
     throw error;
-  }
-  if (stored && indexedBlock - BigInt(stored.checkpoint.indexedBlock) <= 20n) {
-    state.factoryLaunches = new Map(stored.launches.map((launch) => [launch.token.toLowerCase(), launch]));
-    state.factoryCachedAt = Date.now();
-    state.factoryIndexedBlock = BigInt(stored.checkpoint.indexedBlock);
-    return { launches: stored.launches, indexedBlock: state.factoryIndexedBlock };
   }
   const launches = await getFactoryLaunches(indexedBlock, forceRefresh);
   state.factoryIndexedBlock = indexedBlock;
-  return { launches: [...launches.values()], indexedBlock };
+  return { launches: [...launches.values()], indexedBlock, indexedBlockHash: undefined };
 }
 
 async function verifyLaunchHint(tokenAddress: Address, hint: HolderLaunchHint) {

@@ -6,7 +6,7 @@ const EVENT_CHANNEL = "arcorigin:mainnet:events";
 const STATUS_CHANNEL = "arcorigin:mainnet:indexer-status";
 const RECENT_EVENTS_KEY = "arcorigin:mainnet:indexer:recent-events";
 const STATUS_KEY = "arcorigin:mainnet:indexer:status";
-const REPLAY_LIMIT = 25;
+const REPLAY_LIMIT = 200;
 
 type Listener = (payload: string) => void;
 type RedisClientHandle = Pick<ReturnType<typeof createClient>, "isOpen" | "disconnect">;

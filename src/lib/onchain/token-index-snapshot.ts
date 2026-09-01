@@ -1,6 +1,6 @@
 import "server-only";
 
-import { formatUnits, type Address, type Hash } from "viem";
+import { formatUnits, isHash, type Address, type Hash } from "viem";
 import {
   ARCORIGIN_CROSS_MARKET_CAP_USDC,
   ARCORIGIN_NETWORK,
@@ -231,8 +231,10 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
 }
 
 async function loadTokenIndex(forceRefresh: boolean): Promise<TokenIndexSnapshot> {
-  const { launches, indexedBlock } = await getFactoryLaunchIndex(forceRefresh);
-  const checkpoint = await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
+  const { launches, indexedBlock, indexedBlockHash } = await getFactoryLaunchIndex(forceRefresh);
+  const checkpoint = indexedBlockHash
+    ? { indexedBlock: indexedBlock.toString(), indexedBlockHash }
+    : await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
   const activeLaunches = launches.filter((launch) => launch.factory.toLowerCase() === ARC_ACTIVE_FACTORY.toLowerCase());
   const creatorCounts = new Map<string, number>();
   for (const launch of activeLaunches) {
@@ -258,22 +260,27 @@ export async function getTokenIndexSnapshot(forceRefresh = false) {
       persisted = upgraded;
       void writePersistentSnapshot(PERSISTENT_CACHE_KEY, upgraded);
     }
-    const checkpointStatus = persisted ? await getCanonicalCheckpointStatus(persisted, readCanonicalBlock) : "invalid";
-    if (isUsableSnapshot(persisted) && (checkpointStatus === "canonical" || checkpointStatus === "unavailable")) {
+    if (isUsableSnapshot(persisted)
+      && typeof persisted.indexedBlockHash === "string"
+      && isHash(persisted.indexedBlockHash)) {
       state.snapshot = persisted;
       state.cachedAt = Date.parse(persisted.generatedAt) || 0;
-      state.canonicalCheckedAt = Date.now();
+      state.canonicalCheckedAt = 0;
+      state.hydratedTokens = new Map(persisted.tokens.map((token) => [token.address.toLowerCase(), token]));
     }
   }
   const now = Date.now();
   if (state.snapshot && now - state.canonicalCheckedAt >= MIN_REFRESH_INTERVAL_MS) {
-    const checkpointStatus = await getCanonicalCheckpointStatus(state.snapshot, readCanonicalBlock);
+    const snapshotToCheck = state.snapshot;
     state.canonicalCheckedAt = now;
-    if (checkpointStatus === "orphaned" || checkpointStatus === "invalid") {
-      state.snapshot = null;
-      state.cachedAt = 0;
-      state.hydratedTokens.clear();
-    }
+    void getCanonicalCheckpointStatus(snapshotToCheck, readCanonicalBlock).then((checkpointStatus) => {
+      if (state.snapshot !== snapshotToCheck) return;
+      if (checkpointStatus === "orphaned" || checkpointStatus === "invalid") {
+        state.snapshot = null;
+        state.cachedAt = 0;
+        state.hydratedTokens.clear();
+      }
+    });
   }
   const isFresh = state.snapshot && now - state.cachedAt < CACHE_TTL_MS;
   const refreshThrottled = state.snapshot && now - state.lastAttemptAt < (forceRefresh ? FORCE_REFRESH_INTERVAL_MS : MIN_REFRESH_INTERVAL_MS);

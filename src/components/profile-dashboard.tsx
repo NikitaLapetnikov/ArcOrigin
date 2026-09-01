@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -18,6 +19,7 @@ import {
   useWalletClient,
 } from "wagmi";
 import { useFactoryTokenIndex } from "@/hooks/use-factory-token-index";
+import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { TokenLabels } from "@/components/token-labels";
 import { arcChain, EXPLORER_URL } from "@/lib/chains";
 import { erc20Abi } from "@/lib/contracts";
@@ -38,6 +40,7 @@ type Position = {
   sold: number;
   pnl: number | null;
 };
+type IndexedWalletBalance = { tokenAddress: string; balance: string };
 
 const tabs: ProfileTab[] = ["Positions", "History", "Activity", "Launches"];
 const portfolioRanges: Record<PortfolioRange, number> = { "1D": 86_400, "7D": 604_800, "30D": 2_592_000 };
@@ -102,6 +105,7 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [editError, setEditError] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [indexedBalances, setIndexedBalances] = useState<Map<string, bigint> | null>(null);
   const launches = useMemo(() => {
     if (!address) return [];
     return tokens.filter((token) => token.creator.toLowerCase() === address.toLowerCase())
@@ -116,12 +120,59 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
       chainId: arcChain.id,
     })),
     query: {
-      enabled: Boolean(address) && tokens.length > 0,
+      enabled: Boolean(address) && tokens.length > 0 && indexedBalances === null,
       staleTime: 10_000,
-      refetchInterval: 15_000,
+      refetchInterval: 30_000,
     },
     allowFailure: true,
   });
+
+  const refreshIndexedBalances = useCallback(async () => {
+    if (!address) return;
+    try {
+      const response = await fetch(`/api/onchain/wallets/${address}/balances`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(5_000),
+      });
+      const payload = await response.json() as { balances?: IndexedWalletBalance[] };
+      if (!response.ok || !Array.isArray(payload.balances)) return;
+      const next = new Map<string, bigint>();
+      for (const item of payload.balances) {
+        if (!item
+          || typeof item.tokenAddress !== "string"
+          || !/^0x[0-9a-fA-F]{40}$/.test(item.tokenAddress)
+          || typeof item.balance !== "string"
+          || !/^\d+$/.test(item.balance)) return;
+        next.set(item.tokenAddress.toLowerCase(), BigInt(item.balance));
+      }
+      setIndexedBalances(next);
+    } catch {
+      // Keep the last indexed balances and let direct contract reads remain the fallback.
+    }
+  }, [address]);
+
+  useLiveRefresh({
+    enabled: Boolean(address),
+    intervalMs: 15_000,
+    refresh: refreshIndexedBalances,
+  });
+
+  useEffect(() => {
+    setIndexedBalances(null);
+    if (!address) return;
+    void refreshIndexedBalances();
+    const handleHolderChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ from?: unknown; to?: unknown }>).detail;
+      const normalized = address.toLowerCase();
+      if (typeof detail?.from === "string" && detail.from.toLowerCase() === normalized) {
+        void refreshIndexedBalances();
+      } else if (typeof detail?.to === "string" && detail.to.toLowerCase() === normalized) {
+        void refreshIndexedBalances();
+      }
+    };
+    window.addEventListener("arcorigin:holder-event", handleHolderChange);
+    return () => window.removeEventListener("arcorigin:holder-event", handleHolderChange);
+  }, [address, refreshIndexedBalances]);
 
   useEffect(() => {
     if (!address) {
@@ -154,7 +205,11 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
   }, [address, tokens]);
 
   const positions = useMemo(() => tokens.map((token, index): Position | null => {
-    const rawBalance = balanceReads.data?.[index]?.result;
+    const indexedBalance = indexedBalances?.get(token.address.toLowerCase());
+    const contractBalance = balanceReads.data?.[index]?.result;
+    const rawBalance = indexedBalances === null
+      ? contractBalance
+      : indexedBalance ?? 0n;
     if (typeof rawBalance !== "bigint" || rawBalance <= 0n) return null;
     const balance = Number(formatUnits(rawBalance, 18));
     const trades = walletTrades.filter((item) => item.token.address.toLowerCase() === token.address.toLowerCase());
@@ -168,8 +223,9 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
   })
     .filter((position): position is Position => Boolean(position))
     .sort((left, right) => right.value - left.value || left.token.name.localeCompare(right.token.name)),
-  [balanceReads.data, tokens, walletTrades]);
+  [balanceReads.data, indexedBalances, tokens, walletTrades]);
 
+  const balancesPending = indexedBalances === null && balanceReads.isPending;
   const portfolioValue = positions.reduce((sum, position) => sum + position.value, 0);
   const confirmedVolume = walletTrades.reduce((sum, { trade }) => sum + trade.usdc, 0);
   const portfolioHistory = useMemo(() => {
@@ -177,7 +233,11 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
     const start = end - portfolioRanges[portfolioRange];
     const sampleCount = 49;
     const tokenHistories = tokens.flatMap((token, index) => {
-      const rawBalance = balanceReads.data?.[index]?.result;
+      const indexedBalance = indexedBalances?.get(token.address.toLowerCase());
+      const contractBalance = balanceReads.data?.[index]?.result;
+      const rawBalance = indexedBalances === null
+        ? contractBalance
+        : indexedBalance ?? 0n;
       if (typeof rawBalance !== "bigint") return [];
       const actualBalance = Number(formatUnits(rawBalance, 18));
       const trades = walletTrades
@@ -208,7 +268,7 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
       }, 0);
       return { timestamp, value };
     });
-  }, [balanceReads.data, portfolioRange, tokens, walletTrades]);
+  }, [balanceReads.data, indexedBalances, portfolioRange, tokens, walletTrades]);
 
   async function copyAddress() {
     if (!address) return;
@@ -332,13 +392,14 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
         <div className="flex flex-wrap items-start justify-between gap-5">
           <div>
             <p className="text-[15px] font-medium text-slate-300">Portfolio value</p>
-            <p className="mt-2 text-[42px] font-semibold leading-none tracking-[-.055em] text-white sm:text-[52px]">{balanceReads.isPending ? "—" : money(portfolioValue)}</p>
+            <p className="mt-2 text-[42px] font-semibold leading-none tracking-[-.055em] text-white sm:text-[52px]">{balancesPending ? "—" : money(portfolioValue)}</p>
             <p className="mt-3 text-[14px] font-medium text-slate-400">{positions.length} open position{positions.length === 1 ? "" : "s"} · {money(confirmedVolume)} total trade volume</p>
           </div>
           <div className="flex items-center gap-2">
             {isPartial && <Badge tone="warn">Partial market data</Badge>}
             <Button variant="secondary" disabled={loading} onClick={() => {
               void refresh(true);
+              void refreshIndexedBalances();
               void balanceReads.refetch();
             }}><RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />Refresh</Button>
           </div>
@@ -358,7 +419,7 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
           {tab}{tab === "Positions" && positions.length > 0 ? ` (${positions.length})` : tab === "History" && walletTrades.length > 0 ? ` (${walletTrades.length})` : tab === "Launches" && launches.length > 0 ? ` (${launches.length})` : ""}
         </button>)}
       </div>
-      {activeTab === "Positions" && <PositionsTable positions={positions} loading={balanceReads.isPending} />}
+      {activeTab === "Positions" && <PositionsTable positions={positions} loading={balancesPending} />}
       {activeTab === "History" && <HistoryTable trades={walletTrades} />}
       {activeTab === "Activity" && <ActivityFeed trades={walletTrades} launches={launches} />}
       {activeTab === "Launches" && <LaunchGrid tokens={launches} />}
