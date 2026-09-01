@@ -61,9 +61,10 @@ export default function DocsPage() {
             <li>2. Sign the metadata commitment and publish it to IPFS.</li>
             <li>3. Approve the launch fee and call the Factory.</li>
             <li>4. The Factory creates the token, pool, liquidity position, and permanent lock atomically.</li>
-            <li>5. Optionally enable automatic buyback and burn. This choice permanently redirects the creator fee share and cannot be changed later.</li>
+            <li>5. Optionally complete a separate creator buy of up to 100 USDC through the canonical Uniswap V3 Router. The app requests a fresh quote and enforces 10% minimum-output protection.</li>
+            <li>6. Optionally enable automatic buyback and burn. This choice permanently redirects the creator fee share and cannot be changed later.</li>
           </ol>
-          <Callout>Creators receive no free token allocation. A creator purchase is a normal pool trade after launch.</Callout>
+          <Callout>Creators receive no free token allocation. The optional initial creator buy is a transparent normal pool trade after launch. Rejecting or failing it does not reverse a confirmed token launch.</Callout>
         </Section>
         <Section id="trading" title="Trading">
           <p>Buys and sells use the canonical Uniswap V3 Router. Quotes come from the official Quoter and are accepted only after the app verifies the pool against both the ArcOrigin Factory and the Uniswap Factory.</p>

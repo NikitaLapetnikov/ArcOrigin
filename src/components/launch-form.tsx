@@ -6,7 +6,9 @@ import {
   decodeEventLog,
   encodeFunctionData,
   formatUnits,
+  isAddress,
   isHash,
+  parseUnits,
   type Address,
   type Hash,
   type PublicClient,
@@ -17,10 +19,17 @@ import { requiredNativeUsdcBalance } from "@/lib/arc-usdc";
 import {
   ARCORIGIN_CROSS_MARKET_CAP_USDC,
   ARC_ACTIVE_CONTRACTS,
+  ARC_UNISWAP_V3,
   EXPLORER_URL,
   arcChain,
 } from "@/lib/chains";
-import { erc20Abi, factoryAbi } from "@/lib/contracts";
+import {
+  erc20Abi,
+  factoryAbi,
+  uniswapV3PoolAbi,
+  uniswapV3QuoterAbi,
+  uniswapV3RouterAbi,
+} from "@/lib/contracts";
 import {
   TOKEN_IMAGE_INPUT_MAX_BYTES,
   TOKEN_IMAGE_MAX_BYTES,
@@ -42,10 +51,45 @@ type FormData = {
   x: string;
   telegram: string;
   automaticBuyback: boolean;
+  initialBuyUsdc: string;
 };
 
-type TransactionStatus = "idle" | "checking" | "signing_metadata" | "uploading_metadata" | "approving" | "launching" | "safe_confirming";
-type LaunchResult = { token: Address; pool: Address; hash: Hash; metadataURI: string; metadataURL: string };
+type TransactionStatus =
+  | "idle"
+  | "checking"
+  | "signing_metadata"
+  | "uploading_metadata"
+  | "approving"
+  | "launching"
+  | "safe_confirming"
+  | "quoting_initial_buy"
+  | "approving_initial_buy"
+  | "buying_initial"
+  | "safe_initial_buy";
+type LaunchResult = {
+  token: Address;
+  pool: Address;
+  hash: Hash;
+  metadataURI: string;
+  metadataURL: string;
+  initialBuyHash?: Hash;
+  initialBuyUsdc?: bigint;
+  initialBuyTokens?: bigint;
+  initialBuyError?: string;
+};
+type InitialBuyQuote = {
+  input: bigint;
+  output: bigint;
+  minimumOutput: bigint;
+  spender: Address;
+  pool: Address;
+};
+type InitialBuyQuoteResponse = {
+  output?: string;
+  spender?: string;
+  pool?: string;
+  error?: string;
+};
 type UploadedMetadata = {
   commitment: string;
   creator: Address;
@@ -64,13 +108,29 @@ const defaults: FormData = {
   x: "",
   telegram: "",
   automaticBuyback: false,
+  initialBuyUsdc: "",
 };
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const DEFAULT_LAUNCH_FEE = 1n * 10n ** 6n;
+const MAX_INITIAL_BUY_USDC = 100n * 10n ** 6n;
+const INITIAL_BUY_SLIPPAGE_BPS = 1_000n;
+const INITIAL_BUY_PRESETS = [10, 25, 50, 100] as const;
 const DISPLAY_NUMBER_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
 function formatDisplayNumber(value: number) {
   return DISPLAY_NUMBER_FORMAT.format(value);
+}
+
+function parseInitialBuyUsdc(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return 0n;
+  if (!/^\d+(?:\.\d{0,6})?$/.test(normalized)) return null;
+  try {
+    const amount = parseUnits(normalized, 6);
+    return amount >= 0n && amount <= MAX_INITIAL_BUY_USDC ? amount : null;
+  } catch {
+    return null;
+  }
 }
 
 function transactionError(error: unknown) {
@@ -90,6 +150,28 @@ function transactionError(error: unknown) {
   return fallback;
 }
 
+function initialBuyErrorMessage(error: unknown) {
+  const details = rpcErrorText(error);
+  const fallback = typeof error === "object" && error && "shortMessage" in error
+    ? String(error.shortMessage)
+    : error instanceof Error
+      ? error.message
+      : "The optional initial buy failed.";
+  if (/User rejected|User denied|rejected the request/i.test(details || fallback)) {
+    return "The optional initial buy was cancelled in your wallet.";
+  }
+  if (/Too little received|amountOutMinimum|price impact|slippage|SPL/i.test(details)) {
+    return "The price moved beyond the 10% protection limit, so the optional initial buy was not executed.";
+  }
+  if (isRpcCapacityError(error)) {
+    return "Arc RPC is busy. Check wallet activity before retrying because the optional initial buy may already have been submitted.";
+  }
+  if (isRetryableRpcError(error)) {
+    return "Arc RPC is temporarily unavailable. Check wallet activity or Arcscan before retrying the optional initial buy.";
+  }
+  return fallback;
+}
+
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -104,6 +186,70 @@ async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promi
     }
   }
   throw new Error("Arc RPC request failed after retries.");
+}
+
+async function readInitialBuyQuote(
+  client: PublicClient,
+  token: Address,
+  pool: Address,
+  input: bigint,
+): Promise<InitialBuyQuote> {
+  const quoteController = new AbortController();
+  const serverQuote = (async () => {
+    const response = await fetch(
+      `/api/onchain/quote?token=${encodeURIComponent(token)}&pool=${encodeURIComponent(pool)}&side=Buy&amount=${input}`,
+      { cache: "no-store", signal: quoteController.signal },
+    );
+    const payload = await response.json() as InitialBuyQuoteResponse;
+    if (!response.ok) throw new Error(payload.error || "The initial buy quote is unavailable.");
+    return payload;
+  })();
+  const directQuote = (async (): Promise<InitialBuyQuoteResponse> => {
+    await wait(350);
+    if (quoteController.signal.aborted) throw new Error("Direct initial buy quote cancelled.");
+    const { result } = await client.simulateContract({
+      address: ARC_UNISWAP_V3.quoter,
+      abi: uniswapV3QuoterAbi,
+      functionName: "quoteExactInputSingle",
+      args: [{
+        tokenIn: ARC_ACTIVE_CONTRACTS.usdc,
+        tokenOut: token,
+        amountIn: input,
+        fee: ARC_UNISWAP_V3.fee,
+        sqrtPriceLimitX96: 0n,
+      }],
+    });
+    return {
+      output: result[0].toString(),
+      spender: ARC_UNISWAP_V3.router,
+      pool,
+    };
+  })();
+
+  let payload: InitialBuyQuoteResponse;
+  try {
+    payload = await Promise.any([serverQuote, directQuote]);
+  } finally {
+    quoteController.abort();
+  }
+  if (!payload.output || !payload.spender || !payload.pool) {
+    throw new Error(payload.error || "The initial buy quote is incomplete.");
+  }
+  if (!isAddress(payload.spender)
+    || payload.spender.toLowerCase() !== ARC_UNISWAP_V3.router.toLowerCase()
+    || !isAddress(payload.pool)
+    || payload.pool.toLowerCase() !== pool.toLowerCase()) {
+    throw new Error("The initial buy quote did not return the canonical ArcOrigin market.");
+  }
+  const output = BigInt(payload.output);
+  if (output <= 0n) throw new Error("The initial buy quote returned zero tokens.");
+  return {
+    input,
+    output,
+    minimumOutput: output * (10_000n - INITIAL_BUY_SLIPPAGE_BPS) / 10_000n,
+    spender: payload.spender,
+    pool: payload.pool,
+  };
 }
 
 function gasWithSafetyMargin(estimate: bigint) {
@@ -270,7 +416,12 @@ export function LaunchForm() {
   const safeLaunch = connector?.id === "safe";
   const launchFeeAmount = Number(formatUnits(launchFee, 6));
   const launchFeeLabel = `${formatDisplayNumber(launchFeeAmount)} USDC`;
-  const canLaunch = identityValid && !imageProcessing;
+  const initialBuyAmount = parseInitialBuyUsdc(form.initialBuyUsdc);
+  const initialBuyValid = initialBuyAmount !== null;
+  const initialBuyLabel = initialBuyAmount && initialBuyAmount > 0n
+    ? `${formatUnits(initialBuyAmount, 6)} USDC`
+    : "None";
+  const canLaunch = identityValid && !imageProcessing && initialBuyValid;
   const isPending = status !== "idle";
 
   function update(key: keyof FormData, value: string) {
@@ -354,6 +505,172 @@ export function LaunchForm() {
     return uploaded;
   }
 
+  async function executeInitialBuy(
+    transactionClient: PublicClient,
+    creator: Address,
+    launched: LaunchResult,
+    input: bigint,
+    safeSdk?: SafeAppsSDK,
+  ) {
+    const [balance, allowance] = await Promise.all([
+      withRpcRetry(() => transactionClient.readContract({
+        address: ARC_ACTIVE_CONTRACTS.usdc,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [creator],
+      })),
+      withRpcRetry(() => transactionClient.readContract({
+        address: ARC_ACTIVE_CONTRACTS.usdc,
+        abi: erc20Abi,
+        functionName: "allowance",
+        args: [creator, ARC_UNISWAP_V3.router],
+      })),
+    ]);
+    if (balance < input) {
+      throw new Error(`The token launched, but the wallet no longer has ${formatUnits(input, 6)} USDC for the initial buy.`);
+    }
+
+    setStatus("quoting_initial_buy");
+    let quote = await readInitialBuyQuote(transactionClient, launched.token, launched.pool, input);
+    let buyHash: Hash;
+
+    if (safeSdk) {
+      const transactions = [];
+      if (allowance < input) {
+        transactions.push({
+          to: ARC_ACTIVE_CONTRACTS.usdc,
+          value: "0",
+          data: encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [ARC_UNISWAP_V3.router, input],
+          }),
+        });
+      }
+      transactions.push({
+        to: ARC_UNISWAP_V3.router,
+        value: "0",
+        data: encodeFunctionData({
+          abi: uniswapV3RouterAbi,
+          functionName: "exactInputSingle",
+          args: [{
+            tokenIn: ARC_ACTIVE_CONTRACTS.usdc,
+            tokenOut: launched.token,
+            fee: ARC_UNISWAP_V3.fee,
+            recipient: creator,
+            amountIn: quote.input,
+            amountOutMinimum: quote.minimumOutput,
+            sqrtPriceLimitX96: 0n,
+          }],
+        }),
+      });
+      setStatus("safe_initial_buy");
+      const proposal = await safeSdk.txs.send({ txs: transactions });
+      buyHash = await waitForSafeExecution(safeSdk, proposal.safeTxHash);
+    } else {
+      if (allowance < input) {
+        setStatus("approving_initial_buy");
+        const approvalArgs = [ARC_UNISWAP_V3.router, input] as const;
+        const approvalGas = gasWithSafetyMargin(await withRpcRetry(() => transactionClient.estimateContractGas({
+          account: creator,
+          address: ARC_ACTIVE_CONTRACTS.usdc,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: approvalArgs,
+        })));
+        const approvalFees = await transactionFees(transactionClient);
+        await ensureGasBalance(transactionClient, creator, approvalGas, approvalFees, input);
+        const approvalNonce = await withRpcRetry(() => transactionClient.getTransactionCount({
+          address: creator,
+          blockTag: "pending",
+        }));
+        const approvalHash = await writeContractAsync({
+          address: ARC_ACTIVE_CONTRACTS.usdc,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: approvalArgs,
+          gas: approvalGas,
+          nonce: approvalNonce,
+          ...approvalFees,
+        });
+        const approvalReceipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: approvalHash }));
+        if (approvalReceipt.status !== "success") throw new Error("Initial buy USDC approval reverted onchain.");
+        setStatus("quoting_initial_buy");
+        quote = await readInitialBuyQuote(transactionClient, launched.token, launched.pool, input);
+      }
+
+      const tradeArgs = [{
+        tokenIn: ARC_ACTIVE_CONTRACTS.usdc,
+        tokenOut: launched.token,
+        fee: ARC_UNISWAP_V3.fee,
+        recipient: creator,
+        amountIn: quote.input,
+        amountOutMinimum: quote.minimumOutput,
+        sqrtPriceLimitX96: 0n,
+      }] as const;
+      const tradeGas = gasWithSafetyMargin(await withRpcRetry(() => transactionClient.estimateContractGas({
+        account: creator,
+        address: ARC_UNISWAP_V3.router,
+        abi: uniswapV3RouterAbi,
+        functionName: "exactInputSingle",
+        args: tradeArgs,
+      })));
+      const tradeFees = await transactionFees(transactionClient);
+      await ensureGasBalance(transactionClient, creator, tradeGas, tradeFees, input);
+      const tradeNonce = await withRpcRetry(() => transactionClient.getTransactionCount({
+        address: creator,
+        blockTag: "pending",
+      }));
+      setStatus("buying_initial");
+      buyHash = await writeContractAsync({
+        address: ARC_UNISWAP_V3.router,
+        abi: uniswapV3RouterAbi,
+        functionName: "exactInputSingle",
+        args: tradeArgs,
+        gas: tradeGas,
+        nonce: tradeNonce,
+        ...tradeFees,
+      });
+    }
+
+    const receipt = await withRpcRetry(() => transactionClient.waitForTransactionReceipt({ hash: buyHash }));
+    if (receipt.status !== "success") throw new Error("The token launched, but the initial buy reverted onchain.");
+    let tokensBought: bigint | undefined;
+    for (const log of receipt.logs) {
+      if (log.address.toLowerCase() !== launched.pool.toLowerCase()) continue;
+      try {
+        const event = decodeEventLog({
+          abi: uniswapV3PoolAbi,
+          eventName: "Swap",
+          data: log.data,
+          topics: log.topics,
+        });
+        const tokenIsToken0 = launched.token.toLowerCase() < ARC_ACTIVE_CONTRACTS.usdc.toLowerCase();
+        const tokenDelta = tokenIsToken0 ? event.args.amount0 : event.args.amount1;
+        tokensBought = tokenDelta < 0n ? -tokenDelta : tokenDelta;
+        break;
+      } catch {
+        // Ignore non-Swap logs emitted by the pool transaction.
+      }
+    }
+    if (tokensBought) {
+      window.dispatchEvent(new CustomEvent("arcforge:trade-confirmed", {
+        detail: {
+          tokenAddress: launched.token,
+          transactionHash: buyHash,
+          side: "Buy",
+          wallet: creator,
+          blockNumber: receipt.blockNumber.toString(),
+          timestamp: Math.floor(Date.now() / 1_000),
+          usdc: Number(formatUnits(input, 6)),
+          fee: Number(formatUnits(input * BigInt(ARC_UNISWAP_V3.fee) / 1_000_000n, 6)),
+          tokens: Number(formatUnits(tokensBought, 18)),
+        },
+      }));
+    }
+    return { hash: buyHash, tokensBought };
+  }
+
   async function launch() {
     if (!isConnected || !address) {
       setError("Connect your wallet in the header before launching a token.");
@@ -386,8 +703,13 @@ export function LaunchForm() {
         functionName: "launchFee",
       }));
       setLaunchFee(currentLaunchFee);
-      if (balance < currentLaunchFee) {
-        throw new Error(`You have ${formatUnits(balance, 6)} USDC, but the launch requires ${formatUnits(currentLaunchFee, 6)} USDC.`);
+      const selectedInitialBuy = parseInitialBuyUsdc(form.initialBuyUsdc);
+      if (selectedInitialBuy === null) {
+        throw new Error("Initial buy must be between 0 and 100 USDC with no more than 6 decimal places.");
+      }
+      const requiredUsdc = currentLaunchFee + selectedInitialBuy;
+      if (balance < requiredUsdc) {
+        throw new Error(`You have ${formatUnits(balance, 6)} USDC, but the launch and selected initial buy require ${formatUnits(requiredUsdc, 6)} USDC before gas.`);
       }
 
       const metadata = await ensureMetadata(address);
@@ -404,11 +726,13 @@ export function LaunchForm() {
           automaticBuyback: form.automaticBuyback,
       };
       let launchHash: Hash;
+      let safeSdk: SafeAppsSDK | undefined;
       if (safeLaunch) {
         const safeContext = await getSafeAppContext();
         if (!safeContext || safeContext.safe.safeAddress.toLowerCase() !== address.toLowerCase()) {
           throw new Error("Open ArcOrigin as a custom app inside the connected Safe and retry.");
         }
+        safeSdk = safeContext.sdk;
         const transactions = [];
         if (allowance < currentLaunchFee) {
           transactions.push({
@@ -502,7 +826,6 @@ export function LaunchForm() {
         }
       }
       if (!launched) throw new Error("The launch succeeded, but its TokenLaunched event was not found.");
-      setResult(launched);
       window.localStorage.setItem(
         `arcorigin:${arcChain.id}:last-launch-confirmed-at`,
         String(Date.now()),
@@ -515,6 +838,31 @@ export function LaunchForm() {
         },
       }));
       void fetch("/api/onchain/tokens?refresh=1", { cache: "no-store" }).catch(() => undefined);
+      let completedLaunch = launched;
+      if (selectedInitialBuy > 0n) {
+        try {
+          const initialBuy = await executeInitialBuy(
+            transactionClient,
+            address,
+            launched,
+            selectedInitialBuy,
+            safeSdk,
+          );
+          completedLaunch = {
+            ...launched,
+            initialBuyHash: initialBuy.hash,
+            initialBuyUsdc: selectedInitialBuy,
+            initialBuyTokens: initialBuy.tokensBought,
+          };
+        } catch (initialBuyError) {
+          completedLaunch = {
+            ...launched,
+            initialBuyUsdc: selectedInitialBuy,
+            initialBuyError: initialBuyErrorMessage(initialBuyError),
+          };
+        }
+      }
+      setResult(completedLaunch);
     } catch (launchError) {
       setError(transactionError(launchError));
     } finally {
@@ -540,13 +888,24 @@ export function LaunchForm() {
       <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-cyan/10 text-cyan"><Rocket /></div>
       <p className="eyebrow mt-6">Onchain launch confirmed</p>
       <h2 className="mt-3 text-3xl font-semibold text-white">{form.name} · {tickerLabel(form.ticker.toUpperCase())}</h2>
-      <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">Your metadata is pinned to public IPFS, and the fixed-supply token is live in its permanently locked Uniswap V3 pool on {arcChain.name}.{form.automaticBuyback ? " Automatic buyback and burn is permanently enabled." : ""}</p>
+      <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-slate-400">Your metadata is pinned to public IPFS, and the fixed-supply token is live in its permanently locked Uniswap V3 pool on {arcChain.name}.{form.automaticBuyback ? " Automatic buyback and burn is permanently enabled." : ""}{result.initialBuyHash ? " The selected creator buy is also confirmed." : ""}</p>
       <dl className="mx-auto mt-6 grid max-w-lg gap-3 rounded-xl border border-line bg-black/25 p-4 text-left text-xs">
         <ResultRow label="Token" address={result.token} />
         <ResultRow label="Uniswap V3 pool" address={result.pool} />
         <ResultLink label="Metadata" href={result.metadataURL} value={result.metadataURI.slice(0, 22) + "…"} />
         <ResultLink label="Transaction" href={`${EXPLORER_URL}/tx/${result.hash}`} value={shortAddress(result.hash)} />
+        {result.initialBuyHash && <>
+          <ResultValue label="Creator buy" value={`${formatUnits(result.initialBuyUsdc ?? 0n, 6)} USDC`} />
+          {result.initialBuyTokens !== undefined && <ResultValue
+            label="Tokens received"
+            value={Number(formatUnits(result.initialBuyTokens, 18)).toLocaleString("en-US", { maximumFractionDigits: 2 })}
+          />}
+          <ResultLink label="Buy transaction" href={`${EXPLORER_URL}/tx/${result.initialBuyHash}`} value={shortAddress(result.initialBuyHash)} />
+        </>}
       </dl>
+      {result.initialBuyError && <div className="mx-auto mt-4 max-w-lg text-left">
+        <WarningBox>The token launch succeeded, but the optional initial buy was not executed: {result.initialBuyError} Open the token market to retry as a normal buy.</WarningBox>
+      </div>}
       <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
         <LinkButton href={`/tokens/${result.token}`}>Open token market</LinkButton>
         <Button variant="secondary" onClick={reset}>Create another</Button>
@@ -568,7 +927,15 @@ export function LaunchForm() {
             ? "Launching on Arc…"
             : status === "safe_confirming"
               ? "Confirm launch with Safe owners…"
-            : "Launch token";
+              : status === "quoting_initial_buy"
+                ? "Preparing initial buy…"
+                : status === "approving_initial_buy"
+                  ? `Approving ${initialBuyLabel}…`
+                  : status === "buying_initial"
+                    ? `Buying with ${initialBuyLabel}…`
+                    : status === "safe_initial_buy"
+                      ? "Confirm initial buy with Safe owners…"
+                      : "Launch token";
 
   return <form onSubmit={submit} className="overflow-hidden rounded-3xl border border-line bg-panel shadow-glow lg:grid lg:grid-cols-[minmax(0,1fr)_380px]">
     <div className="p-5 sm:p-8 lg:p-10">
@@ -600,6 +967,48 @@ export function LaunchForm() {
           </div>
         </div>
 
+        <section className="rounded-2xl border border-line bg-black/15 p-4">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <p className="text-sm font-semibold text-white">Initial creator buy <span className="font-normal text-slate-500">(optional)</span></p>
+              <p className="mt-1 max-w-xl text-xs leading-5 text-slate-400">After the token is live, buy from its canonical Uniswap V3 pool with the creator wallet. This is a separate protected transaction and appears transparently as a creator buy.</p>
+            </div>
+            <label className="shrink-0 sm:w-40">
+              <span className="sr-only">Initial creator buy in USDC</span>
+              <span className="relative block">
+                <input
+                  className="input pr-14 text-right font-mono"
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={form.initialBuyUsdc}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (value.length <= 10 && /^\d*(?:\.\d{0,6})?$/.test(value)) {
+                      setForm((current) => ({ ...current, initialBuyUsdc: value }));
+                    }
+                  }}
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-medium text-slate-500">USDC</span>
+              </span>
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setForm((current) => ({ ...current, initialBuyUsdc: "" }))}
+              className={`rounded-lg border px-3 py-1.5 text-xs transition ${!form.initialBuyUsdc ? "border-cyan/35 bg-cyan/[.08] text-cyan" : "border-line text-slate-400 hover:border-cyan/25 hover:text-white"}`}
+            >None</button>
+            {INITIAL_BUY_PRESETS.map((amount) => <button
+              key={amount}
+              type="button"
+              onClick={() => setForm((current) => ({ ...current, initialBuyUsdc: String(amount) }))}
+              className={`rounded-lg border px-3 py-1.5 text-xs transition ${form.initialBuyUsdc === String(amount) ? "border-cyan/35 bg-cyan/[.08] text-cyan" : "border-line text-slate-400 hover:border-cyan/25 hover:text-white"}`}
+            >{amount}</button>)}
+          </div>
+          {!initialBuyValid && <p className="mt-2 text-[11px] text-rose-300">Enter an amount from 0 to 100 USDC with no more than 6 decimal places.</p>}
+          <p className="mt-3 text-[11px] leading-5 text-slate-500">Maximum 100 USDC · 10% minimum-output protection · rejecting or failing this optional buy does not reverse the token launch.</p>
+        </section>
+
         <label className={`flex cursor-pointer gap-4 rounded-2xl border p-4 transition ${form.automaticBuyback ? "border-cyan/35 bg-cyan/[.06]" : "border-line bg-black/15 hover:border-cyan/20"}`}>
           <input
             type="checkbox"
@@ -616,8 +1025,9 @@ export function LaunchForm() {
           </span>
         </label>
 
-        <div className="grid overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-2">
+        <div className="grid overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-3">
           <PaymentSummary label="Launch fee" value={launchFeeLabel} />
+          <PaymentSummary label="Initial creator buy" value={initialBuyLabel} />
           <PaymentSummary label="Initial market cap" value="5,000 USDC" />
         </div>
 
@@ -647,6 +1057,7 @@ export function LaunchForm() {
           <dl className="mt-6 grid gap-3 border-t border-line pt-5 text-xs">
             <Row label="Supply" value="1 billion" />
             <Row label="Launch fee" value={launchFeeLabel} />
+            <Row label="Initial creator buy" value={initialBuyLabel} />
             <Row label="Trading fee" value={form.automaticBuyback ? "1% · 70% buyback / 30% protocol" : "1% · 70% creator / 30% protocol"} />
             <Row label="Auto buyback" value={form.automaticBuyback ? "Enabled forever" : "Off"} />
             <Row label="Crossed mark" value={`${formatDisplayNumber(ARCORIGIN_CROSS_MARKET_CAP_USDC)} USDC`} />
@@ -686,6 +1097,10 @@ function ResultRow({ label, address }: { label: string; address: Address }) {
 
 function ResultLink({ label, href, value }: { label: string; href: string; value: string }) {
   return <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">{label}</dt><dd><a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan hover:underline">{value}<ExternalLink className="size-3" /></a></dd></div>;
+}
+
+function ResultValue({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-center justify-between gap-4"><dt className="text-slate-500">{label}</dt><dd className="text-right text-slate-200">{value}</dd></div>;
 }
 
 function Field({ label, value, onChange, icon, ...props }: { label: string; value: string; onChange: (value: string) => void; icon?: React.ReactNode } & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
