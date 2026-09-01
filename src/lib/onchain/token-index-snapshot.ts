@@ -1,6 +1,6 @@
 import "server-only";
 
-import { formatUnits, isHash, type Address, type Hash } from "viem";
+import { decodeEventLog, formatUnits, isHash, parseAbiItem, type Address, type Hash } from "viem";
 import {
   ARCORIGIN_CROSS_MARKET_CAP_USDC,
   ARCORIGIN_NETWORK,
@@ -16,22 +16,23 @@ import {
 } from "@/lib/onchain/canonical-checkpoint";
 import { getFactoryLaunchIndex, type FactoryLaunch } from "@/lib/onchain/holder-snapshot";
 import { calculateRiskScore } from "@/lib/scoring";
-import { factoryAbi } from "@/lib/contracts";
 import { resolveTokenMetadata } from "@/lib/server/token-metadata-resolver";
 import { readPersistentSnapshot, writePersistentSnapshot } from "@/lib/server/persistent-cache";
+import { getStoredHolderBalances } from "@/lib/server/event-store";
 import { isRetryableRpcError } from "@/lib/rpc-errors";
 import type { CreatorProfile, TokenData } from "@/lib/types";
 
-const tokenConfigAbi = [
-  { type: "function", name: "totalSupply", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
-  { type: "function", name: "metadataURI", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
-] as const;
+const tokenInitializedEvent = parseAbiItem(
+  "event TokenInitialized(address indexed token, address indexed creator, uint256 totalSupply, string metadataURI)",
+);
+const automaticBuybackConfiguredEvent = parseAbiItem(
+  "event AutomaticBuybackConfigured(address indexed token, uint256 indexed positionId, bool enabled)",
+);
 const CACHE_TTL_MS = 30_000;
 const MIN_REFRESH_INTERVAL_MS = 10_000;
 const FORCE_REFRESH_INTERVAL_MS = 1_500;
 const REQUEST_WAIT_TIMEOUT_MS = 10_000;
 const PERSISTENT_CACHE_KEY = `arcorigin:${ARCORIGIN_NETWORK}:token-index:${ARC_ACTIVE_FACTORY.toLowerCase()}`;
-const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const TOKEN_INDEX_SCHEMA_VERSION = 2;
 
 type TokenIndexSnapshot = {
@@ -125,6 +126,59 @@ function iconFor(name: string, symbol: string) {
   return (initials || symbol.slice(0, 2) || "T").toUpperCase();
 }
 
+async function readLaunchInitialization(launch: FactoryLaunch) {
+  const receipt = await withRpcRetry(
+    () => publicClient.getTransactionReceipt({ hash: launch.transactionHash }),
+    2,
+  );
+  if (receipt.status !== "success") throw new Error("Indexed token launch did not succeed onchain.");
+  let initialized: { totalSupply: bigint; metadataURI: string } | null = null;
+  let automaticBuyback = launch.automaticBuyback ?? false;
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() === launch.token.toLowerCase()) {
+      try {
+        const event = decodeEventLog({
+          abi: [tokenInitializedEvent],
+          data: log.data,
+          topics: log.topics,
+        });
+        if (event.args.token.toLowerCase() !== launch.token.toLowerCase()
+          || event.args.creator.toLowerCase() !== launch.creator.toLowerCase()) continue;
+        initialized = {
+          totalSupply: event.args.totalSupply,
+          metadataURI: event.args.metadataURI,
+        };
+      } catch {
+        // The token also emits standard ERC-20 logs in its launch receipt.
+      }
+    }
+    if (log.address.toLowerCase() === launch.factory.toLowerCase()) {
+      try {
+        const event = decodeEventLog({
+          abi: [automaticBuybackConfiguredEvent],
+          data: log.data,
+          topics: log.topics,
+        });
+        if (event.args.token.toLowerCase() === launch.token.toLowerCase()) {
+          automaticBuyback = event.args.enabled;
+        }
+      } catch {
+        // Ignore other Factory events from the launch transaction.
+      }
+    }
+  }
+  if (!initialized || initialized.totalSupply <= 0n || !initialized.metadataURI) {
+    throw new Error("TokenInitialized was not found in the confirmed launch receipt.");
+  }
+  const storedBalances = await getStoredHolderBalances(launch.token);
+  const indexedSupply = storedBalances?.balances.reduce((sum, holder) => sum + holder.balance, 0n) ?? 0n;
+  return {
+    totalSupplyRaw: indexedSupply > 0n ? indexedSupply : initialized.totalSupply,
+    metadataURI: initialized.metadataURI,
+    automaticBuyback,
+  };
+}
+
 async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
   const cacheKey = launch.token.toLowerCase();
   const cached = state.hydratedTokens.get(cacheKey);
@@ -147,18 +201,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     return refreshed;
   }
 
-  const [totalSupplyRaw, metadataURI, tokenInfo] = await withRpcRetry(() => publicClient.multicall({
-    allowFailure: false,
-    multicallAddress: MULTICALL3_ADDRESS,
-    contracts: [
-      { address: launch.token, abi: tokenConfigAbi, functionName: "totalSupply" },
-      { address: launch.token, abi: tokenConfigAbi, functionName: "metadataURI" },
-      { address: launch.factory, abi: factoryAbi, functionName: "getTokenInfo", args: [launch.token] },
-    ],
-  }));
-  if (tokenInfo.token.toLowerCase() !== launch.token.toLowerCase() || tokenInfo.pool.toLowerCase() !== launch.pool.toLowerCase()) {
-    throw new Error("Factory token record does not match the indexed launch.");
-  }
+  const { totalSupplyRaw, metadataURI, automaticBuyback } = await readLaunchInitialization(launch);
   const metadata = await resolveTokenMetadata(metadataURI);
   const totalSupply = Number(formatUnits(totalSupplyRaw, 18));
   if (totalSupply <= 0) throw new Error("Factory token supply is invalid.");
@@ -195,7 +238,7 @@ async function hydrateLaunch(launch: FactoryLaunch, creatorLaunches: number) {
     poolAddress: launch.pool,
     positionId: launch.positionId.toString(),
     factoryAddress: launch.factory,
-    automaticBuyback: tokenInfo.automaticBuyback,
+    automaticBuyback,
     creator: launch.creator,
     source: "onchain",
     creatorAllocationPercent: 0,

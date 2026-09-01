@@ -47,6 +47,7 @@ export type FactoryLaunch = {
   launchBlock: bigint;
   launchedAt: number;
   transactionHash: Hash;
+  automaticBuyback?: boolean;
 };
 
 export type HolderSnapshot = {

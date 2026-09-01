@@ -130,7 +130,7 @@ export async function getStoredFactoryLaunchIndex(): Promise<{
       queryCheckpoint(pool),
       pool.query(`
         SELECT factory_address, token_address, pool_address, creator_address, position_id,
-               name, symbol, launch_block, launch_timestamp, transaction_hash
+               name, symbol, automatic_buyback, launch_block, launch_timestamp, transaction_hash
           FROM arc_markets
          ORDER BY launch_block ASC
       `),
@@ -154,6 +154,7 @@ export async function getStoredFactoryLaunchIndex(): Promise<{
         launchBlock: BigInt(row.launch_block),
         launchedAt: Number(row.launch_timestamp),
         transactionHash: row.transaction_hash,
+        automaticBuyback: Boolean(row.automatic_buyback),
       });
     }
     return { launches, checkpoint };
