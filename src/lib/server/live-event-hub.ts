@@ -1,6 +1,8 @@
 import "server-only";
 
 import { createClient } from "redis";
+import { isLiveIndexerEvent } from "@/lib/indexer/live-event";
+import { invalidateSnapshotsForLiveEvent } from "@/lib/server/live-snapshot-invalidation";
 
 const EVENT_CHANNEL = "arcorigin:mainnet:events";
 const STATUS_CHANNEL = "arcorigin:mainnet:indexer-status";
@@ -12,6 +14,7 @@ type Listener = (payload: string) => void;
 type RedisClientHandle = Pick<ReturnType<typeof createClient>, "isOpen" | "disconnect">;
 type LiveEventHubState = {
   client: RedisClientHandle | null;
+  subscriber: RedisClientHandle | null;
   connecting: Promise<void> | null;
   listeners: Set<Listener>;
   recent: string[];
@@ -24,15 +27,17 @@ declare global {
 
 const state = globalThis.__arcOriginLiveEventHub ?? {
   client: null,
+  subscriber: null,
   connecting: null,
   listeners: new Set<Listener>(),
   recent: [],
   status: null,
 };
+state.subscriber ??= null;
 globalThis.__arcOriginLiveEventHub = state;
 
 async function connectHub() {
-  if (state.client?.isOpen) return;
+  if (state.client?.isOpen && state.subscriber?.isOpen) return;
   if (!state.connecting) {
     state.connecting = (async () => {
       const redisUrl = process.env.REDIS_URL?.trim();
@@ -45,24 +50,38 @@ async function connectHub() {
         },
       });
       client.on("error", () => undefined);
+      const subscriber = client.duplicate();
+      subscriber.on("error", () => undefined);
       await client.connect();
+      await subscriber.connect();
       state.client = client;
+      state.subscriber = subscriber;
+      await subscriber.subscribe(EVENT_CHANNEL, (payload) => {
+        try {
+          const event: unknown = JSON.parse(payload);
+          if (isLiveIndexerEvent(event)) invalidateSnapshotsForLiveEvent(event);
+        } catch {
+          // Invalid pub/sub data is ignored by both cache invalidation and clients.
+        }
+        state.recent = [payload, ...state.recent.filter((item) => item !== payload)].slice(0, REPLAY_LIMIT);
+        for (const listener of state.listeners) listener(payload);
+      });
+      await subscriber.subscribe(STATUS_CHANNEL, (payload) => {
+        state.status = payload;
+      });
+      // Subscribe before the initial read so an event published during startup
+      // is observed either by pub/sub, the recent-event list, or both.
       const [recent, status] = await Promise.all([
         client.lRange(RECENT_EVENTS_KEY, 0, REPLAY_LIMIT - 1),
         client.get(STATUS_KEY),
       ]);
-      state.recent = recent;
-      state.status = status;
-      await client.subscribe(EVENT_CHANNEL, (payload) => {
-        state.recent = [payload, ...state.recent.filter((item) => item !== payload)].slice(0, REPLAY_LIMIT);
-        for (const listener of state.listeners) listener(payload);
-      });
-      await client.subscribe(STATUS_CHANNEL, (payload) => {
-        state.status = payload;
-      });
+      state.recent = [...new Set([...recent, ...state.recent])].slice(0, REPLAY_LIMIT);
+      state.status = status ?? state.status;
     })().catch((error) => {
       state.client?.disconnect();
+      state.subscriber?.disconnect();
       state.client = null;
+      state.subscriber = null;
       throw error;
     }).finally(() => {
       state.connecting = null;

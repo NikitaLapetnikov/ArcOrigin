@@ -1,6 +1,6 @@
 import "server-only";
 
-import { decodeEventLog, formatUnits, parseAbiItem, toEventSelector, type Address, type Hash } from "viem";
+import { decodeEventLog, formatUnits, isHash, parseAbiItem, toEventSelector, type Address, type Hash } from "viem";
 import {
   ARCORIGIN_NETWORK,
   ARC_ACTIVE_FACTORY,
@@ -362,12 +362,29 @@ function percentOf(part: bigint, total: bigint) {
 }
 
 async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint): Promise<HolderSnapshot> {
-  const verified = hint
-    ? await verifyLaunchHint(tokenAddress, hint)
-    : await getVerifiedFactoryLaunch(tokenAddress);
+  const [storedLaunch, storedBalances] = await Promise.all([
+    getStoredFactoryLaunch(tokenAddress),
+    getStoredHolderBalances(tokenAddress),
+  ]);
+  let verified: { launch: FactoryLaunch; indexedBlock: bigint };
+  if (storedLaunch) {
+    const { launch } = storedLaunch;
+    if (hint && (
+      launch.factory.toLowerCase() !== hint.factory.toLowerCase()
+      || launch.pool.toLowerCase() !== hint.pool.toLowerCase()
+      || launch.creator.toLowerCase() !== hint.creator.toLowerCase()
+      || launch.launchBlock !== hint.launchBlock
+    )) {
+      throw new FactoryTokenNotFoundError("The supplied launch details do not match the indexed ArcOrigin market.");
+    }
+    verified = { launch, indexedBlock: BigInt(storedLaunch.checkpoint.indexedBlock) };
+  } else {
+    verified = hint
+      ? await verifyLaunchHint(tokenAddress, hint)
+      : await getVerifiedFactoryLaunch(tokenAddress);
+  }
   const { launch } = verified;
   let indexedBlock = verified.indexedBlock;
-  const storedBalances = await getStoredHolderBalances(tokenAddress);
 
   const balances = new Map<string, bigint>();
   const seenTransfers = new Set<string>();
@@ -535,6 +552,13 @@ export async function getCachedHolderSnapshot(tokenAddress: Address) {
   return loadPersistedHolderSnapshot(tokenAddress);
 }
 
+export function invalidateHolderSnapshot(tokenAddress: string) {
+  const cache = state.tokenCaches.get(`${ARCORIGIN_NETWORK}:${tokenAddress.toLowerCase()}`);
+  if (!cache) return;
+  cache.cachedAt = 0;
+  cache.lastAttemptAt = 0;
+}
+
 export async function prewarmHolderSnapshots(tokenAddresses: Address[]) {
   const uniqueAddresses = [...new Set(tokenAddresses.map((address) => address.toLowerCase()))]
     .slice(0, MAX_PREWARM_TOKENS) as Address[];
@@ -551,26 +575,27 @@ export async function getHolderSnapshot(tokenAddress: Address, forceRefresh = fa
       persisted = upgraded;
       void writePersistentSnapshot(persistentKey, upgraded);
     }
-    const checkpointStatus = persisted
-      ? await getCanonicalCheckpointStatus(persisted, readCanonicalBlock)
-      : "invalid";
     if (
       isUsableHolderSnapshot(persisted)
-      && (checkpointStatus === "canonical" || checkpointStatus === "unavailable")
+      && typeof persisted.indexedBlockHash === "string"
+      && isHash(persisted.indexedBlockHash)
     ) {
       cache.snapshot = persisted;
       cache.cachedAt = Date.parse(persisted.generatedAt) || 0;
-      cache.canonicalCheckedAt = Date.now();
+      cache.canonicalCheckedAt = 0;
     }
   }
   const now = Date.now();
   if (cache.snapshot && now - cache.canonicalCheckedAt >= MIN_REFRESH_INTERVAL_MS) {
-    const checkpointStatus = await getCanonicalCheckpointStatus(cache.snapshot, readCanonicalBlock);
+    const snapshotToCheck = cache.snapshot;
     cache.canonicalCheckedAt = now;
-    if (checkpointStatus === "orphaned" || checkpointStatus === "invalid") {
-      cache.snapshot = null;
-      cache.cachedAt = 0;
-    }
+    void getCanonicalCheckpointStatus(snapshotToCheck, readCanonicalBlock).then((checkpointStatus) => {
+      if (cache.snapshot !== snapshotToCheck) return;
+      if (checkpointStatus === "orphaned" || checkpointStatus === "invalid") {
+        cache.snapshot = null;
+        cache.cachedAt = 0;
+      }
+    });
   }
   const isFresh = cache.snapshot && now - cache.cachedAt < HOLDER_CACHE_TTL_MS;
   const refreshThrottled = cache.snapshot

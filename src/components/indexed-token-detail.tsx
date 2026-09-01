@@ -15,17 +15,20 @@ import { useHolderSnapshot } from "@/hooks/use-holder-snapshot";
 import { EXPLORER_URL } from "@/lib/chains";
 import type { BuybackSnapshot } from "@/lib/onchain/buyback-snapshot";
 import type { HolderSnapshot } from "@/lib/onchain/holder-snapshot";
+import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import type { TokenData } from "@/lib/types";
 import { number, shortAddress, tickerLabel, utcDateTime } from "@/lib/utils";
 
 export function IndexedTokenDetail({
   address,
   initialToken,
+  initialMarketSnapshot,
   initialHolderSnapshot,
   initialBuybackSnapshot,
 }: {
   address: string;
   initialToken: TokenData | null;
+  initialMarketSnapshot: MarketSnapshot | null;
   initialHolderSnapshot: HolderSnapshot | null;
   initialBuybackSnapshot: BuybackSnapshot | null;
 }) {
@@ -117,6 +120,7 @@ export function IndexedTokenDetail({
 
     <OnchainTokenDashboard
       token={token}
+      initialMarketSnapshot={initialMarketSnapshot}
       initialHolderSnapshot={initialHolderSnapshot}
       rightRail={<>
         <BuySellPanel token={token} />

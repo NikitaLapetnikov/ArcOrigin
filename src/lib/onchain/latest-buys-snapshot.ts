@@ -43,6 +43,11 @@ const publicClient = createArcPublicClient(
   8_000,
 );
 
+export function invalidateLatestBuysSnapshot() {
+  state.cachedAt = 0;
+  state.lastAttemptAt = 0;
+}
+
 function readCanonicalBlock(blockNumber: bigint) {
   return publicClient.getBlock({ blockNumber });
 }

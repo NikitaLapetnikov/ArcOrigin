@@ -33,6 +33,7 @@ type ConfirmedTrade = {
   usdc: number;
   fee: number;
   tokens: number;
+  executionPrice?: number;
 };
 
 function isAddress(value: unknown): value is string {
@@ -88,7 +89,9 @@ function isConfirmedTrade(value: unknown): value is ConfirmedTrade {
     && trade.fee >= 0
     && typeof trade.tokens === "number"
     && Number.isFinite(trade.tokens)
-    && trade.tokens > 0;
+    && trade.tokens > 0
+    && (trade.executionPrice === undefined
+      || (Number.isFinite(trade.executionPrice) && trade.executionPrice > 0));
 }
 
 function readPendingTrades() {
@@ -129,7 +132,7 @@ function mergeConfirmedTrade(token: TokenData, confirmed: ConfirmedTrade): Token
     wallet: confirmed.wallet,
     usdc: confirmed.usdc,
     tokens: confirmed.tokens,
-    price: confirmed.usdc / confirmed.tokens,
+    price: confirmed.executionPrice ?? confirmed.usdc / confirmed.tokens,
     txHash: confirmed.transactionHash,
   };
   const isWithin24Hours = confirmed.timestamp >= Math.floor(Date.now() / 1_000) - 24 * 60 * 60;
@@ -417,7 +420,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
     }
     void refresh(forceInitialRefresh);
     const handleLaunch = () => void refresh(true);
-    const reconciliationTimers: ReturnType<typeof setTimeout>[] = [];
+    const reconciliationTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const reconcileToken = async (tokenAddress: string) => {
       if (!includeMarketData) return;
       try {
@@ -433,6 +436,15 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         // Keep the confirmed optimistic trade visible until the index catches up.
       }
     };
+    const scheduleReconciliation = (tokenAddress: string) => {
+      const key = tokenAddress.toLowerCase();
+      const existing = reconciliationTimers.get(key);
+      if (existing) clearTimeout(existing);
+      reconciliationTimers.set(key, setTimeout(() => {
+        reconciliationTimers.delete(key);
+        void reconcileToken(tokenAddress);
+      }, 750));
+    };
     const handleTrade = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail;
       if (!isConfirmedTrade(detail)) return;
@@ -443,9 +455,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
           if (allowCache && readCachedIndex()) setCachedAt(writeCachedIndex(next));
           return next;
         });
-        for (const delay of [1_500, 5_000, 12_000]) {
-          reconciliationTimers.push(setTimeout(() => void reconcileToken(detail.tokenAddress), delay));
-        }
+        scheduleReconciliation(detail.tokenAddress);
       }
     };
     const handleStorage = (event: StorageEvent) => {
@@ -453,7 +463,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       const pendingTrades = readPendingTrades();
       setTokens((current) => mergePendingTrades(current));
       const latestTrade = pendingTrades[0];
-      if (latestTrade) void reconcileToken(latestTrade.tokenAddress);
+      if (latestTrade) scheduleReconciliation(latestTrade.tokenAddress);
     };
     window.addEventListener("arcforge:launch-confirmed", handleLaunch);
     window.addEventListener("arcforge:trade-confirmed", handleTrade);
@@ -463,6 +473,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       window.removeEventListener("arcforge:trade-confirmed", handleTrade);
       window.removeEventListener("storage", handleStorage);
       reconciliationTimers.forEach(clearTimeout);
+      reconciliationTimers.clear();
     };
   }, [allowCache, includeMarketData, refresh]);
 

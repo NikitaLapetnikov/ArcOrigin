@@ -19,7 +19,16 @@ function connectors() {
 function rpcTransport(urls: readonly string[]) {
   return fallback(
     urls.map((url) => http(url, { retryCount: 0, timeout: 8_000 })),
-    { rank: false, retryCount: 0 },
+    {
+      rank: {
+        interval: 15_000,
+        sampleCount: 6,
+        timeout: 1_200,
+        weights: { latency: 0.35, stability: 0.65 },
+        ping: ({ transport }) => transport.request({ method: "eth_blockNumber" }),
+      },
+      retryCount: 0,
+    },
   );
 }
 

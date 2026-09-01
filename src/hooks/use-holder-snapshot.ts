@@ -12,7 +12,7 @@ const STORAGE_TTL_MS = 24 * 60 * 60 * 1_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 type HolderSnapshotResult = { snapshot: HolderSnapshot; stale: boolean };
 const pendingRequests = new Map<string, Promise<HolderSnapshotResult>>();
-const HOLDER_REFRESH_DELAYS_MS = [1_500, 5_000, 12_000] as const;
+const HOLDER_RECONCILIATION_DELAY_MS = 1_500;
 const HOLDER_POLL_INTERVAL_MS = 30_000;
 
 type CachedHolderSnapshot = {
@@ -250,8 +250,11 @@ export function useHolderSnapshot(
 
   useEffect(() => {
     if (!token || !address) return;
-    const retryTimers: Array<ReturnType<typeof setTimeout>> = [];
-    let holderEventTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconciliationTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleReconciliation = (delay: number) => {
+      if (reconciliationTimer) clearTimeout(reconciliationTimer);
+      reconciliationTimer = setTimeout(() => void refresh(true, true), delay);
+    };
     const handleTrade = (event: Event) => {
       const detail = (event as CustomEvent<{
         tokenAddress?: string;
@@ -274,23 +277,19 @@ export function useHolderSnapshot(
         tokens,
         blockNumber: detail.blockNumber,
       }) : current);
-      for (const delay of HOLDER_REFRESH_DELAYS_MS) {
-        retryTimers.push(setTimeout(() => void refresh(true), delay));
-      }
+      scheduleReconciliation(HOLDER_RECONCILIATION_DELAY_MS);
     };
     const handleHolderEvent = (event: Event) => {
       const detail = (event as CustomEvent<{ tokenAddress?: string }>).detail;
       if (detail?.tokenAddress?.toLowerCase() !== address.toLowerCase()) return;
-      if (holderEventTimer) clearTimeout(holderEventTimer);
-      holderEventTimer = setTimeout(() => void refresh(true, true), 350);
+      scheduleReconciliation(500);
     };
     window.addEventListener("arcforge:trade-confirmed", handleTrade);
     window.addEventListener("arcorigin:holder-event", handleHolderEvent);
     return () => {
       window.removeEventListener("arcforge:trade-confirmed", handleTrade);
       window.removeEventListener("arcorigin:holder-event", handleHolderEvent);
-      if (holderEventTimer) clearTimeout(holderEventTimer);
-      retryTimers.forEach(clearTimeout);
+      if (reconciliationTimer) clearTimeout(reconciliationTimer);
     };
   }, [address, refresh, token]);
 

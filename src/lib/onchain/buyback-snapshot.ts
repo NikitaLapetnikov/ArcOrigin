@@ -140,6 +140,11 @@ export async function getCachedBuybackSnapshot(tokenAddress: Address) {
   return persisted;
 }
 
+export function invalidateBuybackSnapshot(tokenAddress: string) {
+  const cached = state.cache.get(tokenAddress.toLowerCase());
+  if (cached) cached.cachedAt = 0;
+}
+
 type IndexedBuybackEvent = {
   txHash: Hash;
   blockNumber: bigint;

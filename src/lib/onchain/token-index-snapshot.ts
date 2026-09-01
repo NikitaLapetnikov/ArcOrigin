@@ -330,6 +330,11 @@ export function isTokenIndexRpcError(error: unknown) {
   return isRetryableRpcError(error);
 }
 
+export function invalidateTokenIndexSnapshot() {
+  state.cachedAt = 0;
+  state.lastAttemptAt = 0;
+}
+
 export async function getTokenIndexCacheStatus() {
   let snapshot = state.snapshot ?? await readPersistentSnapshot<TokenIndexSnapshot>(PERSISTENT_CACHE_KEY);
   const upgraded = await upgradeLegacyCanonicalCheckpoint(snapshot, readCanonicalBlock);

@@ -161,17 +161,23 @@ export function ProfileDashboard({ profileAddress }: { profileAddress?: Address 
     setIndexedBalances(null);
     if (!address) return;
     void refreshIndexedBalances();
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     const handleHolderChange = (event: Event) => {
       const detail = (event as CustomEvent<{ from?: unknown; to?: unknown }>).detail;
       const normalized = address.toLowerCase();
       if (typeof detail?.from === "string" && detail.from.toLowerCase() === normalized) {
-        void refreshIndexedBalances();
+        if (refreshTimer) clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => void refreshIndexedBalances(), 400);
       } else if (typeof detail?.to === "string" && detail.to.toLowerCase() === normalized) {
-        void refreshIndexedBalances();
+        if (refreshTimer) clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => void refreshIndexedBalances(), 400);
       }
     };
     window.addEventListener("arcorigin:holder-event", handleHolderChange);
-    return () => window.removeEventListener("arcorigin:holder-event", handleHolderChange);
+    return () => {
+      window.removeEventListener("arcorigin:holder-event", handleHolderChange);
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
   }, [address, refreshIndexedBalances]);
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { subscribeLiveEvents } from "@/lib/server/live-event-hub";
+import { replayPayloadsAfter } from "@/lib/indexer/live-event";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -69,7 +70,11 @@ export async function GET(request: Request) {
     });
     unsubscribe = subscription.unsubscribe;
     if (subscription.status) enqueue(sseFrame("indexer-status", subscription.status));
-    for (const payload of subscription.recent.reverse()) {
+    const replay = replayPayloadsAfter(
+      subscription.recent,
+      request.headers.get("last-event-id"),
+    );
+    for (const payload of replay) {
       enqueue(sseFrame("arc-event", payload, eventId(payload)));
     }
     return new Response(stream, {

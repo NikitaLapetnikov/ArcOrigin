@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, getAddress, http, isAddress, maxUint256, zeroAddress } from "viem";
 import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { factoryAbi, uniswapV3FactoryAbi, uniswapV3QuoterAbi } from "@/lib/contracts";
-import { arcRpcUrls, createArcPublicClient } from "@/lib/onchain/arc-rpc";
+import { arcQuoteRpcUrls, createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getCachedTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
 import { isRpcCapacityError } from "@/lib/rpc-errors";
+import { getStoredFactoryLaunch } from "@/lib/server/event-store";
 import { requestClientKey } from "@/lib/server/request-security";
 
 export const dynamic = "force-dynamic";
@@ -18,20 +19,21 @@ type QuotePayload = {
   venue: "uniswap-v3";
   spender: string;
   pool: string;
+  quotedAt: number;
 };
 
-const QUOTE_CACHE_TTL_MS = 1_500;
+const QUOTE_CACHE_TTL_MS = 4_500;
 const MAX_QUOTE_CACHE_ENTRIES = 256;
 const MAX_PENDING_QUOTES = 256;
 const QUOTE_RATE_WINDOW_MS = 60_000;
 const MAX_QUOTES_PER_WINDOW = 120;
 const QUOTE_RPC_TIMEOUT_MS = 8_000;
-const QUOTE_RPC_HEDGE_DELAY_MS = 500;
+const QUOTE_RPC_HEDGE_DELAY_MS = 100;
 const quoteCache = new Map<string, { expiresAt: number; payload: QuotePayload }>();
 const pendingQuotes = new Map<string, Promise<QuotePayload>>();
 const quoteRates = new Map<string, { startedAt: number; count: number }>();
 const verifiedMarkets = new Set<string>();
-const quoteClients = arcRpcUrls(process.env.ARC_MAINNET_RPC_URL).map((url) => createPublicClient({
+const quoteClients = arcQuoteRpcUrls(process.env.ARC_MAINNET_RPC_URL).map((url) => createPublicClient({
   chain: arcChain,
   transport: http(url, { retryCount: 0, timeout: QUOTE_RPC_TIMEOUT_MS }),
 }));
@@ -101,7 +103,10 @@ function consumeQuoteRate(clientKey: string) {
 }
 
 async function readVerifiedQuote(token: `0x${string}`, pool: `0x${string}`, side: QuoteSide, amount: bigint): Promise<QuotePayload> {
-  const index = await getCachedTokenIndexSnapshot();
+  const [index, storedMarket] = await Promise.all([
+    getCachedTokenIndexSnapshot(),
+    getStoredFactoryLaunch(token),
+  ]);
   const indexedToken = index?.tokens.find((candidate) => candidate.address.toLowerCase() === token.toLowerCase());
   const marketKey = `${token.toLowerCase()}:${pool.toLowerCase()}`;
   const tokenIn = side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token;
@@ -114,7 +119,9 @@ async function readVerifiedQuote(token: `0x${string}`, pool: `0x${string}`, side
   }));
   let canonicalPool = pool;
   let quoteResult: Awaited<typeof quotePromise>;
-  if (indexedToken?.poolAddress?.toLowerCase() !== pool.toLowerCase() && !verifiedMarkets.has(marketKey)) {
+  const indexedPoolMatches = indexedToken?.poolAddress?.toLowerCase() === pool.toLowerCase();
+  const storedPoolMatches = storedMarket?.launch.pool.toLowerCase() === pool.toLowerCase();
+  if (!indexedPoolMatches && !storedPoolMatches && !verifiedMarkets.has(marketKey)) {
     const [tokenInfo, verifiedPool, result] = await Promise.all([
       validationClient.readContract({
         address: ARC_ACTIVE_CONTRACTS.factory,
@@ -150,6 +157,7 @@ async function readVerifiedQuote(token: `0x${string}`, pool: `0x${string}`, side
     venue: "uniswap-v3",
     spender: ARC_UNISWAP_V3.router,
     pool: canonicalPool,
+    quotedAt: Date.now(),
   };
 }
 

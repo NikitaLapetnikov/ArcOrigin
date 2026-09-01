@@ -3,6 +3,7 @@ import "server-only";
 import { isAddress, type Address } from "viem";
 import {
   ARC_ACTIVE_CONTRACTS,
+  ARC_MULTICALL3_ADDRESS,
   ARCORIGIN_NETWORK,
   arcChain,
 } from "@/lib/chains";
@@ -34,9 +35,8 @@ const healthClient = createArcPublicClient(
   3_000,
   0,
 );
-const HEALTH_CACHE_TTL_MS = 10_000;
+const HEALTH_CACHE_TTL_MS = 30_000;
 const DEFAULT_INDEXER_MAX_BLOCK_LAG = 300n;
-const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 function indexerMaxBlockLag() {
   const value = process.env.INDEXER_MAX_BLOCK_LAG?.trim();
@@ -97,7 +97,7 @@ async function loadProductionHealth() {
       settleRpc(() => healthClient.getBytecode({ address: ARC_ACTIVE_CONTRACTS.factory })),
       settleRpc(() => healthClient.multicall({
         allowFailure: false,
-        multicallAddress: MULTICALL3_ADDRESS,
+        multicallAddress: ARC_MULTICALL3_ADDRESS,
         contracts: [
           {
             address: ARC_ACTIVE_CONTRACTS.factory,
@@ -236,6 +236,11 @@ export async function getProductionHealth() {
       .finally(() => {
         healthState.pending = null;
       });
+  }
+  if (healthState.snapshot) {
+    // Health probes must never amplify a degraded public RPC. Return the last
+    // complete result immediately while a single background check refreshes it.
+    return healthState.snapshot;
   }
   return healthState.pending;
 }

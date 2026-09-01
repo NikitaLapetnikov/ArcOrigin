@@ -56,9 +56,12 @@ function numericBlock(value: string) {
   return /^\d+$/.test(value) ? BigInt(value) : null;
 }
 
-export function useOnchainTokenSnapshot(token: TokenData) {
-  const [snapshot, setSnapshot] = useState<OnchainTokenSnapshot>(() => createIndexedFallback(token));
-  const [loading, setLoading] = useState(true);
+export function useOnchainTokenSnapshot(
+  token: TokenData,
+  initialSnapshot: OnchainTokenSnapshot | null = null,
+) {
+  const [snapshot, setSnapshot] = useState<OnchainTokenSnapshot>(() => initialSnapshot ?? createIndexedFallback(token));
+  const [loading, setLoading] = useState(!initialSnapshot);
   const [error, setError] = useState("");
   const [stale, setStale] = useState(false);
   const pendingTradeHashes = useRef(new Set<string>());
@@ -139,7 +142,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
 
   useEffect(() => {
     void refresh();
-    const retryTimers: Array<ReturnType<typeof setTimeout>> = [];
+    let reconciliationTimer: ReturnType<typeof setTimeout> | undefined;
     const handleTrade = (event: Event) => {
       const detail = (event as CustomEvent<{
         tokenAddress?: string;
@@ -151,6 +154,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
         usdc?: number;
         fee?: number;
         tokens?: number;
+        executionPrice?: number;
       }>).detail;
       if (detail?.tokenAddress?.toLowerCase() !== token.address.toLowerCase()
         || !detail.transactionHash
@@ -168,7 +172,11 @@ export function useOnchainTokenSnapshot(token: TokenData) {
       setSnapshot((current) => {
         if (current.trades.some((trade) => trade.txHash.toLowerCase() === hash)) return current;
         const timestamp = detail.timestamp ?? Math.floor(Date.now() / 1_000);
-        const price = usdc / tokens;
+        const price = typeof detail.executionPrice === "number"
+          && Number.isFinite(detail.executionPrice)
+          && detail.executionPrice > 0
+          ? detail.executionPrice
+          : usdc / tokens;
         const totalSupply = token.totalSupply ?? 1_000_000_000;
         const marketCap = price * totalSupply;
         const trade: Trade = {
@@ -199,14 +207,13 @@ export function useOnchainTokenSnapshot(token: TokenData) {
             generatedAt: new Date().toISOString(),
         };
       });
-      for (const delay of [1_500, 5_000, 12_000]) {
-        retryTimers.push(setTimeout(() => void refresh(true), delay));
-      }
+      if (reconciliationTimer) clearTimeout(reconciliationTimer);
+      reconciliationTimer = setTimeout(() => void refresh(true, true), 750);
     };
     window.addEventListener("arcforge:trade-confirmed", handleTrade);
     return () => {
       window.removeEventListener("arcforge:trade-confirmed", handleTrade);
-      retryTimers.forEach(clearTimeout);
+      if (reconciliationTimer) clearTimeout(reconciliationTimer);
     };
   }, [refresh, token.address, token.price, token.totalSupply]);
 
@@ -215,14 +222,16 @@ export function useOnchainTokenSnapshot(token: TokenData) {
 
 export function OnchainTokenDashboard({
   token,
+  initialMarketSnapshot,
   initialHolderSnapshot,
   rightRail,
 }: {
   token: TokenData;
+  initialMarketSnapshot?: MarketSnapshot | null;
   initialHolderSnapshot?: HolderSnapshot | null;
   rightRail?: React.ReactNode;
 }) {
-  const { snapshot, loading, error, stale, refresh } = useOnchainTokenSnapshot(token);
+  const { snapshot, loading, error, stale, refresh } = useOnchainTokenSnapshot(token, initialMarketSnapshot ?? null);
   const [activeTab, setActiveTab] = useState<TerminalTab>("Trades");
   const { address } = useAccount();
   const {

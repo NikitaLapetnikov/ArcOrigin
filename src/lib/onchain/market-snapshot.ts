@@ -317,9 +317,47 @@ function getTokenCache(tokenAddress: Address) {
   return entry;
 }
 
+function marketPersistentKey(tokenAddress: Address) {
+  return `arcorigin:${ARCORIGIN_NETWORK}:market:${ARC_ACTIVE_FACTORY.toLowerCase()}:${tokenAddress.toLowerCase()}`;
+}
+
+function isUsableMarketSnapshot(snapshot: MarketSnapshot | null): snapshot is MarketSnapshot {
+  return Boolean(
+    snapshot
+    && Number.isFinite(snapshot.price)
+    && Number.isFinite(snapshot.marketCap)
+    && Array.isArray(snapshot.chart)
+    && Array.isArray(snapshot.trades)
+    && typeof snapshot.indexedBlock === "string"
+    && typeof snapshot.indexedBlockHash === "string"
+    && isHash(snapshot.indexedBlockHash)
+    && typeof snapshot.generatedAt === "string"
+    && Number.isFinite(Date.parse(snapshot.generatedAt)),
+  );
+}
+
+/** Returns the last confirmed Redis snapshot without starting an RPC refresh. */
+export async function getCachedMarketSnapshot(tokenAddress: Address) {
+  const cache = getTokenCache(tokenAddress);
+  if (isUsableMarketSnapshot(cache.snapshot)) return cache.snapshot;
+  const persisted = await readPersistentSnapshot<MarketSnapshot>(marketPersistentKey(tokenAddress));
+  if (!isUsableMarketSnapshot(persisted)) return null;
+  cache.snapshot = persisted;
+  cache.cachedAt = Date.parse(persisted.generatedAt) || 0;
+  cache.canonicalCheckedAt = 0;
+  return persisted;
+}
+
+export function invalidateMarketSnapshot(tokenAddress: string) {
+  const cache = state.tokenCaches.get(tokenAddress.toLowerCase());
+  if (!cache) return;
+  cache.cachedAt = 0;
+  cache.lastAttemptAt = 0;
+}
+
 export async function getMarketSnapshot(tokenAddress: Address, forceRefresh = false) {
   const cache = getTokenCache(tokenAddress);
-  const persistentKey = `arcorigin:${ARCORIGIN_NETWORK}:market:${ARC_ACTIVE_FACTORY.toLowerCase()}:${tokenAddress.toLowerCase()}`;
+  const persistentKey = marketPersistentKey(tokenAddress);
   if (!cache.snapshot) {
     let persisted = await readPersistentSnapshot<MarketSnapshot>(persistentKey);
     const upgraded = await upgradeLegacyCanonicalCheckpoint(persisted, readCanonicalBlock);

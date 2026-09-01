@@ -5,7 +5,7 @@ import { Settings2 } from "lucide-react";
 import { createPublicClient, decodeEventLog, formatUnits, http, isAddress, maxUint256, parseUnits, publicActions, type Address, type Hash, type PublicClient } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import { requiredNativeUsdcBalance } from "@/lib/arc-usdc";
-import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
+import { ARC_ACTIVE_CONTRACTS, ARC_MULTICALL3_ADDRESS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { erc20Abi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
 import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText, walletRpcPreflightDecision } from "@/lib/rpc-errors";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
@@ -26,7 +26,7 @@ type LiveQuote = {
   slippageBps: bigint;
   quotedAt: number;
 };
-type QuoteResponse = { output?: string; fee?: string; spender?: string; pool?: string; error?: string };
+type QuoteResponse = { output?: string; fee?: string; spender?: string; pool?: string; quotedAt?: number; error?: string };
 type TransactionStatus = "idle" | "checking-rpc" | "quoting" | "preparing" | "approving" | "trading";
 type WalletBalances = { usdc: bigint; token: bigint };
 type TransactionFeeOverrides =
@@ -37,11 +37,11 @@ const slippageOptions = [10, 20, 40] as const;
 const priorityOptions: Priority[] = ["Low", "Medium", "High"];
 const MAX_SLIPPAGE_PERCENT = 50;
 const BALANCE_POLL_INTERVAL_MS = 10_000;
-const QUOTE_POLL_INTERVAL_MS = 5_000;
+const QUOTE_POLL_INTERVAL_MS = 4_000;
 const MAX_EXECUTION_QUOTE_AGE_MS = 8_000;
 const DIRECT_QUOTE_TIMEOUT_MS = 6_000;
-const DIRECT_QUOTE_HEDGE_DELAY_MS = 250;
-const DIRECT_QUOTE_START_DELAY_MS = 1_200;
+const DIRECT_QUOTE_HEDGE_DELAY_MS = 125;
+const DIRECT_QUOTE_START_DELAY_MS = 350;
 const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
 const MAX_INPUT_CHARACTERS = 80;
 const directQuoteClients = arcChain.rpcUrls.default.http.map((url) => createPublicClient({
@@ -126,7 +126,7 @@ async function readDirectQuote(token: Address, pool: Address, side: Side, input:
           sqrtPriceLimitX96: 0n,
         }],
       });
-      return { output: result[0].toString(), fee: (input * BigInt(ARC_UNISWAP_V3.fee) / 1_000_000n).toString(), spender: ARC_UNISWAP_V3.router, pool };
+      return { output: result[0].toString(), fee: (input * BigInt(ARC_UNISWAP_V3.fee) / 1_000_000n).toString(), spender: ARC_UNISWAP_V3.router, pool, quotedAt: Date.now() };
     }));
   } finally {
     hedgeController.abort();
@@ -206,10 +206,14 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     if (!background) setBalanceLoading(true);
     setBalanceError(false);
     try {
-      const [usdc, tokenBalance] = await Promise.all([
-        withRpcRetry(() => publicClient.readContract({ address: ARC_ACTIVE_CONTRACTS.usdc, abi: erc20Abi, functionName: "balanceOf", args: [address] }), 2),
-        withRpcRetry(() => publicClient.readContract({ address: token.address as Address, abi: erc20Abi, functionName: "balanceOf", args: [address] }), 2),
-      ]);
+      const [usdc, tokenBalance] = await withRpcRetry(() => publicClient.multicall({
+        allowFailure: false,
+        multicallAddress: ARC_MULTICALL3_ADDRESS,
+        contracts: [
+          { address: ARC_ACTIVE_CONTRACTS.usdc, abi: erc20Abi, functionName: "balanceOf", args: [address] },
+          { address: token.address as Address, abi: erc20Abi, functionName: "balanceOf", args: [address] },
+        ],
+      }), 2);
       setBalances({ usdc, token: tokenBalance });
     } catch { setBalanceError(true); } finally {
       balanceRefreshInFlightRef.current = false;
@@ -223,7 +227,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     refresh: () => refreshBalances(true),
   });
 
-  useEffect(() => { const timer = window.setTimeout(() => void refreshBalances(), 1_000); return () => window.clearTimeout(timer); }, [refreshBalances]);
+  useEffect(() => { const timer = window.setTimeout(() => void refreshBalances(), 0); return () => window.clearTimeout(timer); }, [refreshBalances]);
   useEffect(() => { setTransactionHash(null); setNotice(""); setNoticeIsError(false); }, [amount, side, slippageInput]);
   useEffect(() => { verifiedWalletRpcRef.current = ""; }, [address, chainId, walletClient]);
 
@@ -317,7 +321,9 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
       pool: result.pool as Address,
       side,
       slippageBps,
-      quotedAt: Date.now(),
+      quotedAt: typeof result.quotedAt === "number" && Number.isFinite(result.quotedAt)
+        ? result.quotedAt
+        : Date.now(),
     };
   }, [amount, inputDecimals, poolAddress, publicClient, side, slippage, slippageValid, token.address]);
 
@@ -377,10 +383,14 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         : await (async () => { setStatus("quoting"); return readQuote(); })();
       setStatus("preparing");
       const approvalToken = (side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token.address) as Address;
-      const [currentBalance, allowance] = await Promise.all([
-        withRpcRetry(() => client.readContract({ address: approvalToken, abi: erc20Abi, functionName: "balanceOf", args: [address] })),
-        withRpcRetry(() => client.readContract({ address: approvalToken, abi: erc20Abi, functionName: "allowance", args: [address, executionQuote.spender] })),
-      ]);
+      const [currentBalance, allowance] = await withRpcRetry(() => client.multicall({
+        allowFailure: false,
+        multicallAddress: ARC_MULTICALL3_ADDRESS,
+        contracts: [
+          { address: approvalToken, abi: erc20Abi, functionName: "balanceOf", args: [address] },
+          { address: approvalToken, abi: erc20Abi, functionName: "allowance", args: [address, executionQuote.spender] },
+        ],
+      }));
       if (currentBalance < executionQuote.input) throw new Error(`Insufficient ${inputSymbol} balance.`);
       if (allowance < executionQuote.input) {
         setStatus("approving");

@@ -69,6 +69,7 @@ const {
 } = require("./run-event-indexer.cjs");
 const {
   isLiveIndexerEvent,
+  replayPayloadsAfter,
   tradeDetailFromIndexerEvent,
 } = loadTypeScriptModule("src/lib/indexer/live-event.ts");
 
@@ -310,6 +311,7 @@ test("SSE events are validated before they update client state", () => {
     wallet: "0x3333333333333333333333333333333333333333",
     usdc: 12.5,
     tokens: 25,
+    executionPrice: 0.51,
   };
   assert.equal(isLiveIndexerEvent(liveEvent), true);
   assert.deepEqual(tradeDetailFromIndexerEvent(liveEvent), {
@@ -322,6 +324,19 @@ test("SSE events are validated before they update client state", () => {
     usdc: 12.5,
     fee: 0,
     tokens: 25,
+    executionPrice: 0.51,
   });
   assert.equal(isLiveIndexerEvent({ ...liveEvent, transactionHash: "bad" }), false);
+});
+
+test("SSE replay sends only missed events after a known connection cursor", () => {
+  const payload = (id) => JSON.stringify({ id });
+  const recent = [payload("event-4"), payload("event-3"), payload("event-2"), payload("event-1")];
+  assert.deepEqual(replayPayloadsAfter(recent, null), []);
+  assert.deepEqual(replayPayloadsAfter(recent, "unknown"), []);
+  assert.deepEqual(
+    replayPayloadsAfter(recent, "event-2").map((item) => JSON.parse(item).id),
+    ["event-3", "event-4"],
+  );
+  assert.deepEqual(replayPayloadsAfter(recent, "event-4"), []);
 });

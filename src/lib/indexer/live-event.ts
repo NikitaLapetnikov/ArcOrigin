@@ -13,6 +13,30 @@ export type LiveIndexerEvent = {
   [key: string]: unknown;
 };
 
+function payloadEventId(payload: string) {
+  try {
+    const parsed = JSON.parse(payload) as { id?: unknown };
+    return typeof parsed.id === "string" ? parsed.id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Redis stores live events newest-first. A fresh page already receives a
+ * complete indexed snapshot, so replaying the whole buffer would duplicate
+ * historical swaps and trigger unnecessary reconciliation. Only reconnects
+ * with a known Last-Event-ID receive the events they actually missed.
+ */
+export function replayPayloadsAfter(recentNewestFirst: string[], lastEventId: string | null) {
+  if (!lastEventId) return [];
+  const lastSeenIndex = recentNewestFirst.findIndex(
+    (payload) => payloadEventId(payload) === lastEventId,
+  );
+  if (lastSeenIndex <= 0) return [];
+  return recentNewestFirst.slice(0, lastSeenIndex).reverse();
+}
+
 function finiteNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -45,6 +69,9 @@ export function tradeDetailFromIndexerEvent(event: LiveIndexerEvent) {
     || !finiteNumber(event.usdc)
     || !finiteNumber(event.tokens)
     || Number(event.tokens) <= 0) return null;
+  const executionPrice = finiteNumber(event.executionPrice) && Number(event.executionPrice) > 0
+    ? Number(event.executionPrice)
+    : undefined;
   return {
     tokenAddress: event.tokenAddress,
     transactionHash: event.transactionHash,
@@ -55,5 +82,6 @@ export function tradeDetailFromIndexerEvent(event: LiveIndexerEvent) {
     usdc: Number(event.usdc),
     fee: 0,
     tokens: Number(event.tokens),
+    ...(executionPrice === undefined ? {} : { executionPrice }),
   };
 }
