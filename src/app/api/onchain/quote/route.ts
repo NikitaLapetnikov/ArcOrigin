@@ -27,7 +27,7 @@ const MAX_QUOTE_CACHE_ENTRIES = 256;
 const MAX_PENDING_QUOTES = 256;
 const QUOTE_RATE_WINDOW_MS = 60_000;
 const MAX_QUOTES_PER_WINDOW = 120;
-const QUOTE_RPC_TIMEOUT_MS = 8_000;
+const QUOTE_RPC_TIMEOUT_MS = 6_000;
 const QUOTE_RPC_HEDGE_DELAY_MS = 100;
 const quoteCache = new Map<string, { expiresAt: number; payload: QuotePayload }>();
 const pendingQuotes = new Map<string, Promise<QuotePayload>>();
@@ -55,10 +55,16 @@ function wait(milliseconds: number) {
 }
 
 async function withHedgedRpc<T>(operation: (client: (typeof quoteClients)[number]) => Promise<T>) {
-  if (quoteClients.length === 0) throw new Error("No Arc quote RPC is configured.");
+  const primaryClient = quoteClients[0];
+  if (!primaryClient) throw new Error("No Arc quote RPC is configured.");
+  // Public Arc providers occasionally leave an eth_call pending until timeout.
+  // A delayed second attempt against the primary is cheaper than retrying the
+  // entire quote and materially lowers cold-quote tail latency. pendingQuotes
+  // still guarantees a single hedge set per exact market/side/amount.
+  const attempts = [...quoteClients, primaryClient];
   const hedgeController = new AbortController();
   try {
-    return await Promise.any(quoteClients.map(async (client, index) => {
+    return await Promise.any(attempts.map(async (client, index) => {
       if (index > 0) await wait(index * QUOTE_RPC_HEDGE_DELAY_MS);
       if (hedgeController.signal.aborted) throw new Error("Quote RPC hedge cancelled.");
       return operation(client);
