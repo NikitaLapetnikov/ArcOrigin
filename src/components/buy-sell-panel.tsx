@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings2 } from "lucide-react";
-import { createPublicClient, decodeEventLog, formatUnits, http, isAddress, maxUint256, parseUnits, publicActions, type Address, type Hash, type PublicClient } from "viem";
+import { createPublicClient, decodeEventLog, formatUnits, http, isAddress, maxUint256, parseUnits, type Address, type Hash, type PublicClient } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import { nativeUsdcToPrecompileBalance, requiredNativeUsdcBalance } from "@/lib/arc-usdc";
 import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { erc20Abi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
-import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText, walletRpcPreflightDecision } from "@/lib/rpc-errors";
+import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText } from "@/lib/rpc-errors";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
-import { ARC_RPC_RELAY_URL, arcWalletChain, createBrowserArcReadClient } from "@/lib/onchain/browser-arc-rpc";
+import { ARC_RPC_RELAY_URL, createBrowserArcReadClient } from "@/lib/onchain/browser-arc-rpc";
 import type { TokenData } from "@/lib/types";
 import { tickerLabel } from "@/lib/utils";
 import { ArcscanLink, Badge, Button } from "./ui";
@@ -271,7 +271,6 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
   const balanceRefreshInFlightRef = useRef(false);
   const quoteRefreshInFlightRef = useRef(false);
   const quoteRequestRef = useRef(0);
-  const verifiedWalletRpcRef = useRef("");
   const { address, isConnected, chainId } = useAccount();
   const publicClient = usePublicClient({ chainId: arcChain.id });
   const { data: walletClient } = useWalletClient();
@@ -308,54 +307,12 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
 
   useEffect(() => { const timer = window.setTimeout(() => void refreshBalances(), 0); return () => window.clearTimeout(timer); }, [refreshBalances]);
   useEffect(() => { setTransactionHash(null); setNotice(""); setNoticeIsError(false); }, [amount, side, slippageInput]);
-  useEffect(() => { verifiedWalletRpcRef.current = ""; }, [address, chainId, walletClient]);
 
   async function getClient() {
     if (!isConnected || !address) throw new Error("Connect a wallet before trading.");
     if (chainId !== arcChain.id) { await switchChainAsync({ chainId: arcChain.id }); throw new Error(`${arcChain.name} is now selected. Submit again.`); }
     if (!publicClient) throw new Error(`No ${arcChain.name} public client is available.`);
     return resilientReadClient;
-  }
-
-  async function ensureWalletRpcReady() {
-    if (!walletClient || !address) throw new Error("The connected wallet is not ready. Reconnect it and retry.");
-    const checkKey = `${address.toLowerCase()}:${arcChain.id}`;
-    if (verifiedWalletRpcRef.current === checkKey) return;
-    const walletReadClient = walletClient.extend(publicActions) as unknown as PublicClient;
-    try {
-      await walletReadClient.getTransactionCount({ address, blockTag: "latest" });
-      verifiedWalletRpcRef.current = checkKey;
-      return;
-    } catch (error) {
-      const decision = walletRpcPreflightDecision(error);
-      if (decision === "continue") {
-        try {
-          await walletClient.addChain({ chain: arcWalletChain });
-          await walletClient.switchChain({ id: arcChain.id });
-          verifiedWalletRpcRef.current = checkKey;
-          return;
-        } catch (repairError) {
-          if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(repairError))) throw repairError;
-        }
-      }
-      if (decision === "fail") throw error;
-    }
-
-    setNotice(`Your wallet has an outdated Arc RPC. Approve the network update to ${ARC_WALLET_RPC_URL}.`);
-    setNoticeIsError(false);
-    try {
-      await walletClient.addChain({ chain: arcWalletChain });
-    } catch (error) {
-      if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(error))) throw error;
-      // Some wallets report "already added" instead of updating in place.
-      // Switching and rechecking below still succeeds when they accepted the new RPC.
-    }
-    await walletClient.switchChain({ id: arcChain.id });
-    // Injected connectors can retain their old read transport after the wallet
-    // accepts a network update. Do not immediately probe that cached endpoint
-    // again; writeContract receives an explicit nonce, gas and fee configuration.
-    verifiedWalletRpcRef.current = checkKey;
-    setNotice("");
   }
 
   const readQuote = useCallback(async (): Promise<LiveQuote> => {
@@ -454,7 +411,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     submissionLockRef.current = true; setStatus("checking-rpc"); setNotice(""); setTransactionHash(null);
     try {
       const client = await getClient();
-      await ensureWalletRpcReady();
+      if (!walletClient) throw new Error("The connected wallet is not ready. Reconnect it and retry.");
       const currentSlippageBps = BigInt(Math.round(slippage * 100));
       let executionQuote = liveQuote
         && liveQuote.input === parsedAmount

@@ -9,7 +9,6 @@ import {
   isAddress,
   isHash,
   parseUnits,
-  publicActions,
   type Address,
   type Hash,
   type PublicClient,
@@ -44,10 +43,9 @@ import {
   isRpcCapacityError,
   isUnauthorizedBlockdaemonRpc,
   rpcErrorText,
-  walletRpcPreflightDecision,
 } from "@/lib/rpc-errors";
 import { arcOriginPoolQuoteState, quoteArcOriginExactInput } from "@/lib/onchain/arc-origin-v3-quote";
-import { ARC_RPC_RELAY_URL, arcWalletChain, createBrowserArcReadClient } from "@/lib/onchain/browser-arc-rpc";
+import { ARC_RPC_RELAY_URL, createBrowserArcReadClient } from "@/lib/onchain/browser-arc-rpc";
 import { shortAddress, tickerLabel } from "@/lib/utils";
 import { getSafeAppContext } from "@/lib/wallet/safe-app-connector";
 import { Button, LinkButton, WarningBox } from "./ui";
@@ -453,7 +451,6 @@ export function LaunchForm() {
   const [result, setResult] = useState<LaunchResult | null>(null);
   const previewUrl = useRef("");
   const launchLockRef = useRef(false);
-  const verifiedWalletRpcRef = useRef("");
   const { address, isConnected, chainId, connector } = useAccount();
   const publicClient = usePublicClient({ chainId: arcChain.id });
   const { data: walletClient } = useWalletClient();
@@ -470,9 +467,6 @@ export function LaunchForm() {
     };
   }, []);
 
-  useEffect(() => {
-    verifiedWalletRpcRef.current = "";
-  }, [address, chainId, walletClient]);
 
   useEffect(() => {
     let cancelled = false;
@@ -597,42 +591,6 @@ export function LaunchForm() {
     };
     setUploadedMetadata(uploaded);
     return uploaded;
-  }
-
-  async function ensureWalletRpcReady(creator: Address) {
-    if (!walletClient) throw new Error("The connected wallet is not ready. Reconnect it and retry.");
-    const checkKey = `${creator.toLowerCase()}:${arcChain.id}`;
-    if (verifiedWalletRpcRef.current === checkKey) return;
-    const walletReadClient = walletClient.extend(publicActions) as unknown as PublicClient;
-    try {
-      await walletReadClient.getTransactionCount({ address: creator, blockTag: "latest" });
-      verifiedWalletRpcRef.current = checkKey;
-      return;
-    } catch (rpcError) {
-      const decision = walletRpcPreflightDecision(rpcError);
-      if (decision === "continue") {
-        try {
-          await walletClient.addChain({ chain: arcWalletChain });
-          await walletClient.switchChain({ id: arcChain.id });
-          verifiedWalletRpcRef.current = checkKey;
-          return;
-        } catch (repairError) {
-          if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(repairError))) throw repairError;
-        }
-      }
-      if (decision === "fail") throw rpcError;
-    }
-
-    try {
-      await walletClient.addChain({ chain: arcWalletChain });
-    } catch (rpcUpdateError) {
-      if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(rpcUpdateError))) {
-        throw rpcUpdateError;
-      }
-      // Some wallets report that an existing chain was already added after updating it.
-    }
-    await walletClient.switchChain({ id: arcChain.id });
-    verifiedWalletRpcRef.current = checkKey;
   }
 
   async function executeInitialBuy(
@@ -821,7 +779,7 @@ export function LaunchForm() {
         await switchChainAsync({ chainId: arcChain.id });
         throw new Error(`${arcChain.name} is now selected. Review and launch again.`);
       }
-      await ensureWalletRpcReady(address);
+      if (!walletClient) throw new Error("The connected wallet is not ready. Reconnect it and retry.");
       const transactionClient = primaryReadClient;
       const balance = await readNativeUsdcBalance(address);
       let currentLaunchFee = launchFee;
