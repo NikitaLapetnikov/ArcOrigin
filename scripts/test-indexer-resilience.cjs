@@ -50,6 +50,9 @@ const {
   snapshotCacheControl,
 } = loadTypeScriptModule("src/lib/onchain/snapshot-http-cache.ts");
 const {
+  isProtocolAnalyticsSnapshot,
+} = loadTypeScriptModule("src/lib/analytics.ts");
+const {
   isRetryableRpcError,
   isRpcCapacityError,
   isUnauthorizedBlockdaemonRpc,
@@ -197,6 +200,52 @@ test("stale and forced snapshots cannot be retained by an HTTP cache", () => {
   assert.equal(snapshotCacheControl({ forceRefresh: false, stale: false, freshPolicy }), freshPolicy);
   assert.equal(snapshotCacheControl({ forceRefresh: false, stale: true, freshPolicy }), "no-store");
   assert.equal(snapshotCacheControl({ forceRefresh: true, stale: false, freshPolicy }), "no-store");
+});
+
+test("protocol analytics cache accepts only complete versioned snapshots", () => {
+  const snapshot = {
+    schemaVersion: 1,
+    range: "24h",
+    metrics: { volumeUsdc: 10, trades: 2, traders: 1, launches: 1, creators: 1, automaticBuybackLaunches: 1 },
+    allTime: { volumeUsdc: 20, trades: 4, traders: 2, launches: 1, creators: 1, automaticBuybackLaunches: 1, holders: 2 },
+    economics: {
+      feeEquivalentUsdc: .1,
+      creatorEarningsEquivalentUsdc: 0,
+      protocolRevenueEquivalentUsdc: .03,
+      buybackAllocationEquivalentUsdc: .07,
+      buybackSpentUsdc: .05,
+      tokensBurned: 100,
+      buybackExecutions: 1,
+    },
+    launchModes: { standard: 0, automaticBuyback: 1 },
+    series: [{ timestamp: 1, volumeUsdc: 10, trades: 2, launches: 1, buybackSpentUsdc: .05 }],
+    markets: [{
+      address,
+      name: "Origin",
+      symbol: "ORIGIN",
+      automaticBuyback: true,
+      volumeUsdc: 10,
+      trades: 2,
+      traders: 1,
+    }],
+    indexedBlock: "42",
+    indexedBlockHash: `0x${"a".repeat(64)}`,
+    generatedAt: "2026-09-01T00:00:00.000Z",
+  };
+  assert.equal(isProtocolAnalyticsSnapshot(snapshot), true);
+  assert.equal(isProtocolAnalyticsSnapshot({ ...snapshot, schemaVersion: 2 }), false);
+  assert.equal(isProtocolAnalyticsSnapshot({ ...snapshot, metrics: { ...snapshot.metrics, volumeUsdc: -1 } }), false);
+});
+
+test("Postgres migrations remain ordered and idempotent", () => {
+  const migrations = fs.readdirSync(path.resolve("deploy/postgres"))
+    .filter((fileName) => /^\d+_[a-z0-9_]+\.sql$/.test(fileName))
+    .sort();
+  assert.deepEqual(migrations, ["001_event_store.sql", "002_protocol_analytics_indexes.sql"]);
+  for (const migration of migrations) {
+    const sql = fs.readFileSync(path.resolve("deploy/postgres", migration), "utf8");
+    assert.match(sql, /CREATE (TABLE|INDEX) IF NOT EXISTS/);
+  }
 });
 
 test("Arc capacity errors remain retryable through nested RPC causes", () => {

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { ProtocolAnalytics } from "@/components/protocol-analytics";
-import { getStoredProtocolAnalytics } from "@/lib/server/event-store";
+import { getProtocolAnalyticsSnapshot } from "@/lib/server/protocol-analytics-snapshot";
 
 export const metadata: Metadata = {
   title: "Protocol Analytics",
@@ -9,6 +9,6 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsPage() {
-  const initialSnapshot = await getStoredProtocolAnalytics("24h");
-  return <ProtocolAnalytics initialSnapshot={initialSnapshot} />;
+  const initial = await getProtocolAnalyticsSnapshot("24h");
+  return <ProtocolAnalytics initialSnapshot={initial?.snapshot} initialStale={initial?.stale} />;
 }

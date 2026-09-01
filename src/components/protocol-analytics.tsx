@@ -29,7 +29,7 @@ import {
 import { cn, money, number, shortAddress, tickerLabel } from "@/lib/utils";
 import { Badge, TokenIcon } from "@/components/ui";
 
-type Props = { initialSnapshot?: ProtocolAnalyticsSnapshot | null };
+type Props = { initialSnapshot?: ProtocolAnalyticsSnapshot | null; initialStale?: boolean };
 
 const RANGE_LABELS: Record<AnalyticsRange, string> = {
   "24h": "24H",
@@ -38,11 +38,12 @@ const RANGE_LABELS: Record<AnalyticsRange, string> = {
   all: "All time",
 };
 
-export function ProtocolAnalytics({ initialSnapshot = null }: Props) {
+export function ProtocolAnalytics({ initialSnapshot = null, initialStale = false }: Props) {
   const [range, setRange] = useState<AnalyticsRange>(initialSnapshot?.range ?? "24h");
   const [snapshot, setSnapshot] = useState<ProtocolAnalyticsSnapshot | null>(initialSnapshot);
   const [loading, setLoading] = useState(!initialSnapshot);
   const [refreshing, setRefreshing] = useState(false);
+  const [stale, setStale] = useState(initialStale);
   const [error, setError] = useState("");
   const requestRef = useRef(0);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -52,11 +53,12 @@ export function ProtocolAnalytics({ initialSnapshot = null }: Props) {
     if (background) setRefreshing(true);
     else setLoading(true);
     try {
-      const response = await fetch(`/api/onchain/analytics?range=${nextRange}`, { cache: "no-store" });
-      const payload = await response.json() as { snapshot?: ProtocolAnalyticsSnapshot; error?: string };
+      const response = await fetch(`/api/onchain/analytics?range=${nextRange}${background ? "&refresh=1" : ""}`, { cache: "no-store" });
+      const payload = await response.json() as { snapshot?: ProtocolAnalyticsSnapshot; stale?: boolean; error?: string };
       if (requestId !== requestRef.current) return;
       if (!response.ok || !payload.snapshot) throw new Error(payload.error ?? "Analytics could not be loaded.");
       setSnapshot(payload.snapshot);
+      setStale(payload.stale === true);
       setError("");
     } catch (loadError) {
       if (requestId !== requestRef.current) return;
@@ -70,17 +72,17 @@ export function ProtocolAnalytics({ initialSnapshot = null }: Props) {
   }, []);
 
   useEffect(() => {
-    if (initialSnapshot?.range === range) return;
-    void load(range);
-  }, [initialSnapshot?.range, load, range]);
+    if (initialSnapshot?.range === range && !initialStale) return;
+    void load(range, initialStale);
+  }, [initialSnapshot?.range, initialStale, load, range]);
 
   useEffect(() => {
     const scheduleRefresh = () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = setTimeout(() => void load(range, true), 900);
+      refreshTimerRef.current = setTimeout(() => void load(range, true), 700);
     };
     window.addEventListener("arcorigin:indexer-event", scheduleRefresh);
-    const poll = window.setInterval(() => void load(range, true), 30_000);
+    const poll = window.setInterval(() => void load(range, true), 20_000);
     return () => {
       window.removeEventListener("arcorigin:indexer-event", scheduleRefresh);
       window.clearInterval(poll);
@@ -99,14 +101,21 @@ export function ProtocolAnalytics({ initialSnapshot = null }: Props) {
 
   const rangeLabel = RANGE_LABELS[range];
   const metrics = snapshot.metrics;
+  const indexAgeSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(snapshot.generatedAt)) / 1_000));
+  const catchingUp = stale || indexAgeSeconds > 60;
   return <div className="container-shell pb-12 pt-8 md:pb-16 md:pt-11">
     <section className="relative overflow-hidden rounded-[26px] border border-line bg-panel shadow-glow">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(800px_330px_at_0%_0%,rgba(57,189,248,.14),transparent_64%),radial-gradient(600px_300px_at_100%_0%,rgba(117,103,255,.12),transparent_68%)]" />
       <div className="relative flex flex-col gap-6 px-5 py-6 sm:px-7 sm:py-8 lg:flex-row lg:items-end lg:justify-between lg:px-9">
         <div>
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/[.07] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[.11em] text-emerald-300">
-              <Radio className="size-3.5" />Indexed onchain
+            <span className={cn(
+              "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[.11em]",
+              catchingUp
+                ? "border-amber-300/20 bg-amber-300/[.07] text-amber-200"
+                : "border-emerald-400/20 bg-emerald-400/[.07] text-emerald-300",
+            )}>
+              <Radio className={cn("size-3.5", !catchingUp && "animate-pulse")} />{catchingUp ? "Indexer catching up" : "Live onchain"}
             </span>
             <Badge tone="cyan">Arc mainnet</Badge>
             {snapshot.preview && <Badge tone="warn">Local preview data</Badge>}

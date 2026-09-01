@@ -191,8 +191,14 @@ function chunks(items, size) {
 }
 
 async function runMigration(database) {
-  const migrationPath = path.join(process.cwd(), "deploy/postgres/001_event_store.sql");
-  await database.query(fs.readFileSync(migrationPath, "utf8"));
+  const migrationDirectory = path.join(process.cwd(), "deploy/postgres");
+  const migrationFiles = fs.readdirSync(migrationDirectory)
+    .filter((fileName) => /^\d+_[a-z0-9_]+\.sql$/.test(fileName))
+    .sort();
+  if (migrationFiles.length === 0) throw new Error("No Postgres migrations were found.");
+  for (const fileName of migrationFiles) {
+    await database.query(fs.readFileSync(path.join(migrationDirectory, fileName), "utf8"));
+  }
 }
 
 async function loadState(database, fromBlock) {

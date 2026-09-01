@@ -382,6 +382,13 @@ const ANALYTICS_BUCKET_SECONDS: Record<AnalyticsRange, number> = {
   all: 24 * 60 * 60,
 };
 
+const ANALYTICS_POINT_COUNT: Record<AnalyticsRange, number> = {
+  "24h": 24,
+  "7d": 7,
+  "30d": 30,
+  all: 60,
+};
+
 function numeric(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
@@ -409,6 +416,36 @@ function windowMetrics(swapRow: Record<string, unknown>, launchRow: Record<strin
     creators: integer(launchRow.creators),
     automaticBuybackLaunches: integer(launchRow.automatic_buyback_launches),
   };
+}
+
+function completeAnalyticsSeries({
+  rows,
+  range,
+  now,
+  bucketSeconds,
+}: {
+  rows: AnalyticsSeriesPoint[];
+  range: AnalyticsRange;
+  now: number;
+  bucketSeconds: number;
+}) {
+  const end = Math.floor(now / bucketSeconds) * bucketSeconds;
+  const configuredCount = ANALYTICS_POINT_COUNT[range];
+  const firstStored = rows[0]?.timestamp ?? end;
+  const earliestAllowed = end - (configuredCount - 1) * bucketSeconds;
+  const start = range === "all" ? Math.max(firstStored, earliestAllowed) : earliestAllowed;
+  const byTimestamp = new Map(rows.map((point) => [point.timestamp, point]));
+  const complete: AnalyticsSeriesPoint[] = [];
+  for (let timestamp = start; timestamp <= end; timestamp += bucketSeconds) {
+    complete.push(byTimestamp.get(timestamp) ?? {
+      timestamp,
+      volumeUsdc: 0,
+      trades: 0,
+      launches: 0,
+      buybackSpentUsdc: 0,
+    });
+  }
+  return complete;
 }
 
 /**
@@ -545,13 +582,14 @@ export async function getStoredProtocolAnalytics(
     const automaticBuybackVolume = numeric(rangeSwapRow.automatic_buyback_volume);
     const standardVolume = numeric(rangeSwapRow.standard_volume);
 
-    const series: AnalyticsSeriesPoint[] = seriesRows.rows.slice().reverse().map((row) => ({
+    const sparseSeries: AnalyticsSeriesPoint[] = seriesRows.rows.slice().reverse().map((row) => ({
       timestamp: integer(row.bucket),
       volumeUsdc: numeric(row.volume),
       trades: integer(row.trades),
       launches: integer(row.launches),
       buybackSpentUsdc: rawUnits(row.buyback_spent, 6),
     }));
+    const series = completeAnalyticsSeries({ rows: sparseSeries, range, now, bucketSeconds });
     const markets: AnalyticsMarket[] = marketRows.rows.map((row) => ({
       address: String(row.token_address),
       name: String(row.name),
@@ -563,6 +601,7 @@ export async function getStoredProtocolAnalytics(
     }));
 
     return {
+      schemaVersion: 1,
       range,
       metrics: rangeMetrics,
       allTime: {

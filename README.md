@@ -35,7 +35,9 @@ Run the dedicated indexer next to the web application:
 DATABASE_URL=postgresql://... REDIS_URL=redis://... npm run indexer:events
 ```
 
-The worker applies `deploy/postgres/001_event_store.sql` idempotently, resumes from its last canonical checkpoint, rolls back orphaned blocks, and indexes ArcOrigin launches, Uniswap swaps, ERC-20 holder changes and automatic buybacks. Market snapshots and profile balances use that confirmed Postgres checkpoint directly; the frontend consumes `/api/onchain/events` over SSE and keeps polling plus direct RPC reads as recovery paths.
+The worker applies the ordered SQL files in `deploy/postgres/` idempotently, resumes from its last canonical checkpoint, rolls back orphaned blocks, and indexes ArcOrigin launches, Uniswap swaps, ERC-20 holder changes and automatic buybacks. Market snapshots and profile balances use that confirmed Postgres checkpoint directly; the frontend consumes `/api/onchain/events` over SSE and keeps polling plus direct RPC reads as recovery paths.
+
+Protocol analytics aggregate the same canonical Postgres checkpoint. Each time range is coalesced into one server refresh, cached briefly in process, persisted to Redis as a stale-safe snapshot, and invalidated by live indexer events. The API never fans out into per-token RPC requests, and database indexes keep global swap and buyback time-range queries bounded as history grows.
 
 Swap traders are attributed from the indexed token transfer flow, not from Uniswap's intermediary `recipient`. Run `npm run backfill:trader-wallets` to preview historical corrections, then `npm run backfill:trader-wallets -- --apply` to update stored Swap wallets and invalidate affected analytics caches. The backfill uses `tx.from` only when the indexed transfer flow is incomplete.
 

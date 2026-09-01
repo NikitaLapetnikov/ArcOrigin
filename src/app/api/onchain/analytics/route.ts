@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAnalyticsRange, type AnalyticsRange, type ProtocolAnalyticsSnapshot } from "@/lib/analytics";
-import { getStoredProtocolAnalytics } from "@/lib/server/event-store";
+import { getProtocolAnalyticsSnapshot } from "@/lib/server/protocol-analytics-snapshot";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,6 +43,7 @@ function previewSnapshot(range: AnalyticsRange): ProtocolAnalyticsSnapshot {
   const trades = series.reduce((sum, point) => sum + point.trades, 0);
   const launches = series.reduce((sum, point) => sum + point.launches, 0);
   return {
+    schemaVersion: 1,
     range,
     metrics: {
       volumeUsdc,
@@ -97,14 +98,15 @@ function previewSnapshot(range: AnalyticsRange): ProtocolAnalyticsSnapshot {
 export async function GET(request: NextRequest) {
   const requestedRange = request.nextUrl.searchParams.get("range");
   const range: AnalyticsRange = isAnalyticsRange(requestedRange) ? requestedRange : "24h";
-  const snapshot = await getStoredProtocolAnalytics(range);
-  if (snapshot) {
-    return NextResponse.json({ snapshot }, {
-      headers: { "Cache-Control": "public, max-age=10, s-maxage=15, stale-while-revalidate=120" },
+  const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
+  const result = await getProtocolAnalyticsSnapshot(range, forceRefresh);
+  if (result) {
+    return NextResponse.json(result, {
+      headers: { "Cache-Control": "no-store" },
     });
   }
   if (process.env.NODE_ENV !== "production") {
-    return NextResponse.json({ snapshot: previewSnapshot(range) }, {
+    return NextResponse.json({ snapshot: previewSnapshot(range), stale: false }, {
       headers: { "Cache-Control": "no-store" },
     });
   }

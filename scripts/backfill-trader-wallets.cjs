@@ -14,6 +14,7 @@ const {
 const RECENT_EVENTS_KEY = "arcorigin:mainnet:indexer:recent-events";
 const MARKET_CACHE_PATTERN = "arcorigin:mainnet:market:*";
 const LATEST_BUYS_PATTERN = "arcorigin:mainnet:latest-buys:*";
+const PROTOCOL_ANALYTICS_PATTERN = "arcorigin:mainnet:protocol-analytics:*";
 
 function required(name) {
   const value = process.env[name]?.trim();
@@ -49,7 +50,7 @@ async function invalidateAnalyticsCache(redisUrl) {
   await redis.connect();
   let invalidated = 0;
   try {
-    for (const pattern of [MARKET_CACHE_PATTERN, LATEST_BUYS_PATTERN]) {
+    for (const pattern of [MARKET_CACHE_PATTERN, LATEST_BUYS_PATTERN, PROTOCOL_ANALYTICS_PATTERN]) {
       for await (const result of redis.scanIterator({ MATCH: pattern, COUNT: 100 })) {
         const keys = Array.isArray(result) ? result : [result];
         if (keys.length === 0) continue;
