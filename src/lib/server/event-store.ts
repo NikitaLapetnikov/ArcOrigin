@@ -3,6 +3,13 @@ import "server-only";
 import { Pool, type PoolConfig } from "pg";
 import { formatUnits, getAddress, isAddress, isHash, type Address, type Hash } from "viem";
 import type { FactoryLaunch } from "@/lib/onchain/holder-snapshot";
+import type {
+  AnalyticsMarket,
+  AnalyticsRange,
+  AnalyticsSeriesPoint,
+  AnalyticsWindowMetrics,
+  ProtocolAnalyticsSnapshot,
+} from "@/lib/analytics";
 
 type EventStorePool = Pool | null;
 
@@ -359,6 +366,229 @@ export async function getEventStoreStatus() {
     indexedBlockHash: result.checkpoint?.indexedBlockHash ?? null,
     ageSeconds: Number.isFinite(generatedAt) ? Math.max(0, Math.floor((Date.now() - generatedAt) / 1_000)) : null,
   };
+}
+
+const ANALYTICS_RANGE_SECONDS: Record<AnalyticsRange, number> = {
+  "24h": 24 * 60 * 60,
+  "7d": 7 * 24 * 60 * 60,
+  "30d": 30 * 24 * 60 * 60,
+  all: 0,
+};
+
+const ANALYTICS_BUCKET_SECONDS: Record<AnalyticsRange, number> = {
+  "24h": 60 * 60,
+  "7d": 24 * 60 * 60,
+  "30d": 24 * 60 * 60,
+  all: 24 * 60 * 60,
+};
+
+function numeric(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function integer(value: unknown) {
+  return Math.max(0, Math.trunc(numeric(value)));
+}
+
+function rawUnits(value: unknown, decimals: number) {
+  const raw = typeof value === "string" ? value : String(value ?? "0");
+  try {
+    return Number(formatUnits(BigInt(raw.split(".")[0] || "0"), decimals));
+  } catch {
+    return 0;
+  }
+}
+
+function windowMetrics(swapRow: Record<string, unknown>, launchRow: Record<string, unknown>): AnalyticsWindowMetrics {
+  return {
+    volumeUsdc: numeric(swapRow.volume),
+    trades: integer(swapRow.trades),
+    traders: integer(swapRow.traders),
+    launches: integer(launchRow.launches),
+    creators: integer(launchRow.creators),
+    automaticBuybackLaunches: integer(launchRow.automatic_buyback_launches),
+  };
+}
+
+/**
+ * Reads one coherent protocol-wide analytics snapshot from the canonical
+ * Postgres event store. The RPC snapshots remain the product fallback for
+ * token pages; analytics intentionally stays indexer-backed so it never fans
+ * out into one RPC scan per market.
+ */
+export async function getStoredProtocolAnalytics(
+  range: AnalyticsRange,
+): Promise<ProtocolAnalyticsSnapshot | null> {
+  return optionalQuery(async (pool) => {
+    const now = Math.floor(Date.now() / 1_000);
+    const rangeSeconds = ANALYTICS_RANGE_SECONDS[range];
+    const cutoff = rangeSeconds === 0 ? 0 : now - rangeSeconds;
+    const bucketSeconds = ANALYTICS_BUCKET_SECONDS[range];
+    const [
+      checkpoint,
+      rangeSwaps,
+      allSwaps,
+      rangeLaunches,
+      allLaunches,
+      holders,
+      buybacks,
+      seriesRows,
+      marketRows,
+    ] = await Promise.all([
+      queryCheckpoint(pool),
+      pool.query(`
+        SELECT
+          COALESCE(SUM((payload->>'usdc')::double precision), 0) AS volume,
+          COUNT(*) AS trades,
+          COUNT(DISTINCT payload->>'wallet') AS traders,
+          COALESCE(SUM((payload->>'usdc')::double precision)
+            FILTER (WHERE market.automatic_buyback), 0) AS automatic_buyback_volume,
+          COALESCE(SUM((payload->>'usdc')::double precision)
+            FILTER (WHERE NOT market.automatic_buyback), 0) AS standard_volume
+        FROM arc_events event
+        JOIN arc_markets market ON market.token_address = event.token_address
+        WHERE event.event_name = 'Swap' AND event.block_timestamp >= $1
+      `, [cutoff]),
+      pool.query(`
+        SELECT
+          COALESCE(SUM((payload->>'usdc')::double precision), 0) AS volume,
+          COUNT(*) AS trades,
+          COUNT(DISTINCT payload->>'wallet') AS traders
+        FROM arc_events
+        WHERE event_name = 'Swap'
+      `),
+      pool.query(`
+        SELECT
+          COUNT(*) AS launches,
+          COUNT(DISTINCT creator_address) AS creators,
+          COUNT(*) FILTER (WHERE automatic_buyback) AS automatic_buyback_launches
+        FROM arc_markets
+        WHERE launch_timestamp >= $1
+      `, [cutoff]),
+      pool.query(`
+        SELECT
+          COUNT(*) AS launches,
+          COUNT(DISTINCT creator_address) AS creators,
+          COUNT(*) FILTER (WHERE automatic_buyback) AS automatic_buyback_launches
+        FROM arc_markets
+      `),
+      pool.query(`
+        SELECT COUNT(DISTINCT balance.holder_address) AS holders
+        FROM arc_holder_balances balance
+        JOIN arc_markets market ON market.token_address = balance.token_address
+        WHERE balance.balance > 0
+          AND balance.holder_address <> market.pool_address
+          AND balance.holder_address <> '0x0000000000000000000000000000000000000000'
+      `),
+      pool.query(`
+        SELECT
+          COUNT(*) AS executions,
+          COALESCE(SUM((payload->>'quoteSpent')::numeric), 0) AS quote_spent,
+          COALESCE(SUM((payload->>'launchTokensBurned')::numeric), 0) AS tokens_burned
+        FROM arc_events
+        WHERE event_name = 'BuybackExecuted' AND block_timestamp >= $1
+      `, [cutoff]),
+      pool.query(`
+        SELECT bucket, SUM(volume) AS volume, SUM(trades) AS trades,
+               SUM(launches) AS launches, SUM(buyback_spent) AS buyback_spent
+        FROM (
+          SELECT FLOOR(block_timestamp / $2)::bigint * $2 AS bucket,
+                 SUM((payload->>'usdc')::double precision) AS volume,
+                 COUNT(*) AS trades, 0::bigint AS launches, 0::numeric AS buyback_spent
+          FROM arc_events
+          WHERE event_name = 'Swap' AND block_timestamp >= $1
+          GROUP BY 1
+          UNION ALL
+          SELECT FLOOR(launch_timestamp / $2)::bigint * $2 AS bucket,
+                 0::double precision AS volume, 0::bigint AS trades,
+                 COUNT(*) AS launches, 0::numeric AS buyback_spent
+          FROM arc_markets
+          WHERE launch_timestamp >= $1
+          GROUP BY 1
+          UNION ALL
+          SELECT FLOOR(block_timestamp / $2)::bigint * $2 AS bucket,
+                 0::double precision AS volume, 0::bigint AS trades,
+                 0::bigint AS launches,
+                 SUM((payload->>'quoteSpent')::numeric) AS buyback_spent
+          FROM arc_events
+          WHERE event_name = 'BuybackExecuted' AND block_timestamp >= $1
+          GROUP BY 1
+        ) activity
+        GROUP BY bucket
+        ORDER BY bucket DESC
+        LIMIT 60
+      `, [cutoff, bucketSeconds]),
+      pool.query(`
+        SELECT market.token_address, market.name, market.symbol,
+               market.automatic_buyback,
+               COALESCE(SUM((event.payload->>'usdc')::double precision), 0) AS volume,
+               COUNT(event.id) AS trades,
+               COUNT(DISTINCT event.payload->>'wallet') AS traders
+        FROM arc_markets market
+        LEFT JOIN arc_events event ON event.token_address = market.token_address
+          AND event.event_name = 'Swap' AND event.block_timestamp >= $1
+        GROUP BY market.token_address, market.name, market.symbol, market.automatic_buyback
+        ORDER BY volume DESC, trades DESC, market.launch_block DESC
+        LIMIT 8
+      `, [cutoff]),
+    ]);
+    if (!checkpoint) return null;
+
+    const rangeSwapRow = (rangeSwaps.rows[0] ?? {}) as Record<string, unknown>;
+    const allSwapRow = (allSwaps.rows[0] ?? {}) as Record<string, unknown>;
+    const rangeLaunchRow = (rangeLaunches.rows[0] ?? {}) as Record<string, unknown>;
+    const allLaunchRow = (allLaunches.rows[0] ?? {}) as Record<string, unknown>;
+    const buybackRow = (buybacks.rows[0] ?? {}) as Record<string, unknown>;
+    const rangeMetrics = windowMetrics(rangeSwapRow, rangeLaunchRow);
+    const allTimeMetrics = windowMetrics(allSwapRow, allLaunchRow);
+    const automaticBuybackVolume = numeric(rangeSwapRow.automatic_buyback_volume);
+    const standardVolume = numeric(rangeSwapRow.standard_volume);
+
+    const series: AnalyticsSeriesPoint[] = seriesRows.rows.slice().reverse().map((row) => ({
+      timestamp: integer(row.bucket),
+      volumeUsdc: numeric(row.volume),
+      trades: integer(row.trades),
+      launches: integer(row.launches),
+      buybackSpentUsdc: rawUnits(row.buyback_spent, 6),
+    }));
+    const markets: AnalyticsMarket[] = marketRows.rows.map((row) => ({
+      address: String(row.token_address),
+      name: String(row.name),
+      symbol: String(row.symbol),
+      automaticBuyback: Boolean(row.automatic_buyback),
+      volumeUsdc: numeric(row.volume),
+      trades: integer(row.trades),
+      traders: integer(row.traders),
+    }));
+
+    return {
+      range,
+      metrics: rangeMetrics,
+      allTime: {
+        ...allTimeMetrics,
+        holders: integer(holders.rows[0]?.holders),
+      },
+      economics: {
+        feeEquivalentUsdc: rangeMetrics.volumeUsdc * 0.01,
+        creatorEarningsEquivalentUsdc: standardVolume * 0.007,
+        protocolRevenueEquivalentUsdc: rangeMetrics.volumeUsdc * 0.003,
+        buybackAllocationEquivalentUsdc: automaticBuybackVolume * 0.007,
+        buybackSpentUsdc: rawUnits(buybackRow.quote_spent, 6),
+        tokensBurned: rawUnits(buybackRow.tokens_burned, 18),
+        buybackExecutions: integer(buybackRow.executions),
+      },
+      launchModes: {
+        standard: Math.max(0, allTimeMetrics.launches - allTimeMetrics.automaticBuybackLaunches),
+        automaticBuyback: allTimeMetrics.automaticBuybackLaunches,
+      },
+      series,
+      markets,
+      indexedBlock: checkpoint.indexedBlock,
+      indexedBlockHash: checkpoint.indexedBlockHash,
+      generatedAt: checkpoint.generatedAt,
+    };
+  });
 }
 
 export function storedBuybackAmounts(event: StoredBuyback) {

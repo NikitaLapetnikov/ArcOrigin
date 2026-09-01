@@ -24,6 +24,7 @@ const nav = [
   ["Markets", "/tokens"],
   ["Launch", "/launch"],
   ["Profile", "/profile"],
+  ["Analytics", "/analytics"],
   ["Docs", "/docs"],
 ] as const;
 

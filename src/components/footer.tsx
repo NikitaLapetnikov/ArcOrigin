@@ -6,6 +6,7 @@ const productLinks = [
   ["Explore", "/tokens"],
   ["Create", "/launch"],
   ["Profile", "/profile"],
+  ["Analytics", "/analytics"],
   ["Docs", "/docs"],
 ] as const;
 
