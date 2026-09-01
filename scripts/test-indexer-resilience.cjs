@@ -60,6 +60,7 @@ const {
   walletRpcPreflightDecision,
 } = loadTypeScriptModule("src/lib/rpc-errors.ts");
 const {
+  nativeUsdcToPrecompileBalance,
   requiredNativeUsdcBalance,
 } = loadTypeScriptModule("src/lib/arc-usdc.ts");
 const {
@@ -292,6 +293,7 @@ test("wallet RPC capacity limits do not block a prepared transaction", () => {
 });
 
 test("native USDC preflight reserves the six-decimal amount plus gas", () => {
+  assert.equal(nativeUsdcToPrecompileBalance(141_500_000_999_999_999_999n), 141_500_000n);
   assert.equal(
     requiredNativeUsdcBalance(100_000n, 2_000_000_000n, 1_500_000n),
     1_500_200_000_000_000_000n,

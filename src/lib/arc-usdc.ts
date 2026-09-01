@@ -4,6 +4,10 @@ const ARC_USDC_NATIVE_SCALE = 10n ** BigInt(
   ARC_NATIVE_USDC_DECIMALS - ARC_USDC_PRECOMPILE_DECIMALS,
 );
 
+export function nativeUsdcToPrecompileBalance(nativeBalance: bigint) {
+  return nativeBalance / ARC_USDC_NATIVE_SCALE;
+}
+
 /**
  * Arc exposes the native gas balance through the canonical six-decimal USDC
  * precompile. Convert a precompile amount before combining it with gas cost.

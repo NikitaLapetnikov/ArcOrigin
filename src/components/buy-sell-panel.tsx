@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings2 } from "lucide-react";
 import { createPublicClient, decodeEventLog, formatUnits, http, isAddress, maxUint256, parseUnits, publicActions, type Address, type Hash, type PublicClient } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
-import { requiredNativeUsdcBalance } from "@/lib/arc-usdc";
-import { ARC_ACTIVE_CONTRACTS, ARC_MULTICALL3_ADDRESS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
+import { nativeUsdcToPrecompileBalance, requiredNativeUsdcBalance } from "@/lib/arc-usdc";
+import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { erc20Abi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
 import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText, walletRpcPreflightDecision } from "@/lib/rpc-errors";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
@@ -27,8 +27,14 @@ type LiveQuote = {
   quotedAt: number;
 };
 type QuoteResponse = { output?: string; fee?: string; spender?: string; pool?: string; quotedAt?: number; error?: string };
+type WalletBalanceResponse = {
+  nativeBalance?: string | null;
+  usdcBalance?: string | null;
+  balances?: Array<{ tokenAddress?: string; balance?: string }>;
+  error?: string;
+};
 type TransactionStatus = "idle" | "checking-rpc" | "quoting" | "preparing" | "approving" | "trading";
-type WalletBalances = { usdc: bigint; token: bigint };
+type WalletBalances = { usdc: bigint; token: bigint; native: bigint };
 type TransactionFeeOverrides =
   | { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
   | { gasPrice: bigint };
@@ -42,14 +48,39 @@ const MAX_EXECUTION_QUOTE_AGE_MS = 8_000;
 const DIRECT_QUOTE_TIMEOUT_MS = 6_000;
 const DIRECT_QUOTE_HEDGE_DELAY_MS = 125;
 const DIRECT_QUOTE_START_DELAY_MS = 350;
+const FAST_RPC_READ_TIMEOUT_MS = 2_000;
+const APPROVAL_GAS_FALLBACK = 100_000n;
+const TRADE_GAS_FALLBACK = 500_000n;
 const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
 const MAX_INPUT_CHARACTERS = 80;
 const directQuoteClients = arcChain.rpcUrls.default.http.map((url) => createPublicClient({
   chain: arcChain,
   transport: http(url, { retryCount: 0, timeout: DIRECT_QUOTE_TIMEOUT_MS }),
 }));
+const primaryReadClient = directQuoteClients[0];
+
+class RpcReadTimeoutError extends Error {
+  constructor() {
+    super("Arc RPC read timed out.");
+    this.name = "RpcReadTimeoutError";
+  }
+}
 
 function wait(milliseconds: number) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
+
+async function withReadTimeout<T>(operation: Promise<T>, timeoutMs = FAST_RPC_READ_TIMEOUT_MS) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new RpcReadTimeoutError()), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -97,6 +128,15 @@ function gasWithSafetyMargin(estimate: bigint) {
   return estimate * 120n / 100n + 5_000n;
 }
 
+async function gasLimitWithCapacityFallback(operation: Promise<bigint>, fallback: bigint) {
+  try {
+    return gasWithSafetyMargin(await withReadTimeout(operation));
+  } catch (error) {
+    if (!(error instanceof RpcReadTimeoutError) && !isRetryableRpcError(error)) throw error;
+    return fallback;
+  }
+}
+
 function displayUnits(value: bigint, decimals: number, maximumFractionDigits = decimals === 6 ? 6 : 4) {
   const parsed = Number(formatUnits(value, decimals));
   return Number.isFinite(parsed) ? parsed.toLocaleString("en-US", { maximumFractionDigits }) : "—";
@@ -105,6 +145,49 @@ function displayUnits(value: bigint, decimals: number, maximumFractionDigits = d
 function inputUnits(value: bigint, decimals: number) {
   const formatted = formatUnits(value, decimals);
   return formatted.includes(".") ? formatted.replace(/\.?0+$/, "") || "0" : formatted;
+}
+
+async function readWalletBalances(wallet: Address, token: Address): Promise<WalletBalances> {
+  const response = await fetch(`/api/onchain/wallets/${encodeURIComponent(wallet)}/balances`, { cache: "no-store" });
+  const payload = await response.json() as WalletBalanceResponse;
+  if (!response.ok || !Array.isArray(payload.balances)) {
+    throw new Error(payload.error || "Indexed wallet balances are unavailable.");
+  }
+  const indexedToken = payload.balances.find((balance) => (
+    typeof balance.tokenAddress === "string"
+    && isAddress(balance.tokenAddress)
+    && balance.tokenAddress.toLowerCase() === token.toLowerCase()
+  ));
+  const rawTokenBalance = indexedToken?.balance ?? "0";
+  if (!/^\d+$/.test(rawTokenBalance)) throw new Error("Indexed token balance is invalid.");
+
+  let nativeBalance: bigint;
+  if (typeof payload.nativeBalance === "string" && /^\d+$/.test(payload.nativeBalance)) {
+    nativeBalance = BigInt(payload.nativeBalance);
+  } else if (primaryReadClient) {
+    nativeBalance = await withReadTimeout(primaryReadClient.getBalance({ address: wallet }), 4_000);
+  } else {
+    throw new Error("Native USDC balance is unavailable.");
+  }
+  const usdcBalance = typeof payload.usdcBalance === "string" && /^\d+$/.test(payload.usdcBalance)
+    ? BigInt(payload.usdcBalance)
+    : nativeUsdcToPrecompileBalance(nativeBalance);
+  return { usdc: usdcBalance, token: BigInt(rawTokenBalance), native: nativeBalance };
+}
+
+async function readAllowance(token: Address, owner: Address, spender: Address) {
+  if (!primaryReadClient) return null;
+  try {
+    return await withReadTimeout(primaryReadClient.readContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [owner, spender],
+    }));
+  } catch (error) {
+    if (error instanceof RpcReadTimeoutError || isRetryableRpcError(error)) return null;
+    throw error;
+  }
 }
 
 async function readDirectQuote(token: Address, pool: Address, side: Side, input: bigint): Promise<QuoteResponse> {
@@ -135,14 +218,21 @@ async function readDirectQuote(token: Address, pool: Address, side: Side, input:
 
 async function estimatePriorityFees(client: PublicClient, priority: Priority): Promise<TransactionFeeOverrides> {
   const multiplier = priority === "Low" ? 100n : priority === "High" ? 150n : 110n;
-  const fees = await withRpcRetry(() => client.estimateFeesPerGas());
-  if (fees.maxFeePerGas !== undefined && fees.maxPriorityFeePerGas !== undefined) {
-    return {
-      maxPriorityFeePerGas: fees.maxPriorityFeePerGas * multiplier / 100n,
-      maxFeePerGas: fees.maxFeePerGas * multiplier / 100n,
-    };
+  try {
+    const fees = await withReadTimeout(client.estimateFeesPerGas());
+    if (fees.maxFeePerGas !== undefined && fees.maxPriorityFeePerGas !== undefined) {
+      return {
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas * multiplier / 100n,
+        maxFeePerGas: fees.maxFeePerGas * multiplier / 100n,
+      };
+    }
+  } catch (error) {
+    if (!(error instanceof RpcReadTimeoutError) && !isRetryableRpcError(error)) throw error;
   }
-  return { gasPrice: await withRpcRetry(() => client.getGasPrice()) * multiplier / 100n };
+  const gasPriceClient = primaryReadClient ?? client;
+  return {
+    gasPrice: await withRpcRetry(() => withReadTimeout(gasPriceClient.getGasPrice()), 2) * multiplier / 100n,
+  };
 }
 
 function ensureGasBalance(
@@ -200,29 +290,21 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
   const amountExceedsBalance = parsedAmount !== null && activeBalance !== undefined && parsedAmount > activeBalance;
 
   const refreshBalances = useCallback(async (background = false) => {
-    if (!address || chainId !== arcChain.id || !publicClient) { setBalances(null); return; }
+    if (!address || chainId !== arcChain.id) { setBalances(null); return; }
     if (background && balanceRefreshInFlightRef.current) return;
     balanceRefreshInFlightRef.current = true;
     if (!background) setBalanceLoading(true);
     setBalanceError(false);
     try {
-      const [usdc, tokenBalance] = await withRpcRetry(() => publicClient.multicall({
-        allowFailure: false,
-        multicallAddress: ARC_MULTICALL3_ADDRESS,
-        contracts: [
-          { address: ARC_ACTIVE_CONTRACTS.usdc, abi: erc20Abi, functionName: "balanceOf", args: [address] },
-          { address: token.address as Address, abi: erc20Abi, functionName: "balanceOf", args: [address] },
-        ],
-      }), 2);
-      setBalances({ usdc, token: tokenBalance });
+      setBalances(await readWalletBalances(address, token.address as Address));
     } catch { setBalanceError(true); } finally {
       balanceRefreshInFlightRef.current = false;
       if (!background) setBalanceLoading(false);
     }
-  }, [address, chainId, publicClient, token.address]);
+  }, [address, chainId, token.address]);
 
   useLiveRefresh({
-    enabled: Boolean(address && chainId === arcChain.id && publicClient),
+    enabled: Boolean(address && chainId === arcChain.id),
     intervalMs: BALANCE_POLL_INTERVAL_MS,
     refresh: () => refreshBalances(true),
   });
@@ -383,37 +465,41 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         : await (async () => { setStatus("quoting"); return readQuote(); })();
       setStatus("preparing");
       const approvalToken = (side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token.address) as Address;
-      const [currentBalance, allowance] = await withRpcRetry(() => client.multicall({
-        allowFailure: false,
-        multicallAddress: ARC_MULTICALL3_ADDRESS,
-        contracts: [
-          { address: approvalToken, abi: erc20Abi, functionName: "balanceOf", args: [address] },
-          { address: approvalToken, abi: erc20Abi, functionName: "allowance", args: [address, executionQuote.spender] },
-        ],
-      }));
+      let freshBalances = await readWalletBalances(address, token.address as Address);
+      setBalances(freshBalances);
+      const currentBalance = side === "Buy" ? freshBalances.usdc : freshBalances.token;
+      const allowance = await readAllowance(approvalToken, address, executionQuote.spender);
       if (currentBalance < executionQuote.input) throw new Error(`Insufficient ${inputSymbol} balance.`);
-      if (allowance < executionQuote.input) {
+      if (allowance === null || allowance < executionQuote.input) {
         setStatus("approving");
         const approvalArgs = [executionQuote.spender, executionQuote.input] as const;
-        const [estimatedApprovalGas, approvalFees, approvalNativeBalance, approvalNonce] = await Promise.all([
-          withRpcRetry(() => client.estimateContractGas({
+        const transactionReadClient = primaryReadClient ?? client;
+        const [approvalGas, approvalFees, approvalNonce] = await Promise.all([
+          gasLimitWithCapacityFallback(client.estimateContractGas({
             account: address,
             address: approvalToken,
             abi: erc20Abi,
             functionName: "approve",
             args: approvalArgs,
-          })),
+          }), APPROVAL_GAS_FALLBACK),
           estimatePriorityFees(client as PublicClient, priority),
-          withRpcRetry(() => client.getBalance({ address })),
-          withRpcRetry(() => client.getTransactionCount({ address, blockTag: "pending" })),
+          withRpcRetry(() => withReadTimeout(transactionReadClient.getTransactionCount({ address, blockTag: "pending" })), 2),
         ]);
-        const approvalGas = gasWithSafetyMargin(estimatedApprovalGas);
-        ensureGasBalance(approvalNativeBalance, approvalGas, approvalFees, side === "Buy" ? executionQuote.input : 0n);
+        // Reserve enough native USDC for both the approval and the swap. The
+        // balance endpoint may be briefly cached while the approval confirms.
+        ensureGasBalance(
+          freshBalances.native,
+          approvalGas + TRADE_GAS_FALLBACK,
+          approvalFees,
+          side === "Buy" ? executionQuote.input : 0n,
+        );
         const approvalHash = await writeContractAsync({ address: approvalToken, abi: erc20Abi, functionName: "approve", args: approvalArgs, gas: approvalGas, nonce: approvalNonce, ...approvalFees });
         setTransactionHash(approvalHash);
         if ((await withRpcRetry(() => client.waitForTransactionReceipt({ hash: approvalHash }))).status !== "success") throw new Error(`${inputSymbol} approval reverted onchain.`);
         setStatus("quoting");
         executionQuote = await readQuote();
+        freshBalances = await readWalletBalances(address, token.address as Address);
+        setBalances(freshBalances);
       }
       setStatus("preparing");
       const tradeArgs = [{
@@ -425,20 +511,19 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         amountOutMinimum: executionQuote.minimumOutput,
         sqrtPriceLimitX96: 0n,
       }] as const;
-      const [estimatedTradeGas, tradeFees, tradeNativeBalance, tradeNonce] = await Promise.all([
-        withRpcRetry(() => client.estimateContractGas({
+      const transactionReadClient = primaryReadClient ?? client;
+      const [tradeGas, tradeFees, tradeNonce] = await Promise.all([
+        gasLimitWithCapacityFallback(client.estimateContractGas({
           account: address,
           address: ARC_UNISWAP_V3.router,
           abi: uniswapV3RouterAbi,
           functionName: "exactInputSingle",
           args: tradeArgs,
-        })),
+        }), TRADE_GAS_FALLBACK),
         estimatePriorityFees(client as PublicClient, priority),
-        withRpcRetry(() => client.getBalance({ address })),
-        withRpcRetry(() => client.getTransactionCount({ address, blockTag: "pending" })),
+        withRpcRetry(() => withReadTimeout(transactionReadClient.getTransactionCount({ address, blockTag: "pending" })), 2),
       ]);
-      const tradeGas = gasWithSafetyMargin(estimatedTradeGas);
-      ensureGasBalance(tradeNativeBalance, tradeGas, tradeFees, side === "Buy" ? executionQuote.input : 0n);
+      ensureGasBalance(freshBalances.native, tradeGas, tradeFees, side === "Buy" ? executionQuote.input : 0n);
       setStatus("trading");
       const tradeHash = await writeContractAsync({
         address: ARC_UNISWAP_V3.router,
