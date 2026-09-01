@@ -16,6 +16,7 @@ const {
 const STREAM = "arc-mainnet";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const STATUS_KEY = "arcorigin:mainnet:indexer:status";
+const STATUS_CHANNEL = "arcorigin:mainnet:indexer-status";
 const RECENT_EVENTS_KEY = "arcorigin:mainnet:indexer:recent-events";
 const EVENT_CHANNEL = "arcorigin:mainnet:events";
 
@@ -465,8 +466,18 @@ async function publishEvents(redis, events, status) {
     batch.lTrim(RECENT_EVENTS_KEY, 0, 199);
     batch.publish(EVENT_CHANNEL, encoded);
   }
-  batch.set(STATUS_KEY, JSON.stringify(status), { EX: 120 });
+  const encodedStatus = JSON.stringify(status);
+  batch.set(STATUS_KEY, encodedStatus, { EX: 120 });
+  batch.publish(STATUS_CHANNEL, encodedStatus);
   await batch.exec();
+}
+
+async function publishStatus(redis, status) {
+  const encodedStatus = JSON.stringify(status);
+  await redis.multi()
+    .set(STATUS_KEY, encodedStatus, { EX: 120 })
+    .publish(STATUS_CHANNEL, encodedStatus)
+    .exec();
 }
 
 async function rebuildMaterializedState(client) {
@@ -637,7 +648,7 @@ async function main() {
         }
         state = { lastBlock: toBlock, lastHash: range.finalBlock.hash };
       } else {
-        await redis.set(STATUS_KEY, JSON.stringify({
+        await publishStatus(redis, {
           status: "ok",
           stream: STREAM,
           indexedBlock: state.lastBlock.toString(),
@@ -646,17 +657,17 @@ async function main() {
           blockLag: (latestBlock - state.lastBlock).toString(),
           eventsPublished: 0,
           generatedAt: new Date().toISOString(),
-        }), { EX: 120 });
+        });
         await wait(pollInterval);
       }
     } catch (error) {
       console.error("[indexer] cycle failed", error instanceof Error ? error.message : error);
-      await redis.set(STATUS_KEY, JSON.stringify({
+      await publishStatus(redis, {
         status: "degraded",
         stream: STREAM,
         error: error instanceof Error ? error.message : "Indexer cycle failed",
         generatedAt: new Date().toISOString(),
-      }), { EX: 120 }).catch(() => undefined);
+      }).catch(() => undefined);
       await wait(Math.max(5_000, pollInterval));
     }
   }

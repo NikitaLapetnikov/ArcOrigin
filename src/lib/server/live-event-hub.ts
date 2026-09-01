@@ -3,6 +3,7 @@ import "server-only";
 import { createClient } from "redis";
 
 const EVENT_CHANNEL = "arcorigin:mainnet:events";
+const STATUS_CHANNEL = "arcorigin:mainnet:indexer-status";
 const RECENT_EVENTS_KEY = "arcorigin:mainnet:indexer:recent-events";
 const STATUS_KEY = "arcorigin:mainnet:indexer:status";
 const REPLAY_LIMIT = 25;
@@ -55,6 +56,9 @@ async function connectHub() {
       await client.subscribe(EVENT_CHANNEL, (payload) => {
         state.recent = [payload, ...state.recent.filter((item) => item !== payload)].slice(0, REPLAY_LIMIT);
         for (const listener of state.listeners) listener(payload);
+      });
+      await client.subscribe(STATUS_CHANNEL, (payload) => {
+        state.status = payload;
       });
     })().catch((error) => {
       state.client?.disconnect();
