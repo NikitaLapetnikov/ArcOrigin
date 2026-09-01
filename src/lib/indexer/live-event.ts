@@ -29,7 +29,21 @@ function payloadEventId(payload: string) {
  * with a known Last-Event-ID receive the events they actually missed.
  */
 export function replayPayloadsAfter(recentNewestFirst: string[], lastEventId: string | null) {
-  if (!lastEventId) return [];
+  if (!lastEventId) {
+    const cutoff = Math.floor(Date.now() / 1_000) - 5 * 60;
+    const seen = new Set<string>();
+    return recentNewestFirst.filter((payload) => {
+      try {
+        const event = JSON.parse(payload) as { id?: unknown; kind?: unknown; timestamp?: unknown };
+        if (event.kind !== "launch" || typeof event.id !== "string" || typeof event.timestamp !== "number"
+          || event.timestamp < cutoff || seen.has(event.id)) return false;
+        seen.add(event.id);
+        return true;
+      } catch {
+        return false;
+      }
+    }).reverse();
+  }
   const lastSeenIndex = recentNewestFirst.findIndex(
     (payload) => payloadEventId(payload) === lastEventId,
   );

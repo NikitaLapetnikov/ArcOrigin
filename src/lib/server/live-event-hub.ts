@@ -104,3 +104,26 @@ export async function subscribeLiveEvents(listener: Listener) {
     unsubscribe: () => state.listeners.delete(listener),
   };
 }
+
+export async function publishVerifiedLiveEvent(event: import("@/lib/indexer/live-event").LiveIndexerEvent) {
+  if (!isLiveIndexerEvent(event)) throw new Error("Invalid live event.");
+  const redisUrl = process.env.REDIS_URL?.trim();
+  if (!redisUrl) throw new Error("REDIS_URL is not configured.");
+  const publisher = createClient({ url: redisUrl, socket: { connectTimeout: 3_000 } });
+  publisher.on("error", () => undefined);
+  const encoded = JSON.stringify(event);
+  const dedupeKey = `arcorigin:mainnet:announced:${event.id}`;
+  try {
+    await publisher.connect();
+    const claimed = await publisher.set(dedupeKey, "1", { NX: true, EX: 86_400 });
+    if (claimed !== "OK") return false;
+    await publisher.multi()
+      .lPush(RECENT_EVENTS_KEY, encoded)
+      .lTrim(RECENT_EVENTS_KEY, 0, REPLAY_LIMIT - 1)
+      .publish(EVENT_CHANNEL, encoded)
+      .exec();
+    return true;
+  } finally {
+    if (publisher.isOpen) await publisher.quit().catch(() => publisher.disconnect());
+  }
+}

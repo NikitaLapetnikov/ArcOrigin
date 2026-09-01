@@ -977,6 +977,12 @@ export function LaunchForm() {
           transactionHash: launchHash,
         },
       }));
+      void fetch("/api/onchain/launches/announce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionHash: launchHash }),
+        cache: "no-store",
+      }).catch(() => undefined);
       void fetch("/api/onchain/tokens?refresh=1", { cache: "no-store" }).catch(() => undefined);
       let completedLaunch = launched;
       if (selectedInitialBuy > 0n) {

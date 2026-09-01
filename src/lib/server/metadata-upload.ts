@@ -12,6 +12,7 @@ import {
   type TokenMetadataInput,
 } from "@/lib/token-metadata";
 import { storeMedia } from "@/lib/server/media-store";
+import { storeTokenMetadata } from "@/lib/server/token-metadata-store";
 
 const CHALLENGE_TTL_MS = 15 * 60 * 1_000;
 const CHALLENGE_RATE_WINDOW_MS = 10 * 60 * 1_000;
@@ -334,6 +335,12 @@ export async function publishTokenMetadata({
   };
   const metadataFile = new File([JSON.stringify(metadata)], `${stem}.json`, { type: "application/json" });
   const metadataCid = await uploadToPinata(metadataFile, `${stem}.json`);
+  try {
+    await storeTokenMetadata(metadataCid, metadata);
+  } catch (error) {
+    console.error("Uploaded token metadata could not be persisted locally.", error);
+    throw new MetadataUploadError("Token metadata storage could not be verified. Try again.", 503);
+  }
   return {
     metadataURI: `ipfs://${metadataCid}`,
     imageURI,

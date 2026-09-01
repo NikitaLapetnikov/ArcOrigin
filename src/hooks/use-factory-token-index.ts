@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ARC_ACTIVE_FACTORY, arcChain } from "@/lib/chains";
+import {
+  ARCORIGIN_CROSS_MARKET_CAP_USDC,
+  ARCORIGIN_START_MARKET_CAP_USDC,
+  ARC_ACTIVE_FACTORY,
+  arcChain,
+} from "@/lib/chains";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import { loadClientTokenIndex } from "@/lib/onchain/client-token-index";
 import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
@@ -9,6 +14,7 @@ import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import { snapshotRevalidationDelay } from "@/lib/onchain/snapshot-revalidation";
 import type { TokenData, Trade } from "@/lib/types";
 import { normalizeIpfsImageURL } from "@/lib/ipfs";
+import { isLiveIndexerEvent } from "@/lib/indexer/live-event";
 
 const TOKEN_INDEX_CACHE_KEY =
   `arcorigin:${arcChain.id}:factory-index:${ARC_ACTIVE_FACTORY.toLowerCase()}`;
@@ -36,6 +42,72 @@ type ConfirmedTrade = {
   tokens: number;
   executionPrice?: number;
 };
+
+function tokenFromLiveLaunch(value: unknown): TokenData | null {
+  if (!isLiveIndexerEvent(value) || value.kind !== "launch") return null;
+  if (typeof value.name !== "string" || value.name.length === 0
+    || typeof value.symbol !== "string" || value.symbol.length === 0
+    || typeof value.creator !== "string" || !isAddress(value.creator)
+    || typeof value.positionId !== "string" || !/^\d+$/.test(value.positionId)
+    || typeof value.totalSupply !== "number" || !Number.isFinite(value.totalSupply) || value.totalSupply <= 0
+    || typeof value.metadataURI !== "string" || value.metadataURI.length === 0
+    || !value.poolAddress) return null;
+  const price = ARCORIGIN_START_MARKET_CAP_USDC / value.totalSupply;
+  const image = typeof value.image === "string" ? normalizeIpfsImageURL(value.image) : undefined;
+  const social = (key: "website" | "x" | "telegram") => typeof value[key] === "string" ? value[key] : undefined;
+  return {
+    name: value.name,
+    ticker: value.symbol,
+    icon: value.name.trim().slice(0, 1).toUpperCase() || value.symbol.slice(0, 1).toUpperCase(),
+    image,
+    metadataURI: value.metadataURI,
+    address: value.tokenAddress,
+    poolAddress: value.poolAddress,
+    positionId: value.positionId,
+    factoryAddress: ARC_ACTIVE_FACTORY,
+    automaticBuyback: value.automaticBuyback === true,
+    creator: value.creator,
+    source: "onchain",
+    creatorAllocationPercent: 0,
+    launchTxHash: value.transactionHash,
+    launchBlock: Number(value.blockNumber),
+    launchedAt: value.timestamp,
+    totalSupply: value.totalSupply,
+    description: typeof value.description === "string" && value.description.length > 0
+      ? value.description
+      : "Verified ArcOrigin launch. Live analytics are indexing now.",
+    ageMinutes: 0,
+    price,
+    priceChange24h: 0,
+    marketCap: ARCORIGIN_START_MARKET_CAP_USDC,
+    raisedUSDC: ARCORIGIN_START_MARKET_CAP_USDC,
+    targetUSDC: ARCORIGIN_CROSS_MARKET_CAP_USDC,
+    volume5m: 0,
+    volume1h: 0,
+    volume24h: 0,
+    buyers: 0,
+    sellers: 0,
+    trades: 0,
+    holders: 0,
+    crossProgress: ARCORIGIN_START_MARKET_CAP_USDC / ARCORIGIN_CROSS_MARKET_CAP_USDC * 100,
+    riskScore: 90,
+    status: "Live",
+    chartData: [{ time: "Launch", timestamp: value.timestamp, price, volume: 0 }],
+    recentTrades: [],
+    riskLabels: ["fixed_supply", "standard_template", "no_hidden_mint"],
+    creatorProfile: {
+      address: value.creator,
+      reputation: 50,
+      launches: 1,
+      crossed: 0,
+      flagged: 0,
+      totalVolume: 0,
+      totalFees: 1,
+      verified: false,
+    },
+    socials: { website: social("website"), x: social("x"), telegram: social("telegram") },
+  };
+}
 
 function isAddress(value: unknown): value is string {
   return typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value);
@@ -325,6 +397,16 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
   const refreshRequestRef = useRef(0);
   const refreshInFlightRef = useRef(false);
   const staleRevalidationAttemptRef = useRef(0);
+  const pendingLaunchesRef = useRef(new Map<string, TokenData>());
+
+  const mergePendingLaunches = useCallback((indexedTokens: TokenData[]) => {
+    const indexedAddresses = new Set(indexedTokens.map((token) => token.address.toLowerCase()));
+    for (const address of indexedAddresses) pendingLaunchesRef.current.delete(address);
+    const pending = [...pendingLaunchesRef.current.values()].filter(
+      (token) => !indexedAddresses.has(token.address.toLowerCase()),
+    );
+    return [...pending, ...indexedTokens];
+  }, []);
 
   const refresh = useCallback(async (forceRefresh = true, background = false) => {
     if (background && refreshInFlightRef.current) return;
@@ -339,21 +421,21 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         (indexedTokens, stale) => {
           if (!isCurrentRequest()) return;
           setTokens((current) => {
-            return mergePendingTrades(indexedTokens.map((token) => preserveMarketValues(
+            return mergePendingTrades(mergePendingLaunches(indexedTokens.map((token) => preserveMarketValues(
               token,
               current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()),
-            )));
+            ))));
           });
           setIsPartial(false);
           setIsCached(stale);
         },
         (marketTokens, marketDataError, stale, failedMarketAddresses) => {
           if (!isCurrentRequest()) return;
-          setTokens((current) => mergePendingTrades(marketTokens.map((token) => (
+          setTokens((current) => mergePendingTrades(mergePendingLaunches(marketTokens.map((token) => (
             failedMarketAddresses.has(token.address.toLowerCase())
               ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
               : token
-          ))));
+          )))));
           setIsPartial(Boolean(marketDataError));
           setIsCached(stale);
           if (!background) setLoading(false);
@@ -361,11 +443,11 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       );
       if (!isCurrentRequest()) return;
       setTokens((current) => {
-        const next = mergePendingTrades(result.tokens.map((token) => (
+        const next = mergePendingTrades(mergePendingLaunches(result.tokens.map((token) => (
           !includeMarketData || result.failedMarketAddresses.has(token.address.toLowerCase())
             ? preserveMarketValues(token, current.find((item) => item.address.toLowerCase() === token.address.toLowerCase()))
             : token
-        )));
+        ))));
         if (allowCache && !result.marketDataError) {
           writeCachedIndex(next);
         }
@@ -395,7 +477,7 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
         if (!background) setLoading(false);
       }
     }
-  }, [allowCache, includeMarketData]);
+  }, [allowCache, includeMarketData, mergePendingLaunches]);
 
   useLiveRefresh({
     intervalMs: includeMarketData ? MARKET_POLL_INTERVAL_MS : INDEX_POLL_INTERVAL_MS,
@@ -419,7 +501,25 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       }
     }
     void refresh(forceInitialRefresh);
-    const handleLaunch = () => void refresh(true);
+    const launchRefreshTimers = new Set<ReturnType<typeof setTimeout>>();
+    const handleLaunch = (event: Event) => {
+      const optimistic = tokenFromLiveLaunch((event as CustomEvent<unknown>).detail);
+      if (optimistic) {
+        const key = optimistic.address.toLowerCase();
+        pendingLaunchesRef.current.set(key, optimistic);
+        setTokens((current) => current.some((token) => token.address.toLowerCase() === key)
+          ? current
+          : [optimistic, ...current]);
+      }
+      void refresh(true, true);
+      for (const delay of [2_000, 5_000, 10_000]) {
+        const timer = setTimeout(() => {
+          launchRefreshTimers.delete(timer);
+          void refresh(true, true);
+        }, delay);
+        launchRefreshTimers.add(timer);
+      }
+    };
     const reconciliationTimers = new Map<string, ReturnType<typeof setTimeout>>();
     const reconcileToken = async (tokenAddress: string) => {
       if (!includeMarketData) return;
@@ -474,6 +574,8 @@ export function useFactoryTokenIndex({ includeMarketData = true, allowCache = tr
       window.removeEventListener("storage", handleStorage);
       reconciliationTimers.forEach(clearTimeout);
       reconciliationTimers.clear();
+      launchRefreshTimers.forEach(clearTimeout);
+      launchRefreshTimers.clear();
     };
   }, [allowCache, includeMarketData, refresh]);
 

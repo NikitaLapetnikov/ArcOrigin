@@ -387,10 +387,18 @@ test("SSE events are validated before they update client state", () => {
   assert.equal(isLiveIndexerEvent({ ...liveEvent, transactionHash: "bad" }), false);
 });
 
-test("SSE replay sends only missed events after a known connection cursor", () => {
+test("SSE replay sends recent launches to fresh clients and missed events after a cursor", () => {
   const payload = (id) => JSON.stringify({ id });
   const recent = [payload("event-4"), payload("event-3"), payload("event-2"), payload("event-1")];
   assert.deepEqual(replayPayloadsAfter(recent, null), []);
+  const now = Math.floor(Date.now() / 1_000);
+  const recentLaunch = JSON.stringify({ id: "launch-new", kind: "launch", timestamp: now });
+  const duplicateLaunch = JSON.stringify({ id: "launch-new", kind: "launch", timestamp: now, enriched: true });
+  const oldLaunch = JSON.stringify({ id: "launch-old", kind: "launch", timestamp: now - 301 });
+  assert.deepEqual(
+    replayPayloadsAfter([recentLaunch, duplicateLaunch, oldLaunch], null).map((item) => JSON.parse(item).id),
+    ["launch-new"],
+  );
   assert.deepEqual(replayPayloadsAfter(recent, "unknown"), []);
   assert.deepEqual(
     replayPayloadsAfter(recent, "event-2").map((item) => JSON.parse(item).id),

@@ -7,6 +7,7 @@ import {
   normalizeXUrl,
 } from "@/lib/token-metadata";
 import { ipfsMediaURL, parseIpfsPath } from "@/lib/ipfs";
+import { readStoredTokenMetadata } from "@/lib/server/token-metadata-store";
 
 const MAX_METADATA_BYTES = 2 * 1024 * 1024;
 const CACHE_LIMIT = 200;
@@ -80,6 +81,23 @@ function cacheMetadata(key: string, value: ResolvedTokenMetadata | null) {
   cache.set(key, { value, cachedAt: Date.now() });
 }
 
+function normalizeResolvedMetadata(payload: Record<string, unknown>) {
+  const properties = payload.properties && typeof payload.properties === "object"
+    ? payload.properties as Record<string, unknown>
+    : {};
+  const imageURI = text(payload.image, 512) ?? "";
+  const websiteValue = text(payload.external_url, 200) ?? text(properties.website, 200) ?? "";
+  const xValue = text(properties.x, 200) ?? "";
+  const telegramValue = text(properties.telegram, 200) ?? "";
+  return {
+    description: descriptionText(payload.description),
+    image: imageURI ? ipfsMediaURL(imageURI) || undefined : undefined,
+    website: websiteValue ? normalizeWebsiteUrl(websiteValue) : undefined,
+    x: xValue ? normalizeXUrl(xValue) : undefined,
+    telegram: telegramValue ? normalizeTelegramUrl(telegramValue) : undefined,
+  } satisfies ResolvedTokenMetadata;
+}
+
 async function readLimitedBody(response: Response) {
   if (!response.body) throw new Error("Metadata response has no body.");
   const reader = response.body.getReader();
@@ -116,7 +134,9 @@ export async function resolveTokenMetadata(metadataURI: string): Promise<Resolve
   if (urls.length === 0) return null;
 
   try {
-    const payload = await Promise.any(urls.map(async (url) => {
+    const ipfsPath = parseIpfsPath(metadataURI);
+    const stored = ipfsPath ? await readStoredTokenMetadata(ipfsPath) : null;
+    const payload = stored ?? await Promise.any(urls.map(async (url) => {
       const response = await fetch(url, {
         headers: { Accept: "application/json" },
         redirect: "error",
@@ -127,20 +147,7 @@ export async function resolveTokenMetadata(metadataURI: string): Promise<Resolve
       const body = await readLimitedBody(response);
       return JSON.parse(body) as Record<string, unknown>;
     }));
-    const properties = payload.properties && typeof payload.properties === "object"
-      ? payload.properties as Record<string, unknown>
-      : {};
-    const imageURI = text(payload.image, 512) ?? "";
-    const websiteValue = text(payload.external_url, 200) ?? text(properties.website, 200) ?? "";
-    const xValue = text(properties.x, 200) ?? "";
-    const telegramValue = text(properties.telegram, 200) ?? "";
-    const result: ResolvedTokenMetadata = {
-      description: descriptionText(payload.description),
-      image: imageURI ? ipfsGatewayURL(imageURI) || undefined : undefined,
-      website: websiteValue ? normalizeWebsiteUrl(websiteValue) : undefined,
-      x: xValue ? normalizeXUrl(xValue) : undefined,
-      telegram: telegramValue ? normalizeTelegramUrl(telegramValue) : undefined,
-    };
+    const result = normalizeResolvedMetadata(payload);
     cacheMetadata(metadataURI, result);
     return result;
   } catch {
