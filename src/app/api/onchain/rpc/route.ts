@@ -10,6 +10,8 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 300;
 const RPC_TIMEOUT_MS = 7_000;
+const ARC_CHAIN_ID_HEX = "0x13b2";
+const ARC_NETWORK_ID = "5042";
 const ALLOWED_METHODS = new Set([
   "eth_blockNumber",
   "eth_call",
@@ -18,13 +20,18 @@ const ALLOWED_METHODS = new Set([
   "eth_feeHistory",
   "eth_gasPrice",
   "eth_getBalance",
+  "eth_getBlockByHash",
   "eth_getBlockByNumber",
   "eth_getCode",
+  "eth_getLogs",
+  "eth_getStorageAt",
   "eth_getTransactionByHash",
   "eth_getTransactionCount",
   "eth_getTransactionReceipt",
   "eth_maxPriorityFeePerGas",
   "eth_sendRawTransaction",
+  "net_version",
+  "web3_clientVersion",
 ]);
 
 type RateEntry = { startedAt: number; count: number };
@@ -90,7 +97,14 @@ export async function POST(request: NextRequest) {
       || typeof payload.method !== "string"
       || !ALLOWED_METHODS.has(payload.method)
       || !Array.isArray(payload.params)) {
-      return NextResponse.json({ jsonrpc: "2.0", id: payload.id ?? null, error: { code: -32600, message: "Invalid or unsupported RPC request." } }, { status: 400 });
+      const unsupportedMethod = typeof payload.method === "string" && !ALLOWED_METHODS.has(payload.method);
+      return NextResponse.json({
+        jsonrpc: "2.0",
+        id: payload.id ?? null,
+        error: unsupportedMethod
+          ? { code: -32601, message: "Method not found." }
+          : { code: -32600, message: "Invalid RPC request." },
+      }, { headers: { "Cache-Control": "no-store" } });
     }
     id = payload.id;
     method = payload.method;
@@ -99,15 +113,36 @@ export async function POST(request: NextRequest) {
         || typeof payload.params[0] !== "string"
         || !/^0x[0-9a-fA-F]+$/.test(payload.params[0])
         || payload.params[0].length > 24_000)) {
-      return NextResponse.json({ jsonrpc: "2.0", id, error: { code: -32602, message: "Invalid signed transaction payload." } }, { status: 400 });
+      return NextResponse.json(
+        { jsonrpc: "2.0", id, error: { code: -32602, message: "Invalid signed transaction payload." } },
+        { headers: { "Cache-Control": "no-store" } },
+      );
     }
   } catch {
-    return NextResponse.json({ jsonrpc: "2.0", id, error: { code: -32700, message: "Invalid JSON-RPC payload." } }, { status: 400 });
+    return NextResponse.json(
+      { jsonrpc: "2.0", id, error: { code: -32700, message: "Invalid JSON-RPC payload." } },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
+  // Rabby validates custom networks with these immutable identity methods. Answering
+  // them locally avoids misclassifying a temporary upstream outage as an auth error.
+  if (method === "eth_chainId") {
+    return NextResponse.json({ jsonrpc: "2.0", id, result: ARC_CHAIN_ID_HEX }, { headers: { "Cache-Control": "no-store" } });
+  }
+  if (method === "net_version") {
+    return NextResponse.json({ jsonrpc: "2.0", id, result: ARC_NETWORK_ID }, { headers: { "Cache-Control": "no-store" } });
+  }
+  if (method === "web3_clientVersion") {
+    return NextResponse.json({ jsonrpc: "2.0", id, result: "ArcOrigin/RPC-Relay" }, { headers: { "Cache-Control": "no-store" } });
   }
 
   const rateKey = `${requestClientKey(request)}:${method === "eth_sendRawTransaction" ? "send" : "read"}`;
   if (!consumeRate(rateKey, method === "eth_sendRawTransaction" ? 30 : RATE_LIMIT)) {
-    return NextResponse.json({ jsonrpc: "2.0", id, error: { code: -32005, message: "Arc RPC relay rate limit reached." } }, { status: 429 });
+    return NextResponse.json(
+      { jsonrpc: "2.0", id, error: { code: -32005, message: "Arc RPC relay rate limit reached. Retry shortly." } },
+      { headers: { "Cache-Control": "no-store", "Retry-After": "1" } },
+    );
   }
 
   const urls = arcRpcUrls(process.env.ARC_MAINNET_RPC_URL);
@@ -121,6 +156,6 @@ export async function POST(request: NextRequest) {
   }
   return NextResponse.json(
     { jsonrpc: "2.0", id, error: { code: -32005, message: "Arc RPC is temporarily unavailable." } },
-    { status: 503, headers: { "Cache-Control": "no-store", "Retry-After": "1" } },
+    { headers: { "Cache-Control": "no-store", "Retry-After": "1" } },
   );
 }
