@@ -26,3 +26,9 @@ export function isUnauthorizedBlockdaemonRpc(error: unknown) {
   return /(?:\b401\b|Authorization Required)/i.test(details)
     && /(?:blockdaemon|HTTP request failed)/i.test(details);
 }
+
+export function walletRpcPreflightDecision(error: unknown): "continue" | "repair" | "fail" {
+  if (isUnauthorizedBlockdaemonRpc(error)) return "repair";
+  if (isRetryableRpcError(error)) return "continue";
+  return "fail";
+}

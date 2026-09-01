@@ -53,6 +53,7 @@ const {
   isRetryableRpcError,
   isRpcCapacityError,
   isUnauthorizedBlockdaemonRpc,
+  walletRpcPreflightDecision,
 } = loadTypeScriptModule("src/lib/rpc-errors.ts");
 const {
   requiredNativeUsdcBalance,
@@ -219,6 +220,19 @@ test("retired wallet RPC authorization failures are detected before a transactio
   };
   assert.equal(isUnauthorizedBlockdaemonRpc(error), true);
   assert.equal(isUnauthorizedBlockdaemonRpc(new Error("execution reverted")), false);
+  assert.equal(walletRpcPreflightDecision(error), "repair");
+});
+
+test("wallet RPC capacity limits do not block a prepared transaction", () => {
+  const capacityError = {
+    shortMessage: "HTTP request failed.",
+    cause: {
+      details: "Request exceeds defined limit.",
+      message: "URL: https://rpc.arc-scan.org/",
+    },
+  };
+  assert.equal(walletRpcPreflightDecision(capacityError), "continue");
+  assert.equal(walletRpcPreflightDecision(new Error("execution reverted")), "fail");
 });
 
 test("native USDC preflight reserves the six-decimal amount plus gas", () => {

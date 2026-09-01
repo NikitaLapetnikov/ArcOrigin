@@ -7,7 +7,7 @@ import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteC
 import { requiredNativeUsdcBalance } from "@/lib/arc-usdc";
 import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { erc20Abi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
-import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText } from "@/lib/rpc-errors";
+import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText, walletRpcPreflightDecision } from "@/lib/rpc-errors";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import type { TokenData } from "@/lib/types";
 import { tickerLabel } from "@/lib/utils";
@@ -41,7 +41,7 @@ const QUOTE_POLL_INTERVAL_MS = 5_000;
 const MAX_EXECUTION_QUOTE_AGE_MS = 8_000;
 const DIRECT_QUOTE_TIMEOUT_MS = 6_000;
 const DIRECT_QUOTE_HEDGE_DELAY_MS = 250;
-const SERVER_QUOTE_HEDGE_DELAY_MS = 2_000;
+const DIRECT_QUOTE_START_DELAY_MS = 1_200;
 const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
 const MAX_INPUT_CHARACTERS = 80;
 const directQuoteClients = arcChain.rpcUrls.default.http.map((url) => createPublicClient({
@@ -109,22 +109,28 @@ function inputUnits(value: bigint, decimals: number) {
 
 async function readDirectQuote(token: Address, pool: Address, side: Side, input: bigint): Promise<QuoteResponse> {
   if (directQuoteClients.length === 0) throw new Error(`No ${arcChain.name} quote RPC is configured.`);
-  return Promise.any(directQuoteClients.map(async (client, index) => {
-    if (index > 0) await wait(index * DIRECT_QUOTE_HEDGE_DELAY_MS);
-    const { result } = await client.simulateContract({
-      address: ARC_UNISWAP_V3.quoter,
-      abi: uniswapV3QuoterAbi,
-      functionName: "quoteExactInputSingle",
-      args: [{
-        tokenIn: side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token,
-        tokenOut: side === "Buy" ? token : ARC_ACTIVE_CONTRACTS.usdc,
-        amountIn: input,
-        fee: ARC_UNISWAP_V3.fee,
-        sqrtPriceLimitX96: 0n,
-      }],
-    });
-    return { output: result[0].toString(), fee: (input * BigInt(ARC_UNISWAP_V3.fee) / 1_000_000n).toString(), spender: ARC_UNISWAP_V3.router, pool };
-  }));
+  const hedgeController = new AbortController();
+  try {
+    return await Promise.any(directQuoteClients.map(async (client, index) => {
+      if (index > 0) await wait(index * DIRECT_QUOTE_HEDGE_DELAY_MS);
+      if (hedgeController.signal.aborted) throw new Error("Direct quote hedge cancelled.");
+      const { result } = await client.simulateContract({
+        address: ARC_UNISWAP_V3.quoter,
+        abi: uniswapV3QuoterAbi,
+        functionName: "quoteExactInputSingle",
+        args: [{
+          tokenIn: side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token,
+          tokenOut: side === "Buy" ? token : ARC_ACTIVE_CONTRACTS.usdc,
+          amountIn: input,
+          fee: ARC_UNISWAP_V3.fee,
+          sqrtPriceLimitX96: 0n,
+        }],
+      });
+      return { output: result[0].toString(), fee: (input * BigInt(ARC_UNISWAP_V3.fee) / 1_000_000n).toString(), spender: ARC_UNISWAP_V3.router, pool };
+    }));
+  } finally {
+    hedgeController.abort();
+  }
 }
 
 async function estimatePriorityFees(client: PublicClient, priority: Priority): Promise<TransactionFeeOverrides> {
@@ -238,7 +244,15 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
       verifiedWalletRpcRef.current = checkKey;
       return;
     } catch (error) {
-      if (!isUnauthorizedBlockdaemonRpc(error)) throw error;
+      const decision = walletRpcPreflightDecision(error);
+      if (decision === "continue") {
+        // All nonce, balance, fee and simulation reads below use ArcOrigin's
+        // failover client. A temporary limit on the wallet's read transport
+        // must not block a fully prepared transaction from reaching the wallet.
+        verifiedWalletRpcRef.current = checkKey;
+        return;
+      }
+      if (decision === "fail") throw error;
     }
 
     setNotice(`Your wallet has an outdated Arc RPC. Approve the network update to ${ARC_WALLET_RPC_URL}.`);
@@ -251,14 +265,11 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
       // Switching and rechecking below still succeeds when they accepted the new RPC.
     }
     await walletClient.switchChain({ id: arcChain.id });
-    try {
-      await (walletClient.extend(publicActions) as unknown as PublicClient).getTransactionCount({ address, blockTag: "latest" });
-      verifiedWalletRpcRef.current = checkKey;
-      setNotice("");
-    } catch (error) {
-      verifiedWalletRpcRef.current = "";
-      throw error;
-    }
+    // Injected connectors can retain their old read transport after the wallet
+    // accepts a network update. Do not immediately probe that cached endpoint
+    // again; writeContract receives an explicit nonce, gas and fee configuration.
+    verifiedWalletRpcRef.current = checkKey;
+    setNotice("");
   }
 
   const readQuote = useCallback(async (): Promise<LiveQuote> => {
@@ -266,22 +277,26 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
     const input = parseTradeAmount(amount, inputDecimals);
     if (input === null) throw new Error(`Enter a valid amount with no more than ${inputDecimals} decimal places.`);
-    const serverQuoteController = new AbortController();
+    const quoteController = new AbortController();
     const serverQuote = (async () => {
-      await wait(SERVER_QUOTE_HEDGE_DELAY_MS);
-      const response = await fetch(`/api/onchain/quote?token=${encodeURIComponent(token.address)}&pool=${encodeURIComponent(poolAddress)}&side=${side}&amount=${input}`, { cache: "no-store", signal: serverQuoteController.signal });
+      const response = await fetch(`/api/onchain/quote?token=${encodeURIComponent(token.address)}&pool=${encodeURIComponent(poolAddress)}&side=${side}&amount=${input}`, { cache: "no-store", signal: quoteController.signal });
       const result = await response.json() as QuoteResponse;
       if (!response.ok) { const error = new Error(result.error || "Unable to read an onchain quote.") as Error & { status?: number }; error.status = response.status; throw error; }
       return result;
     })();
+    const directQuote = (async () => {
+      await wait(DIRECT_QUOTE_START_DELAY_MS);
+      if (quoteController.signal.aborted) throw new Error("Direct quote fallback cancelled.");
+      return readDirectQuote(token.address as Address, poolAddress, side, input);
+    })();
     let result: QuoteResponse;
     try {
       result = await Promise.any([
-        readDirectQuote(token.address as Address, poolAddress, side, input),
         serverQuote,
+        directQuote,
       ]);
     } finally {
-      serverQuoteController.abort();
+      quoteController.abort();
     }
     if (!result.output || result.fee === undefined || !result.spender || !result.pool) throw new Error(result.error || "Unable to read an onchain quote.");
     if (!isAddress(result.spender)
