@@ -23,7 +23,6 @@ import type { ChartPoint, TokenData, Trade } from "@/lib/types";
 
 const swapEvent = parseAbiItem("event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)");
 const LOG_BLOCK_RANGE = 9_999n;
-const CHART_TRADE_LIMIT = 240;
 const TRADE_FEED_LIMIT = 500;
 const BLOCK_TIMESTAMP_CONCURRENCY = 6;
 const CACHE_TTL_MS = 30_000;
@@ -236,7 +235,7 @@ async function loadUniswapMarketSnapshot(baseToken: TokenData, indexedBlock: big
   }));
   const chart: ChartPoint[] = [
     { time: "Launch", timestamp: baseToken.launchedAt, price: launchPrice, volume: 0 },
-    ...validEvents.slice(-CHART_TRADE_LIMIT).map((event) => ({
+    ...validEvents.map((event) => ({
       time: `#${event.blockNumber % 100_000n}`,
       timestamp: event.timestamp,
       price: event.executionPrice,

@@ -6,7 +6,6 @@ import { getArcscanLogs } from "@/lib/onchain/arcscan-logs";
 import type { ChartPoint, TokenData, Trade } from "@/lib/types";
 
 const swapEvent = parseAbiItem("event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)");
-const CHART_TRADE_LIMIT = 240;
 const TRADE_FEED_LIMIT = 500;
 const publicClient = createArcPublicClient();
 
@@ -90,7 +89,7 @@ export async function loadIndexedMarketSnapshot(token: TokenData, indexedBlock?:
   const tokenReserve = Number(formatUnits(tokenReserveRaw, 18));
   const chart: ChartPoint[] = [
     { time: "Launch", timestamp: token.launchedAt, price: launchPrice, volume: 0 },
-    ...events.slice(-CHART_TRADE_LIMIT).map((event) => ({
+    ...events.map((event) => ({
       time: `#${event.blockNumber % 100_000n}`,
       timestamp: event.timestamp,
       price: event.executionPrice,

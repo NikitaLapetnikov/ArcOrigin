@@ -41,6 +41,7 @@ type IndicatorName = "MA" | "EMA" | "BOLL" | "SAR" | "VOL" | "MACD" | "RSI" | "K
 type Tool = "cursor" | "straightLine" | "rayLine" | "horizontalStraightLine" | "verticalStraightLine" | "parallelStraightLine" | "fibonacciLine" | "brush" | "arcMeasure";
 type SavedOverlay = Pick<Overlay, "name" | "points"> & Pick<OverlayCreate, "styles" | "extendData">;
 type TradeMarkerData = { side: "Buy" | "Sell"; label: string };
+type LiveBarCallback = (data: KLineData) => void;
 
 type TokenChartProps = {
   data: ChartPoint[];
@@ -80,6 +81,24 @@ function timeframeSeconds(timeframe: ChartTimeframe) {
   return 24 * 60 * 60;
 }
 
+function sameCandle(left: KLineData, right: KLineData) {
+  return left.timestamp === right.timestamp
+    && left.open === right.open
+    && left.high === right.high
+    && left.low === right.low
+    && left.close === right.close
+    && left.volume === right.volume;
+}
+
+function sameCandleSeries(left: KLineData[], right: KLineData[]) {
+  return left.length === right.length && left.every((candle, index) => sameCandle(candle, right[index]));
+}
+
+function canApplyLiveCandleUpdate(previous: KLineData[], next: KLineData[]) {
+  if (previous.length === 0 || next.length < previous.length) return false;
+  return previous.slice(0, -1).every((candle, index) => sameCandle(candle, next[index]));
+}
+
 /**
  * Professional K-line terminal powered exclusively by ArcOrigin's onchain candles.
  * No exchange or simulated market data is sent to the chart library.
@@ -113,6 +132,11 @@ export function KLineTokenChart({
   const shellRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<KLineChart | null>(null);
   const dataRef = useRef<KLineData[]>([]);
+  const loadedCandlesRef = useRef<KLineData[]>([]);
+  const chartConfigurationRef = useRef("");
+  const liveBarCallbackRef = useRef<LiveBarCallback | null>(null);
+  const timeframeRef = useRef(timeframe);
+  const displayModeRef = useRef(displayMode);
   const indicatorIdsRef = useRef<Record<IndicatorName, string | null>>({ MA: null, EMA: null, BOLL: null, SAR: null, VOL: null, MACD: null, RSI: null, KDJ: null });
   const [ready, setReady] = useState(false);
   const storageKey =
@@ -170,18 +194,45 @@ export function KLineTokenChart({
   }, [compact, multiplier, sourceCandles, timeframe, trades]);
   const latest = candles.at(-1);
   const activeChange = latest && latest.open > 0 ? ((latest.close / latest.open) - 1) * 100 : 0;
+  const chartConfiguration = `${compact ? "1h" : timeframe}:${displayMode}`;
+  timeframeRef.current = timeframe;
+  displayModeRef.current = displayMode;
 
   useEffect(() => {
     dataRef.current = candles;
     const chart = chartRef.current;
-    if (!chart) return;
-    chart.setSymbol({ ticker: displayTicker, pricePrecision: precisionFor(latest?.close ?? 0.00000001), volumePrecision: 2 });
-    chart.setPeriod(periodFor(compact ? "1h" : timeframe));
+    if (!ready || !chart) return;
+
+    const previous = loadedCandlesRef.current;
+    if (chartConfigurationRef.current !== chartConfiguration) {
+      chartConfigurationRef.current = chartConfiguration;
+      loadedCandlesRef.current = candles;
+      chart.setSymbol({ ticker: displayTicker, pricePrecision: precisionFor(latest?.close ?? 0.00000001), volumePrecision: 2 });
+      chart.setPeriod(periodFor(compact ? "1h" : timeframe));
+      chart.resetData();
+      chart.setBarSpace(compact ? 9 : DEFAULT_BAR_SPACE);
+      chart.setOffsetRightDistance(RIGHT_EDGE_DISTANCE);
+      window.requestAnimationFrame(() => chart.scrollToRealTime());
+      return;
+    }
+    if (sameCandleSeries(previous, candles)) return;
+
+    const liveBarCallback = liveBarCallbackRef.current;
+    if (liveBarCallback && canApplyLiveCandleUpdate(previous, candles)) {
+      for (const candle of candles.slice(Math.max(0, previous.length - 1))) liveBarCallback(candle);
+      loadedCandlesRef.current = candles;
+      return;
+    }
+
+    const barSpace = chart.getBarSpace().bar;
+    const offsetRightDistance = chart.getOffsetRightDistance();
+    loadedCandlesRef.current = candles;
     chart.resetData();
-    chart.setBarSpace(compact ? 9 : DEFAULT_BAR_SPACE);
-    chart.setOffsetRightDistance(RIGHT_EDGE_DISTANCE);
-    window.requestAnimationFrame(() => chart.scrollToRealTime());
-  }, [candles, compact, displayTicker, latest?.close, timeframe]);
+    window.requestAnimationFrame(() => {
+      chart.setBarSpace(barSpace);
+      chart.setOffsetRightDistance(offsetRightDistance);
+    });
+  }, [candles, chartConfiguration, compact, displayTicker, latest?.close, ready, timeframe]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -306,12 +357,18 @@ export function KLineTokenChart({
       if (!chart) return;
       chart.setDataLoader({
         getBars: ({ callback }) => callback(dataRef.current, { backward: false, forward: false }),
+        subscribeBar: ({ callback }) => { liveBarCallbackRef.current = callback; },
+        unsubscribeBar: () => { liveBarCallbackRef.current = null; },
       });
-      chart.setSymbol({ ticker: displayTicker, pricePrecision: 8, volumePrecision: 2 });
-      chart.setPeriod(periodFor(compact ? "1h" : "1m"));
+      const initialCandles = dataRef.current;
+      const initialTimeframe = compact ? "1h" : timeframeRef.current;
+      chart.setSymbol({ ticker: displayTicker, pricePrecision: precisionFor(initialCandles.at(-1)?.close ?? 0.00000001), volumePrecision: 2 });
+      chart.setPeriod(periodFor(initialTimeframe));
       chart.setBarSpace(compact ? 9 : DEFAULT_BAR_SPACE);
       chart.setOffsetRightDistance(RIGHT_EDGE_DISTANCE);
       chartRef.current = chart;
+      loadedCandlesRef.current = initialCandles;
+      chartConfigurationRef.current = `${initialTimeframe}:${displayModeRef.current}`;
       setReady(true);
       window.requestAnimationFrame(() => {
         chart.resize();
@@ -324,6 +381,9 @@ export function KLineTokenChart({
       setReady(false);
       if (chartRef.current && disposeChart) disposeChart(chartRef.current);
       chartRef.current = null;
+      loadedCandlesRef.current = [];
+      chartConfigurationRef.current = "";
+      liveBarCallbackRef.current = null;
       indicatorIdsRef.current = { MA: null, EMA: null, BOLL: null, SAR: null, VOL: null, MACD: null, RSI: null, KDJ: null };
     };
   }, [compact, displayTicker, siteTheme]);

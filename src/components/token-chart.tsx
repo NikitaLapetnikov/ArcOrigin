@@ -135,8 +135,7 @@ export function buildCandles(data: ChartPoint[], timeframe: ChartTimeframe): Can
   }
 
   return [...buckets.values()]
-    .sort((left, right) => Number(left.time) - Number(right.time))
-    .slice(-1_200);
+    .sort((left, right) => Number(left.time) - Number(right.time));
 }
 
 export function TokenChart({

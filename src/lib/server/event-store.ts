@@ -164,7 +164,6 @@ export async function getStoredSwaps(tokenAddress: Address): Promise<{
           FROM arc_events
          WHERE event_name = 'Swap' AND token_address = $1
          ORDER BY block_number DESC, log_index DESC
-         LIMIT 500
       `, [tokenAddress.toLowerCase()]),
       pool.query(`
         SELECT

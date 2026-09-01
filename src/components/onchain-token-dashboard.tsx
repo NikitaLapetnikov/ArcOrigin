@@ -75,6 +75,7 @@ export function useOnchainTokenSnapshot(token: TokenData) {
         if (!next.trades.some((trade) => trade.txHash.toLowerCase() === hash)) return current;
         pendingTradeHashes.current.delete(hash);
       }
+      if (current.indexedBlock === next.indexedBlock && current.generatedAt === next.generatedAt) return current;
       return next;
     });
   }, []);
