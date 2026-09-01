@@ -35,6 +35,8 @@
   --scrollbar: #202a3b;
   --scrollbar-hover: #303d53;
   --shadow-glow: 0 18px 50px rgba(0,0,0,.26), 0 1px 0 rgba(255,255,255,.025) inset;
+  --chart-crosshair: rgba(99,205,252,.54);
+  --chart-tooltip-shadow: 0 12px 30px rgba(0,0,0,.3), 0 1px 0 rgba(255,255,255,.035) inset;
 }
 html[data-theme="light"] {
   color-scheme: light;
@@ -69,6 +71,8 @@ html[data-theme="light"] {
   --scrollbar: #cbd6e4;
   --scrollbar-hover: #aebed1;
   --shadow-glow: 0 20px 52px rgba(32,104,150,.11), 0 1px 0 rgba(255,255,255,.96) inset;
+  --chart-crosshair: rgba(0,104,158,.36);
+  --chart-tooltip-shadow: 0 12px 28px rgba(32,104,150,.15), 0 1px 0 rgba(255,255,255,.98) inset;
 }
 * { border-color: theme(colors.line); }
 html { background: var(--surface-0); scroll-behavior: smooth; }
@@ -145,6 +149,13 @@ p { text-wrap: pretty; }
     box-shadow: inset 0 0 0 1px var(--control-active-border);
   }
   .grid-line { background-image: linear-gradient(var(--grid-color) 1px, transparent 1px), linear-gradient(90deg, var(--grid-color) 1px, transparent 1px); background-size: 64px 64px; }
+  .portfolio-chart-tooltip {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+    background: color-mix(in srgb, var(--surface-2) 94%, transparent);
+    box-shadow: var(--chart-tooltip-shadow);
+  }
+  .portfolio-chart-tooltip-time { color: var(--text-secondary); }
   .break-safe { overflow-wrap: anywhere; word-break: break-word; }
   .legal-copy h2 { @apply text-2xl font-semibold tracking-[-.035em] text-white; }
   .legal-copy p { @apply mt-4 text-sm leading-7 text-slate-400; }

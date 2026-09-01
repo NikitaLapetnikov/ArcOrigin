@@ -493,10 +493,6 @@ function PortfolioChart({
             <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.22" />
             <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
           </linearGradient>
-          <filter id="portfolio-line-glow" x="-10%" y="-30%" width="120%" height="160%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
         </defs>
         {yTicks.map((tick, index) => {
           const y = yFor(tick);
@@ -509,16 +505,17 @@ function PortfolioChart({
           {formatPortfolioTime(tick.timestamp, range)}
         </text>)}
         <path d={areaPath} fill="url(#portfolio-area-gradient)" />
-        <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" filter="url(#portfolio-line-glow)" />
+        <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         {activePoint && <g aria-hidden="true">
           <line
             x1={activeX}
             x2={activeX}
             y1={plot.top}
             y2={height - plot.bottom}
-            stroke="var(--text-secondary)"
+            stroke="var(--chart-crosshair)"
             strokeWidth="1"
-            strokeOpacity=".7"
+            strokeDasharray="2 5"
+            strokeOpacity=".78"
             vectorEffect="non-scaling-stroke"
           />
           <line
@@ -526,10 +523,10 @@ function PortfolioChart({
             x2={width - plot.right}
             y1={activeY}
             y2={activeY}
-            stroke="var(--text-tertiary)"
+            stroke="var(--chart-crosshair)"
             strokeWidth="1"
-            strokeDasharray="3 5"
-            strokeOpacity=".42"
+            strokeDasharray="2 6"
+            strokeOpacity=".44"
             vectorEffect="non-scaling-stroke"
           />
           <circle cx={activeX} cy={activeY} r="5.5" fill="var(--accent)" stroke="var(--surface-1)" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
@@ -542,7 +539,7 @@ function PortfolioChart({
         </div>
       </div>}
       {activePoint && <div
-        className="pointer-events-none absolute z-10 min-w-[132px] rounded-xl border border-line bg-[#0b101a]/95 px-3 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,.38)] backdrop-blur-xl"
+        className="portfolio-chart-tooltip pointer-events-none absolute z-10 min-w-[132px] rounded-xl border px-3 py-2.5 backdrop-blur-xl"
         style={{
           left: `${tooltipXPercent}%`,
           top: `${Math.max(12, Math.min(88, activeYPercent))}%`,
@@ -551,8 +548,8 @@ function PortfolioChart({
         role="status"
         aria-live="polite"
       >
-        <p className="text-sm font-semibold tracking-[-.02em] text-white">{money(activePoint.value)}</p>
-        <p className="mt-1 whitespace-nowrap text-[11px] font-medium text-slate-400">{formatPortfolioTooltipTime(activePoint.timestamp)}</p>
+        <p className="text-sm font-semibold tracking-[-.02em]">{money(activePoint.value)}</p>
+        <p className="portfolio-chart-tooltip-time mt-1 whitespace-nowrap text-[11px] font-medium">{formatPortfolioTooltipTime(activePoint.timestamp)}</p>
       </div>}
     </div>
   </div>;
