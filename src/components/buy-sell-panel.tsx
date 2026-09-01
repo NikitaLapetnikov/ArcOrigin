@@ -41,6 +41,7 @@ const QUOTE_POLL_INTERVAL_MS = 5_000;
 const MAX_EXECUTION_QUOTE_AGE_MS = 8_000;
 const DIRECT_QUOTE_TIMEOUT_MS = 6_000;
 const DIRECT_QUOTE_HEDGE_DELAY_MS = 250;
+const SERVER_QUOTE_HEDGE_DELAY_MS = 2_000;
 const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
 const MAX_INPUT_CHARACTERS = 80;
 const directQuoteClients = arcChain.rpcUrls.default.http.map((url) => createPublicClient({
@@ -265,13 +266,22 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     if (!slippageValid) throw new Error(`Slippage must be greater than 0% and no more than ${MAX_SLIPPAGE_PERCENT}%.`);
     const input = parseTradeAmount(amount, inputDecimals);
     if (input === null) throw new Error(`Enter a valid amount with no more than ${inputDecimals} decimal places.`);
+    const serverQuoteController = new AbortController();
+    const serverQuote = (async () => {
+      await wait(SERVER_QUOTE_HEDGE_DELAY_MS);
+      const response = await fetch(`/api/onchain/quote?token=${encodeURIComponent(token.address)}&pool=${encodeURIComponent(poolAddress)}&side=${side}&amount=${input}`, { cache: "no-store", signal: serverQuoteController.signal });
+      const result = await response.json() as QuoteResponse;
+      if (!response.ok) { const error = new Error(result.error || "Unable to read an onchain quote.") as Error & { status?: number }; error.status = response.status; throw error; }
+      return result;
+    })();
     let result: QuoteResponse;
     try {
-      result = await readDirectQuote(token.address as Address, poolAddress, side, input);
-    } catch {
-      const response = await fetch(`/api/onchain/quote?token=${encodeURIComponent(token.address)}&pool=${encodeURIComponent(poolAddress)}&side=${side}&amount=${input}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
-      result = await response.json() as QuoteResponse;
-      if (!response.ok) { const error = new Error(result.error || "Unable to read an onchain quote.") as Error & { status?: number }; error.status = response.status; throw error; }
+      result = await Promise.any([
+        readDirectQuote(token.address as Address, poolAddress, side, input),
+        serverQuote,
+      ]);
+    } finally {
+      serverQuoteController.abort();
     }
     if (!result.output || result.fee === undefined || !result.spender || !result.pool) throw new Error(result.error || "Unable to read an onchain quote.");
     if (!isAddress(result.spender)
