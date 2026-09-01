@@ -144,9 +144,12 @@ async function loadProductionHealth() {
     if (latestBlock === null) errors.push("rpc_block_unavailable");
     if (bytecodeResult.status === "rejected") errors.push("factory_code_unavailable");
     else if (!bytecode || bytecode === "0x") errors.push("factory_code_missing");
-    if (!factoryOwner) errors.push("factory_owner_unavailable");
+    // Transient public-RPC eth_call capacity must not take the application out
+    // of service when chain identity, bytecode and the dedicated event store
+    // are healthy. A confirmed mismatch still fails closed below.
+    if (!factoryOwner) warnings.push("factory_owner_unavailable");
     if (ownerMatches === false) errors.push("factory_owner_mismatch");
-    if (launchesPaused === null) errors.push("launch_pause_unavailable");
+    if (launchesPaused === null) warnings.push("launch_pause_unavailable");
     else if (launchesPaused !== expectedLaunchPaused) errors.push("launch_pause_mismatch");
     if (indexer?.checkpoint === "orphaned" || indexer?.checkpoint === "invalid") {
       errors.push("indexer_checkpoint_noncanonical");
