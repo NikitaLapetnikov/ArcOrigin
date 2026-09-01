@@ -9,6 +9,7 @@ import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { erc20Abi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
 import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText, walletRpcPreflightDecision } from "@/lib/rpc-errors";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
+import { createBrowserArcReadClient } from "@/lib/onchain/browser-arc-rpc";
 import type { TokenData } from "@/lib/types";
 import { tickerLabel } from "@/lib/utils";
 import { ArcscanLink, Badge, Button } from "./ui";
@@ -57,7 +58,7 @@ const directQuoteClients = arcChain.rpcUrls.default.http.map((url) => createPubl
   chain: arcChain,
   transport: http(url, { retryCount: 0, timeout: DIRECT_QUOTE_TIMEOUT_MS }),
 }));
-const primaryReadClient = directQuoteClients[0];
+const resilientReadClient = createBrowserArcReadClient();
 
 class RpcReadTimeoutError extends Error {
   constructor() {
@@ -164,10 +165,8 @@ async function readWalletBalances(wallet: Address, token: Address): Promise<Wall
   let nativeBalance: bigint;
   if (typeof payload.nativeBalance === "string" && /^\d+$/.test(payload.nativeBalance)) {
     nativeBalance = BigInt(payload.nativeBalance);
-  } else if (primaryReadClient) {
-    nativeBalance = await withReadTimeout(primaryReadClient.getBalance({ address: wallet }), 4_000);
   } else {
-    throw new Error("Native USDC balance is unavailable.");
+    nativeBalance = await withReadTimeout(resilientReadClient.getBalance({ address: wallet }), 4_000);
   }
   const usdcBalance = typeof payload.usdcBalance === "string" && /^\d+$/.test(payload.usdcBalance)
     ? BigInt(payload.usdcBalance)
@@ -176,9 +175,8 @@ async function readWalletBalances(wallet: Address, token: Address): Promise<Wall
 }
 
 async function readAllowance(token: Address, owner: Address, spender: Address) {
-  if (!primaryReadClient) return null;
   try {
-    return await withReadTimeout(primaryReadClient.readContract({
+    return await withReadTimeout(resilientReadClient.readContract({
       address: token,
       abi: erc20Abi,
       functionName: "allowance",
@@ -229,9 +227,8 @@ async function estimatePriorityFees(client: PublicClient, priority: Priority): P
   } catch (error) {
     if (!(error instanceof RpcReadTimeoutError) && !isRetryableRpcError(error)) throw error;
   }
-  const gasPriceClient = primaryReadClient ?? client;
   return {
-    gasPrice: await withRpcRetry(() => withReadTimeout(gasPriceClient.getGasPrice()), 2) * multiplier / 100n,
+    gasPrice: await withRpcRetry(() => withReadTimeout(resilientReadClient.getGasPrice()), 2) * multiplier / 100n,
   };
 }
 
@@ -317,7 +314,7 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     if (!isConnected || !address) throw new Error("Connect a wallet before trading.");
     if (chainId !== arcChain.id) { await switchChainAsync({ chainId: arcChain.id }); throw new Error(`${arcChain.name} is now selected. Submit again.`); }
     if (!publicClient) throw new Error(`No ${arcChain.name} public client is available.`);
-    return publicClient;
+    return resilientReadClient;
   }
 
   async function ensureWalletRpcReady() {
@@ -473,16 +470,16 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
       if (allowance === null || allowance < executionQuote.input) {
         setStatus("approving");
         const approvalArgs = [executionQuote.spender, executionQuote.input] as const;
-        const transactionReadClient = primaryReadClient ?? client;
+        const transactionReadClient = resilientReadClient;
         const [approvalGas, approvalFees, approvalNonce] = await Promise.all([
-          gasLimitWithCapacityFallback(client.estimateContractGas({
+          gasLimitWithCapacityFallback(transactionReadClient.estimateContractGas({
             account: address,
             address: approvalToken,
             abi: erc20Abi,
             functionName: "approve",
             args: approvalArgs,
           }), APPROVAL_GAS_FALLBACK),
-          estimatePriorityFees(client as PublicClient, priority),
+          estimatePriorityFees(transactionReadClient as PublicClient, priority),
           withRpcRetry(() => withReadTimeout(transactionReadClient.getTransactionCount({ address, blockTag: "pending" })), 2),
         ]);
         // Reserve enough native USDC for both the approval and the swap. The
@@ -511,16 +508,16 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         amountOutMinimum: executionQuote.minimumOutput,
         sqrtPriceLimitX96: 0n,
       }] as const;
-      const transactionReadClient = primaryReadClient ?? client;
+      const transactionReadClient = resilientReadClient;
       const [tradeGas, tradeFees, tradeNonce] = await Promise.all([
-        gasLimitWithCapacityFallback(client.estimateContractGas({
+        gasLimitWithCapacityFallback(transactionReadClient.estimateContractGas({
           account: address,
           address: ARC_UNISWAP_V3.router,
           abi: uniswapV3RouterAbi,
           functionName: "exactInputSingle",
           args: tradeArgs,
         }), TRADE_GAS_FALLBACK),
-        estimatePriorityFees(client as PublicClient, priority),
+        estimatePriorityFees(transactionReadClient as PublicClient, priority),
         withRpcRetry(() => withReadTimeout(transactionReadClient.getTransactionCount({ address, blockTag: "pending" })), 2),
       ]);
       ensureGasBalance(freshBalances.native, tradeGas, tradeFees, side === "Buy" ? executionQuote.input : 0n);

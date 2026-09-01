@@ -3,11 +3,9 @@
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { AtSign, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, Send, X } from "lucide-react";
 import {
-  createPublicClient,
   decodeEventLog,
   encodeFunctionData,
   formatUnits,
-  http,
   isAddress,
   isHash,
   parseUnits,
@@ -49,6 +47,7 @@ import {
   walletRpcPreflightDecision,
 } from "@/lib/rpc-errors";
 import { arcOriginPoolQuoteState, quoteArcOriginExactInput } from "@/lib/onchain/arc-origin-v3-quote";
+import { createBrowserArcReadClient } from "@/lib/onchain/browser-arc-rpc";
 import { shortAddress, tickerLabel } from "@/lib/utils";
 import { getSafeAppContext } from "@/lib/wallet/safe-app-connector";
 import { Button, LinkButton, WarningBox } from "./ui";
@@ -131,10 +130,7 @@ const APPROVAL_GAS_FALLBACK = 100_000n;
 const LAUNCH_GAS_FALLBACK = 9_000_000n;
 const INITIAL_BUY_GAS_FALLBACK = 500_000n;
 const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
-const primaryReadClient = createPublicClient({
-  chain: arcChain,
-  transport: http(arcChain.rpcUrls.default.http[0], { retryCount: 0, timeout: 6_000 }),
-});
+const primaryReadClient = createBrowserArcReadClient();
 
 class RpcReadTimeoutError extends Error {
   constructor() {
@@ -820,7 +816,7 @@ export function LaunchForm() {
         throw new Error(`${arcChain.name} is now selected. Review and launch again.`);
       }
       await ensureWalletRpcReady(address);
-      const transactionClient = publicClient;
+      const transactionClient = primaryReadClient;
       const balance = await readNativeUsdcBalance(address);
       let currentLaunchFee = launchFee;
       try {
