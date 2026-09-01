@@ -3,19 +3,22 @@
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { AtSign, ExternalLink, Globe, ImagePlus, LoaderCircle, Rocket, Send, X } from "lucide-react";
 import {
+  createPublicClient,
   decodeEventLog,
   encodeFunctionData,
   formatUnits,
+  http,
   isAddress,
   isHash,
   parseUnits,
+  publicActions,
   type Address,
   type Hash,
   type PublicClient,
 } from "viem";
 import type SafeAppsSDK from "@safe-global/safe-apps-sdk";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
-import { requiredNativeUsdcBalance } from "@/lib/arc-usdc";
+import { nativeUsdcToPrecompileBalance, requiredNativeUsdcBalance } from "@/lib/arc-usdc";
 import {
   ARCORIGIN_CROSS_MARKET_CAP_USDC,
   ARC_ACTIVE_CONTRACTS,
@@ -38,7 +41,13 @@ import {
   validateTokenMetadataInput,
   type TokenMetadataInput,
 } from "@/lib/token-metadata";
-import { isRetryableRpcError, isRpcCapacityError, rpcErrorText } from "@/lib/rpc-errors";
+import {
+  isRetryableRpcError,
+  isRpcCapacityError,
+  isUnauthorizedBlockdaemonRpc,
+  rpcErrorText,
+  walletRpcPreflightDecision,
+} from "@/lib/rpc-errors";
 import { arcOriginPoolQuoteState, quoteArcOriginExactInput } from "@/lib/onchain/arc-origin-v3-quote";
 import { shortAddress, tickerLabel } from "@/lib/utils";
 import { getSafeAppContext } from "@/lib/wallet/safe-app-connector";
@@ -117,6 +126,22 @@ const MAX_INITIAL_BUY_USDC = 100n * 10n ** 6n;
 const INITIAL_BUY_SLIPPAGE_BPS = 1_000n;
 const INITIAL_BUY_PRESETS = [10, 25, 50, 100] as const;
 const DISPLAY_NUMBER_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+const FAST_RPC_READ_TIMEOUT_MS = 2_000;
+const APPROVAL_GAS_FALLBACK = 100_000n;
+const LAUNCH_GAS_FALLBACK = 9_000_000n;
+const INITIAL_BUY_GAS_FALLBACK = 500_000n;
+const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
+const primaryReadClient = createPublicClient({
+  chain: arcChain,
+  transport: http(arcChain.rpcUrls.default.http[0], { retryCount: 0, timeout: 6_000 }),
+});
+
+class RpcReadTimeoutError extends Error {
+  constructor() {
+    super("Arc RPC read timed out.");
+    this.name = "RpcReadTimeoutError";
+  }
+}
 
 function formatDisplayNumber(value: number) {
   return DISPLAY_NUMBER_FORMAT.format(value);
@@ -141,6 +166,9 @@ function transactionError(error: unknown) {
     : error instanceof Error
       ? error.message
       : "The wallet transaction failed.";
+  if (isUnauthorizedBlockdaemonRpc(error)) {
+    return `Your wallet still uses the retired Blockdaemon Arc RPC. Open wallet settings → Networks → Arc and set the RPC URL to ${ARC_WALLET_RPC_URL}, then retry.`;
+  }
   if (/User rejected|User denied|rejected the request/i.test(details || fallback)) return "The request was cancelled in your wallet.";
   if (isRpcCapacityError(error)) {
     return "Arc RPC is busy. Check your wallet activity before retrying because an approval or launch may already have been submitted.";
@@ -175,6 +203,20 @@ function initialBuyErrorMessage(error: unknown) {
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function withReadTimeout<T>(operation: Promise<T>, timeoutMs = FAST_RPC_READ_TIMEOUT_MS) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new RpcReadTimeoutError()), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 async function withRpcRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
@@ -270,26 +312,64 @@ function gasWithSafetyMargin(estimate: bigint) {
   return estimate * 125n / 100n + 20_000n;
 }
 
-async function transactionFees(client: PublicClient): Promise<TransactionFeeOverrides> {
-  const fees = await withRpcRetry(() => client.estimateFeesPerGas());
-  if (fees.maxFeePerGas !== undefined && fees.maxPriorityFeePerGas !== undefined) {
-    return {
-      maxFeePerGas: fees.maxFeePerGas * 110n / 100n,
-      maxPriorityFeePerGas: fees.maxPriorityFeePerGas * 110n / 100n,
-    };
+async function gasLimitWithCapacityFallback(operation: Promise<bigint>, fallback: bigint) {
+  try {
+    return gasWithSafetyMargin(await withReadTimeout(operation));
+  } catch (error) {
+    if (!(error instanceof RpcReadTimeoutError) && !isRetryableRpcError(error)) throw error;
+    return fallback;
   }
-  return { gasPrice: await withRpcRetry(() => client.getGasPrice()) };
+}
+
+async function readNativeUsdcBalance(account: Address) {
+  return nativeUsdcToPrecompileBalance(await withRpcRetry(
+    () => withReadTimeout(primaryReadClient.getBalance({ address: account })),
+    2,
+  ));
+}
+
+async function readAllowance(token: Address, owner: Address, spender: Address) {
+  try {
+    return await withReadTimeout(primaryReadClient.readContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [owner, spender],
+    }));
+  } catch (error) {
+    if (error instanceof RpcReadTimeoutError || isRetryableRpcError(error)) return null;
+    throw error;
+  }
+}
+
+async function transactionFees(client: PublicClient): Promise<TransactionFeeOverrides> {
+  try {
+    const fees = await withReadTimeout(client.estimateFeesPerGas());
+    if (fees.maxFeePerGas !== undefined && fees.maxPriorityFeePerGas !== undefined) {
+      return {
+        maxFeePerGas: fees.maxFeePerGas * 110n / 100n,
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas * 110n / 100n,
+      };
+    }
+  } catch (error) {
+    if (!(error instanceof RpcReadTimeoutError) && !isRetryableRpcError(error)) throw error;
+  }
+  return {
+    gasPrice: await withRpcRetry(() => withReadTimeout(primaryReadClient.getGasPrice()), 2),
+  };
 }
 
 async function ensureGasBalance(
-  client: PublicClient,
   account: Address,
   gas: bigint,
   fees: TransactionFeeOverrides,
   requiredUsdc = 0n,
 ) {
   const feePerGas = "gasPrice" in fees ? fees.gasPrice : fees.maxFeePerGas;
-  const nativeBalance = await withRpcRetry(() => client.getBalance({ address: account }));
+  const nativeBalance = await withRpcRetry(
+    () => withReadTimeout(primaryReadClient.getBalance({ address: account })),
+    2,
+  );
   const requiredNativeBalance = requiredNativeUsdcBalance(gas, feePerGas, requiredUsdc);
   if (nativeBalance < requiredNativeBalance) {
     throw new Error(requiredUsdc > 0n
@@ -377,6 +457,7 @@ export function LaunchForm() {
   const [result, setResult] = useState<LaunchResult | null>(null);
   const previewUrl = useRef("");
   const launchLockRef = useRef(false);
+  const verifiedWalletRpcRef = useRef("");
   const { address, isConnected, chainId, connector } = useAccount();
   const publicClient = usePublicClient({ chainId: arcChain.id });
   const { data: walletClient } = useWalletClient();
@@ -394,21 +475,24 @@ export function LaunchForm() {
   }, []);
 
   useEffect(() => {
-    if (!publicClient) return;
+    verifiedWalletRpcRef.current = "";
+  }, [address, chainId, walletClient]);
+
+  useEffect(() => {
     let cancelled = false;
-    void withRpcRetry(() => publicClient.readContract({
+    void withReadTimeout(primaryReadClient.readContract({
       address: ARC_ACTIVE_CONTRACTS.factory,
       abi: factoryAbi,
       functionName: "launchFee",
-    }), 2).then((nextLaunchFee) => {
+    })).then((nextLaunchFee) => {
       if (!cancelled) setLaunchFee(nextLaunchFee);
     }).catch(() => {
-      // The launch transaction re-reads the fee before approving, so a failed preview read is safe.
+      // The verified mainnet fee remains the safe fallback while eth_call is capacity-limited.
     });
     return () => {
       cancelled = true;
     };
-  }, [publicClient]);
+  }, []);
 
   const metadataInput = useMemo<TokenMetadataInput>(() => ({
     name: form.name,
@@ -519,6 +603,36 @@ export function LaunchForm() {
     return uploaded;
   }
 
+  async function ensureWalletRpcReady(creator: Address) {
+    if (!walletClient) throw new Error("The connected wallet is not ready. Reconnect it and retry.");
+    const checkKey = `${creator.toLowerCase()}:${arcChain.id}`;
+    if (verifiedWalletRpcRef.current === checkKey) return;
+    const walletReadClient = walletClient.extend(publicActions) as unknown as PublicClient;
+    try {
+      await walletReadClient.getTransactionCount({ address: creator, blockTag: "latest" });
+      verifiedWalletRpcRef.current = checkKey;
+      return;
+    } catch (rpcError) {
+      const decision = walletRpcPreflightDecision(rpcError);
+      if (decision === "continue") {
+        verifiedWalletRpcRef.current = checkKey;
+        return;
+      }
+      if (decision === "fail") throw rpcError;
+    }
+
+    try {
+      await walletClient.addChain({ chain: arcChain });
+    } catch (rpcUpdateError) {
+      if (/User rejected|User denied|rejected the request/i.test(rpcErrorText(rpcUpdateError))) {
+        throw rpcUpdateError;
+      }
+      // Some wallets report that an existing chain was already added after updating it.
+    }
+    await walletClient.switchChain({ id: arcChain.id });
+    verifiedWalletRpcRef.current = checkKey;
+  }
+
   async function executeInitialBuy(
     transactionClient: PublicClient,
     creator: Address,
@@ -527,18 +641,8 @@ export function LaunchForm() {
     safeSdk?: SafeAppsSDK,
   ) {
     const [balance, allowance] = await Promise.all([
-      withRpcRetry(() => transactionClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.usdc,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [creator],
-      })),
-      withRpcRetry(() => transactionClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.usdc,
-        abi: erc20Abi,
-        functionName: "allowance",
-        args: [creator, ARC_UNISWAP_V3.router],
-      })),
+      readNativeUsdcBalance(creator),
+      readAllowance(ARC_ACTIVE_CONTRACTS.usdc, creator, ARC_UNISWAP_V3.router),
     ]);
     if (balance < input) {
       throw new Error(`The token launched, but the wallet no longer has ${formatUnits(input, 6)} USDC for the initial buy.`);
@@ -550,7 +654,7 @@ export function LaunchForm() {
 
     if (safeSdk) {
       const transactions = [];
-      if (allowance < input) {
+      if (allowance === null || allowance < input) {
         transactions.push({
           to: ARC_ACTIVE_CONTRACTS.usdc,
           value: "0",
@@ -582,22 +686,30 @@ export function LaunchForm() {
       const proposal = await safeSdk.txs.send({ txs: transactions });
       buyHash = await waitForSafeExecution(safeSdk, proposal.safeTxHash);
     } else {
-      if (allowance < input) {
+      if (allowance === null || allowance < input) {
         setStatus("approving_initial_buy");
         const approvalArgs = [ARC_UNISWAP_V3.router, input] as const;
-        const approvalGas = gasWithSafetyMargin(await withRpcRetry(() => transactionClient.estimateContractGas({
+        const approvalGas = await gasLimitWithCapacityFallback(transactionClient.estimateContractGas({
           account: creator,
           address: ARC_ACTIVE_CONTRACTS.usdc,
           abi: erc20Abi,
           functionName: "approve",
           args: approvalArgs,
-        })));
+        }), APPROVAL_GAS_FALLBACK);
         const approvalFees = await transactionFees(transactionClient);
-        await ensureGasBalance(transactionClient, creator, approvalGas, approvalFees, input);
-        const approvalNonce = await withRpcRetry(() => transactionClient.getTransactionCount({
-          address: creator,
-          blockTag: "pending",
-        }));
+        await ensureGasBalance(
+          creator,
+          approvalGas + INITIAL_BUY_GAS_FALLBACK,
+          approvalFees,
+          input,
+        );
+        const approvalNonce = await withRpcRetry(
+          () => withReadTimeout(primaryReadClient.getTransactionCount({
+            address: creator,
+            blockTag: "pending",
+          })),
+          2,
+        );
         const approvalHash = await writeContractAsync({
           address: ARC_ACTIVE_CONTRACTS.usdc,
           abi: erc20Abi,
@@ -622,19 +734,22 @@ export function LaunchForm() {
         amountOutMinimum: quote.minimumOutput,
         sqrtPriceLimitX96: 0n,
       }] as const;
-      const tradeGas = gasWithSafetyMargin(await withRpcRetry(() => transactionClient.estimateContractGas({
+      const tradeGas = await gasLimitWithCapacityFallback(transactionClient.estimateContractGas({
         account: creator,
         address: ARC_UNISWAP_V3.router,
         abi: uniswapV3RouterAbi,
         functionName: "exactInputSingle",
         args: tradeArgs,
-      })));
+      }), INITIAL_BUY_GAS_FALLBACK);
       const tradeFees = await transactionFees(transactionClient);
-      await ensureGasBalance(transactionClient, creator, tradeGas, tradeFees, input);
-      const tradeNonce = await withRpcRetry(() => transactionClient.getTransactionCount({
-        address: creator,
-        blockTag: "pending",
-      }));
+      await ensureGasBalance(creator, tradeGas, tradeFees, input);
+      const tradeNonce = await withRpcRetry(
+        () => withReadTimeout(primaryReadClient.getTransactionCount({
+          address: creator,
+          blockTag: "pending",
+        })),
+        2,
+      );
       setStatus("buying_initial");
       buyHash = await writeContractAsync({
         address: ARC_UNISWAP_V3.router,
@@ -704,18 +819,19 @@ export function LaunchForm() {
         await switchChainAsync({ chainId: arcChain.id });
         throw new Error(`${arcChain.name} is now selected. Review and launch again.`);
       }
+      await ensureWalletRpcReady(address);
       const transactionClient = publicClient;
-      const balance = await withRpcRetry(() => transactionClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.usdc,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      }));
-      const currentLaunchFee = await withRpcRetry(() => transactionClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.factory,
-        abi: factoryAbi,
-        functionName: "launchFee",
-      }));
+      const balance = await readNativeUsdcBalance(address);
+      let currentLaunchFee = launchFee;
+      try {
+        currentLaunchFee = await withReadTimeout(primaryReadClient.readContract({
+          address: ARC_ACTIVE_CONTRACTS.factory,
+          abi: factoryAbi,
+          functionName: "launchFee",
+        }));
+      } catch (feeError) {
+        if (!(feeError instanceof RpcReadTimeoutError) && !isRetryableRpcError(feeError)) throw feeError;
+      }
       setLaunchFee(currentLaunchFee);
       const selectedInitialBuy = parseInitialBuyUsdc(form.initialBuyUsdc);
       if (selectedInitialBuy === null) {
@@ -727,12 +843,11 @@ export function LaunchForm() {
       }
 
       const metadata = await ensureMetadata(address);
-      const allowance = await withRpcRetry(() => transactionClient.readContract({
-        address: ARC_ACTIVE_CONTRACTS.usdc,
-        abi: erc20Abi,
-        functionName: "allowance",
-        args: [address, ARC_ACTIVE_CONTRACTS.factory],
-      }));
+      const allowance = await readAllowance(
+        ARC_ACTIVE_CONTRACTS.usdc,
+        address,
+        ARC_ACTIVE_CONTRACTS.factory,
+      );
       const launchParameters = {
           name: form.name.trim(),
           symbol: form.ticker.toUpperCase(),
@@ -748,7 +863,7 @@ export function LaunchForm() {
         }
         safeSdk = safeContext.sdk;
         const transactions = [];
-        if (allowance < currentLaunchFee) {
+        if (allowance === null || allowance < currentLaunchFee) {
           transactions.push({
             to: ARC_ACTIVE_CONTRACTS.usdc,
             value: "0",
@@ -772,22 +887,30 @@ export function LaunchForm() {
         const proposal = await safeContext.sdk.txs.send({ txs: transactions });
         launchHash = await waitForSafeExecution(safeContext.sdk, proposal.safeTxHash);
       } else {
-        if (allowance < currentLaunchFee) {
+        if (allowance === null || allowance < currentLaunchFee) {
           setStatus("approving");
           const approvalArgs = [ARC_ACTIVE_CONTRACTS.factory, currentLaunchFee] as const;
-          const approvalGas = gasWithSafetyMargin(await withRpcRetry(() => transactionClient.estimateContractGas({
+          const approvalGas = await gasLimitWithCapacityFallback(transactionClient.estimateContractGas({
             account: address,
             address: ARC_ACTIVE_CONTRACTS.usdc,
             abi: erc20Abi,
             functionName: "approve",
             args: approvalArgs,
-          })));
+          }), APPROVAL_GAS_FALLBACK);
           const approvalFees = await transactionFees(transactionClient);
-          await ensureGasBalance(transactionClient, address, approvalGas, approvalFees, currentLaunchFee);
-          const approvalNonce = await withRpcRetry(() => transactionClient.getTransactionCount({
+          await ensureGasBalance(
             address,
-            blockTag: "pending",
-          }));
+            approvalGas + LAUNCH_GAS_FALLBACK,
+            approvalFees,
+            requiredUsdc,
+          );
+          const approvalNonce = await withRpcRetry(
+            () => withReadTimeout(primaryReadClient.getTransactionCount({
+              address,
+              blockTag: "pending",
+            })),
+            2,
+          );
           const approvalHash = await writeContractAsync({
             address: ARC_ACTIVE_CONTRACTS.usdc,
             abi: erc20Abi,
@@ -802,19 +925,22 @@ export function LaunchForm() {
         }
         setStatus("launching");
         const launchArgs = [launchParameters] as const;
-        const launchGas = gasWithSafetyMargin(await withRpcRetry(() => transactionClient.estimateContractGas({
+        const launchGas = await gasLimitWithCapacityFallback(transactionClient.estimateContractGas({
           account: address,
           address: ARC_ACTIVE_CONTRACTS.factory,
           abi: factoryAbi,
           functionName: "launchToken",
           args: launchArgs,
-        })));
+        }), LAUNCH_GAS_FALLBACK);
         const launchFees = await transactionFees(transactionClient);
-        await ensureGasBalance(transactionClient, address, launchGas, launchFees, currentLaunchFee);
-        const launchNonce = await withRpcRetry(() => transactionClient.getTransactionCount({
-          address,
-          blockTag: "pending",
-        }));
+        await ensureGasBalance(address, launchGas, launchFees, requiredUsdc);
+        const launchNonce = await withRpcRetry(
+          () => withReadTimeout(primaryReadClient.getTransactionCount({
+            address,
+            blockTag: "pending",
+          })),
+          2,
+        );
         launchHash = await writeContractAsync({
           address: ARC_ACTIVE_CONTRACTS.factory,
           abi: factoryAbi,
