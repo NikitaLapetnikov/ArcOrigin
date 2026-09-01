@@ -6,14 +6,15 @@ import {
   normalizeWebsiteUrl,
   normalizeXUrl,
 } from "@/lib/token-metadata";
+import { ipfsMediaURL, parseIpfsPath } from "@/lib/ipfs";
 
 const MAX_METADATA_BYTES = 2 * 1024 * 1024;
 const CACHE_LIMIT = 200;
 const SUCCESS_CACHE_TTL_MS = 60 * 60 * 1_000;
-const FAILURE_CACHE_TTL_MS = 60 * 1_000;
+const FAILURE_CACHE_TTL_MS = 15 * 1_000;
 const PUBLIC_GATEWAY_URL = "https://ipfs.io/ipfs/";
 const PINATA_GATEWAY_URL = "https://gateway.pinata.cloud/ipfs/";
-const GATEWAY_TIMEOUT_MS = 10_000;
+const GATEWAY_TIMEOUT_MS = 15_000;
 
 export type ResolvedTokenMetadata = {
   description?: string;
@@ -30,12 +31,6 @@ declare global {
 const cache = globalThis.__arcOriginResolvedMetadata ?? new Map<string, { value: ResolvedTokenMetadata | null; cachedAt: number }>();
 globalThis.__arcOriginResolvedMetadata = cache;
 
-function parseIpfsPath(uri: string) {
-  const match = uri.trim().match(/^ipfs:\/\/(?:ipfs\/)?([A-Za-z0-9]{40,120})(\/[^?#]*)?$/);
-  if (!match || match[2]?.split("/").includes("..")) return null;
-  return `${match[1]}${match[2] ?? ""}`;
-}
-
 function configuredGatewayBase() {
   const configured = process.env.IPFS_GATEWAY_URL?.trim();
   if (!configured) return null;
@@ -49,8 +44,7 @@ function configuredGatewayBase() {
 }
 
 export function ipfsGatewayURL(uri: string) {
-  const path = parseIpfsPath(uri);
-  return path ? `${PINATA_GATEWAY_URL}${path}` : "";
+  return ipfsMediaURL(uri);
 }
 
 function metadataGatewayURLs(uri: string) {

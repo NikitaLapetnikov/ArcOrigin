@@ -11,6 +11,7 @@ import {
   validateTokenMetadataInput,
   type TokenMetadataInput,
 } from "@/lib/token-metadata";
+import { storeMedia } from "@/lib/server/media-store";
 
 const CHALLENGE_TTL_MS = 15 * 60 * 1_000;
 const CHALLENGE_RATE_WINDOW_MS = 10 * 60 * 1_000;
@@ -305,6 +306,12 @@ export async function publishTokenMetadata({
   if (image) {
     const extension = image.type === "image/png" ? "png" : image.type === "image/jpeg" ? "jpg" : "webp";
     const imageCid = await uploadToPinata(image, `${stem}.${extension}`);
+    try {
+      await storeMedia(imageCid, new Uint8Array(await image.arrayBuffer()));
+    } catch (error) {
+      console.error("Uploaded token image could not be persisted locally.", error);
+      throw new MetadataUploadError("Token image storage could not be verified. Try again.", 503);
+    }
     imageURI = `ipfs://${imageCid}`;
   }
   const metadata = {

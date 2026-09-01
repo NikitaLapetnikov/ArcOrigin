@@ -8,6 +8,7 @@ import { loadIndexedMarketSnapshot } from "@/lib/onchain/market-event-snapshot";
 import type { MarketSnapshot } from "@/lib/onchain/market-snapshot";
 import { snapshotRevalidationDelay } from "@/lib/onchain/snapshot-revalidation";
 import type { TokenData, Trade } from "@/lib/types";
+import { normalizeIpfsImageURL } from "@/lib/ipfs";
 
 const TOKEN_INDEX_CACHE_KEY =
   `arcorigin:${arcChain.id}:factory-index:${ARC_ACTIVE_FACTORY.toLowerCase()}`;
@@ -63,9 +64,8 @@ function isCachedToken(value: unknown): value is TokenData {
 }
 
 function normalizeTokenImage(token: TokenData): TokenData {
-  return token.image?.startsWith("https://ipfs.io/ipfs/")
-    ? { ...token, image: token.image.replace("https://ipfs.io/ipfs/", "https://gateway.pinata.cloud/ipfs/") }
-    : token;
+  const image = normalizeIpfsImageURL(token.image);
+  return image === token.image ? token : { ...token, image };
 }
 
 function isConfirmedTrade(value: unknown): value is ConfirmedTrade {

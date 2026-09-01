@@ -12,6 +12,7 @@ import { calculateRiskScore } from "@/lib/scoring";
 import { factoryAbi } from "@/lib/contracts";
 import { normalizeTelegramUrl, normalizeWebsiteUrl, normalizeXUrl } from "@/lib/token-metadata";
 import type { TokenData } from "@/lib/types";
+import { ipfsMediaURL, parseIpfsPath } from "@/lib/ipfs";
 
 const tokenLaunchedEvent = parseAbiItem("event TokenLaunched(address indexed token, address indexed pool, address indexed creator, string name, string symbol, uint256 positionId)");
 const tokenConfigAbi = [
@@ -168,10 +169,8 @@ function createPendingToken(launch: ClientLaunch, creatorLaunches: number): Toke
 }
 
 function ipfsURL(uri: string) {
-  const match = uri.trim().match(/^ipfs:\/\/(?:ipfs\/)?([A-Za-z0-9]{40,120})(\/[^?#]*)?$/);
-  return match && !match[2]?.split("/").includes("..")
-    ? `https://gateway.pinata.cloud/ipfs/${match[1]}${match[2] ?? ""}`
-    : "";
+  const path = parseIpfsPath(uri);
+  return path ? `https://gateway.pinata.cloud/ipfs/${path}` : "";
 }
 
 async function loadMetadata(metadataURI: string): Promise<ClientMetadata | null> {
@@ -195,7 +194,7 @@ async function loadMetadata(metadataURI: string): Promise<ClientMetadata | null>
     const telegram = text(properties.telegram, 200);
     return {
       description: text(payload.description, 2_000) || undefined,
-      image: ipfsURL(text(payload.image, 512)) || undefined,
+      image: ipfsMediaURL(text(payload.image, 512)) || undefined,
       website: website ? normalizeWebsiteUrl(website) : undefined,
       x: x ? normalizeXUrl(x) : undefined,
       telegram: telegram ? normalizeTelegramUrl(telegram) : undefined,
