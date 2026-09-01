@@ -670,11 +670,14 @@ async function main() {
   await database.query("SELECT 1");
   await runMigration(database);
   await redis.connect();
-  const locker = normalizeHex(await withRetry(() => publicClient.readContract({
-    address: factory,
-    abi: liquidityLockerAbi,
-    functionName: "liquidityLocker",
-  })));
+  const configuredLocker = process.env.NEXT_PUBLIC_MAINNET_LIQUIDITY_LOCKER_ADDRESS?.trim();
+  const locker = configuredLocker
+    ? normalizeHex(configuredLocker)
+    : normalizeHex(await withRetry(() => publicClient.readContract({
+        address: factory,
+        abi: liquidityLockerAbi,
+        functionName: "liquidityLocker",
+      })));
   const config = { factory, usdc, locker, addressChunkSize };
   console.log(`[indexer] started factory=${factory} locker=${locker} rpc=${urls.length}`);
 
