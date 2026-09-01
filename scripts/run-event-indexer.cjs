@@ -96,6 +96,7 @@ function swapPayload(args, market, usdcAddress) {
     amount0: args.amount0.toString(),
     amount1: args.amount1.toString(),
     sqrtPriceX96: args.sqrtPriceX96.toString(),
+    liquidity: args.liquidity.toString(),
     tick: Number(args.tick),
     usdc,
     tokens,

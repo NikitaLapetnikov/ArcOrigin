@@ -316,11 +316,13 @@ test("dedicated indexer derives a stable log identity and Arc swap direction", (
     amount0: 100_000_000n,
     amount1: -20_000_000_000_000_000_000n,
     sqrtPriceX96: 1n << 96n,
+    liquidity: 123_456n,
     tick: 0,
   }, { tokenAddress: token }, usdc);
   assert.equal(payload.side, "Buy");
   assert.equal(payload.usdc, 100);
   assert.equal(payload.tokens, 20);
+  assert.equal(payload.liquidity, "123456");
   assert.equal(payload.wallet, "0x2222222222222222222222222222222222222222");
 });
 

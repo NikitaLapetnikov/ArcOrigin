@@ -39,6 +39,7 @@ import {
   type TokenMetadataInput,
 } from "@/lib/token-metadata";
 import { isRetryableRpcError, isRpcCapacityError, rpcErrorText } from "@/lib/rpc-errors";
+import { arcOriginPoolQuoteState, quoteArcOriginExactInput } from "@/lib/onchain/arc-origin-v3-quote";
 import { shortAddress, tickerLabel } from "@/lib/utils";
 import { getSafeAppContext } from "@/lib/wallet/safe-app-connector";
 import { Button, LinkButton, WarningBox } from "./ui";
@@ -225,10 +226,23 @@ async function readInitialBuyQuote(
       pool,
     };
   })();
+  const deterministicQuote = (async (): Promise<InitialBuyQuoteResponse> => {
+    // A newly confirmed ArcOrigin market may not have reached the event store
+    // yet. Its permanent position and launch boundary are deterministic, so the
+    // creator buy does not need a working public Quoter during that short gap.
+    await wait(800);
+    if (quoteController.signal.aborted) throw new Error("Indexed initial buy quote cancelled.");
+    const state = arcOriginPoolQuoteState(token, ARC_ACTIVE_CONTRACTS.usdc, null);
+    return {
+      output: quoteArcOriginExactInput(state, "Buy", input, ARC_UNISWAP_V3.fee).toString(),
+      spender: ARC_UNISWAP_V3.router,
+      pool,
+    };
+  })();
 
   let payload: InitialBuyQuoteResponse;
   try {
-    payload = await Promise.any([serverQuote, directQuote]);
+    payload = await Promise.any([serverQuote, directQuote, deterministicQuote]);
   } finally {
     quoteController.abort();
   }

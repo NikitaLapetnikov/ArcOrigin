@@ -36,6 +36,11 @@ export type StoredSwap = {
   executionPrice: number;
 };
 
+export type StoredPoolQuoteState = {
+  sqrtPriceX96: bigint | null;
+  checkpoint: EventStoreCheckpoint;
+};
+
 export type StoredHolderBalance = {
   address: Address;
   balance: bigint;
@@ -232,6 +237,31 @@ export async function getStoredSwaps(tokenAddress: Address): Promise<{
         comparisonPrice: Number.isFinite(comparisonPrice) && comparisonPrice! > 0 ? comparisonPrice : null,
       },
     };
+  });
+}
+
+export async function getStoredPoolQuoteState(tokenAddress: Address): Promise<StoredPoolQuoteState | null> {
+  return optionalQuery(async (pool) => {
+    const [checkpoint, result] = await Promise.all([
+      queryCheckpoint(pool),
+      pool.query(`
+        SELECT payload->>'sqrtPriceX96' AS sqrt_price_x96
+          FROM arc_events
+         WHERE event_name = 'Swap' AND token_address = $1
+         ORDER BY block_number DESC, log_index DESC
+         LIMIT 1
+      `, [tokenAddress.toLowerCase()]),
+    ]);
+    if (!checkpoint) return null;
+    const rawSqrtPrice = result.rows[0]?.sqrt_price_x96;
+    if (rawSqrtPrice === undefined || rawSqrtPrice === null) {
+      return { sqrtPriceX96: null, checkpoint };
+    }
+    const normalized = String(rawSqrtPrice);
+    if (!/^\d+$/.test(normalized)) return null;
+    const sqrtPriceX96 = BigInt(normalized);
+    if (sqrtPriceX96 <= 0n) return null;
+    return { sqrtPriceX96, checkpoint };
   });
 }
 

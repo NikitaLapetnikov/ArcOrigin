@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createPublicClient, getAddress, http, isAddress, maxUint256, zeroAddress } from "viem";
 import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { factoryAbi, uniswapV3FactoryAbi, uniswapV3QuoterAbi } from "@/lib/contracts";
+import { arcOriginPoolQuoteState, quoteArcOriginExactInput } from "@/lib/onchain/arc-origin-v3-quote";
 import { arcQuoteRpcUrls, createArcPublicClient } from "@/lib/onchain/arc-rpc";
 import { getCachedTokenIndexSnapshot } from "@/lib/onchain/token-index-snapshot";
 import { isRpcCapacityError } from "@/lib/rpc-errors";
-import { getStoredFactoryLaunch } from "@/lib/server/event-store";
+import { getStoredFactoryLaunch, getStoredPoolQuoteState } from "@/lib/server/event-store";
 import { requestClientKey } from "@/lib/server/request-security";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,8 @@ type QuotePayload = {
   quotedAt: number;
 };
 
-const QUOTE_CACHE_TTL_MS = 4_500;
+const QUOTE_CACHE_TTL_MS = 7_500;
+const INDEXED_QUOTE_MAX_AGE_MS = 30_000;
 const MAX_QUOTE_CACHE_ENTRIES = 256;
 const MAX_PENDING_QUOTES = 256;
 const QUOTE_RATE_WINDOW_MS = 60_000;
@@ -115,20 +117,11 @@ async function readVerifiedQuote(token: `0x${string}`, pool: `0x${string}`, side
   ]);
   const indexedToken = index?.tokens.find((candidate) => candidate.address.toLowerCase() === token.toLowerCase());
   const marketKey = `${token.toLowerCase()}:${pool.toLowerCase()}`;
-  const tokenIn = side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token;
-  const tokenOut = side === "Buy" ? token : ARC_ACTIVE_CONTRACTS.usdc;
-  const quotePromise = withHedgedRpc((client) => client.simulateContract({
-    address: ARC_UNISWAP_V3.quoter,
-    abi: uniswapV3QuoterAbi,
-    functionName: "quoteExactInputSingle",
-    args: [{ tokenIn, tokenOut, amountIn: amount, fee: ARC_UNISWAP_V3.fee, sqrtPriceLimitX96: 0n }],
-  }));
   let canonicalPool = pool;
-  let quoteResult: Awaited<typeof quotePromise>;
   const indexedPoolMatches = indexedToken?.poolAddress?.toLowerCase() === pool.toLowerCase();
   const storedPoolMatches = storedMarket?.launch.pool.toLowerCase() === pool.toLowerCase();
   if (!indexedPoolMatches && !storedPoolMatches && !verifiedMarkets.has(marketKey)) {
-    const [tokenInfo, verifiedPool, result] = await Promise.all([
+    const [tokenInfo, verifiedPool] = await Promise.all([
       validationClient.readContract({
         address: ARC_ACTIVE_CONTRACTS.factory,
         abi: factoryAbi,
@@ -141,7 +134,6 @@ async function readVerifiedQuote(token: `0x${string}`, pool: `0x${string}`, side
         functionName: "getPool",
         args: [token, ARC_ACTIVE_CONTRACTS.usdc, ARC_UNISWAP_V3.fee],
       }),
-      quotePromise,
     ]);
     if (tokenInfo.token.toLowerCase() !== token.toLowerCase() || tokenInfo.pool.toLowerCase() !== pool.toLowerCase()) {
       throw new QuoteRequestError("Token pool is not a verified ArcOrigin market.", 404, "validate-pool");
@@ -151,11 +143,36 @@ async function readVerifiedQuote(token: `0x${string}`, pool: `0x${string}`, side
       throw new QuoteRequestError("The canonical launch pool could not be verified.", 409, "verify-pool");
     }
     verifiedMarkets.add(marketKey);
-    quoteResult = result;
   } else {
     verifiedMarkets.add(marketKey);
-    quoteResult = await quotePromise;
   }
+
+  if (storedPoolMatches) {
+    const indexedState = await getStoredPoolQuoteState(token);
+    const indexedAt = indexedState ? Date.parse(indexedState.checkpoint.generatedAt) : NaN;
+    if (indexedState && Number.isFinite(indexedAt) && Date.now() - indexedAt <= INDEXED_QUOTE_MAX_AGE_MS) {
+      const state = arcOriginPoolQuoteState(token, ARC_ACTIVE_CONTRACTS.usdc, indexedState.sqrtPriceX96);
+      const output = quoteArcOriginExactInput(state, side, amount, ARC_UNISWAP_V3.fee);
+      return {
+        input: amount.toString(),
+        output: output.toString(),
+        fee: (amount * BigInt(ARC_UNISWAP_V3.fee) / 1_000_000n).toString(),
+        venue: "uniswap-v3",
+        spender: ARC_UNISWAP_V3.router,
+        pool: canonicalPool,
+        quotedAt: indexedAt,
+      };
+    }
+  }
+
+  const tokenIn = side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token;
+  const tokenOut = side === "Buy" ? token : ARC_ACTIVE_CONTRACTS.usdc;
+  const quoteResult = await withHedgedRpc((client) => client.simulateContract({
+    address: ARC_UNISWAP_V3.quoter,
+    abi: uniswapV3QuoterAbi,
+    functionName: "quoteExactInputSingle",
+    args: [{ tokenIn, tokenOut, amountIn: amount, fee: ARC_UNISWAP_V3.fee, sqrtPriceLimitX96: 0n }],
+  }));
   return {
     input: amount.toString(),
     output: quoteResult.result[0].toString(),

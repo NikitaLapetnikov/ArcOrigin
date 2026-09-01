@@ -67,7 +67,7 @@ export default function DocsPage() {
           <Callout>Creators receive no free token allocation. The optional initial creator buy is a transparent normal pool trade after launch. Rejecting or failing it does not reverse a confirmed token launch.</Callout>
         </Section>
         <Section id="trading" title="Trading">
-          <p>Buys and sells use the canonical Uniswap V3 Router. Quotes come from the official Quoter and are accepted only after the app verifies the pool against both the ArcOrigin Factory and the Uniswap Factory.</p>
+          <p>Buys and sells use the canonical Uniswap V3 Router. Quotes use the latest indexed pool state and the immutable locked-position math, with the official Quoter as a fallback. The app accepts a quote only after verifying the canonical ArcOrigin pool.</p>
           <p>Slippage protection is enforced with a minimum output. Token addresses are the identity of a market; names and symbols are not unique.</p>
         </Section>
         <Section id="fees" title="Fees">
