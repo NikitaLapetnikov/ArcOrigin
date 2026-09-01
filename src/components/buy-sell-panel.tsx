@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings2 } from "lucide-react";
-import { decodeEventLog, formatUnits, isAddress, maxUint256, parseUnits, publicActions, zeroAddress, type Address, type Hash, type PublicClient } from "viem";
+import { createPublicClient, decodeEventLog, formatUnits, http, isAddress, maxUint256, parseUnits, publicActions, type Address, type Hash, type PublicClient } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
 import { requiredNativeUsdcBalance } from "@/lib/arc-usdc";
 import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
-import { erc20Abi, uniswapV3FactoryAbi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
+import { erc20Abi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
 import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText } from "@/lib/rpc-errors";
 import { useLiveRefresh } from "@/hooks/use-live-refresh";
 import type { TokenData } from "@/lib/types";
@@ -39,8 +39,14 @@ const MAX_SLIPPAGE_PERCENT = 50;
 const BALANCE_POLL_INTERVAL_MS = 10_000;
 const QUOTE_POLL_INTERVAL_MS = 5_000;
 const MAX_EXECUTION_QUOTE_AGE_MS = 8_000;
+const DIRECT_QUOTE_TIMEOUT_MS = 6_000;
+const DIRECT_QUOTE_HEDGE_DELAY_MS = 250;
 const ARC_WALLET_RPC_URL = arcChain.rpcUrls.default.http[0];
 const MAX_INPUT_CHARACTERS = 80;
+const directQuoteClients = arcChain.rpcUrls.default.http.map((url) => createPublicClient({
+  chain: arcChain,
+  transport: http(url, { retryCount: 0, timeout: DIRECT_QUOTE_TIMEOUT_MS }),
+}));
 
 function wait(milliseconds: number) { return new Promise((resolve) => setTimeout(resolve, milliseconds)); }
 
@@ -100,33 +106,24 @@ function inputUnits(value: bigint, decimals: number) {
   return formatted.includes(".") ? formatted.replace(/\.?0+$/, "") || "0" : formatted;
 }
 
-async function readUniswapFallback(clients: PublicClient[], token: Address, pool: Address, side: Side, input: bigint): Promise<QuoteResponse> {
-  let lastError: unknown = new Error(`No ${arcChain.name} fallback client is available.`);
-  for (const client of clients) {
-    try {
-      const canonicalPool = await withRpcRetry(() => client.readContract({
-        address: ARC_UNISWAP_V3.factory,
-        abi: uniswapV3FactoryAbi,
-        functionName: "getPool",
-        args: [token, ARC_ACTIVE_CONTRACTS.usdc, ARC_UNISWAP_V3.fee],
-      }), 2);
-      if (canonicalPool === zeroAddress || canonicalPool.toLowerCase() !== pool.toLowerCase()) throw new Error("The launch pool is not canonical.");
-      const { result } = await withRpcRetry(() => client.simulateContract({
-        address: ARC_UNISWAP_V3.quoter,
-        abi: uniswapV3QuoterAbi,
-        functionName: "quoteExactInputSingle",
-        args: [{
-          tokenIn: side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token,
-          tokenOut: side === "Buy" ? token : ARC_ACTIVE_CONTRACTS.usdc,
-          amountIn: input,
-          fee: ARC_UNISWAP_V3.fee,
-          sqrtPriceLimitX96: 0n,
-        }],
-      }), 2);
-      return { output: result[0].toString(), fee: (input * BigInt(ARC_UNISWAP_V3.fee) / 1_000_000n).toString(), spender: ARC_UNISWAP_V3.router, pool: canonicalPool };
-    } catch (error) { lastError = error; }
-  }
-  throw lastError;
+async function readDirectQuote(token: Address, pool: Address, side: Side, input: bigint): Promise<QuoteResponse> {
+  if (directQuoteClients.length === 0) throw new Error(`No ${arcChain.name} quote RPC is configured.`);
+  return Promise.any(directQuoteClients.map(async (client, index) => {
+    if (index > 0) await wait(index * DIRECT_QUOTE_HEDGE_DELAY_MS);
+    const { result } = await client.simulateContract({
+      address: ARC_UNISWAP_V3.quoter,
+      abi: uniswapV3QuoterAbi,
+      functionName: "quoteExactInputSingle",
+      args: [{
+        tokenIn: side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token,
+        tokenOut: side === "Buy" ? token : ARC_ACTIVE_CONTRACTS.usdc,
+        amountIn: input,
+        fee: ARC_UNISWAP_V3.fee,
+        sqrtPriceLimitX96: 0n,
+      }],
+    });
+    return { output: result[0].toString(), fee: (input * BigInt(ARC_UNISWAP_V3.fee) / 1_000_000n).toString(), spender: ARC_UNISWAP_V3.router, pool };
+  }));
 }
 
 async function estimatePriorityFees(client: PublicClient, priority: Priority): Promise<TransactionFeeOverrides> {
@@ -270,13 +267,11 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     if (input === null) throw new Error(`Enter a valid amount with no more than ${inputDecimals} decimal places.`);
     let result: QuoteResponse;
     try {
+      result = await readDirectQuote(token.address as Address, poolAddress, side, input);
+    } catch {
       const response = await fetch(`/api/onchain/quote?token=${encodeURIComponent(token.address)}&pool=${encodeURIComponent(poolAddress)}&side=${side}&amount=${input}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
       result = await response.json() as QuoteResponse;
       if (!response.ok) { const error = new Error(result.error || "Unable to read an onchain quote.") as Error & { status?: number }; error.status = response.status; throw error; }
-    } catch (error) {
-      const status = typeof error === "object" && error && "status" in error ? Number(error.status) : null;
-      if (status !== null && status < 500) throw error;
-      result = await readUniswapFallback([publicClient as unknown as PublicClient], token.address as Address, poolAddress, side, input);
     }
     if (!result.output || result.fee === undefined || !result.spender || !result.pool) throw new Error(result.error || "Unable to read an onchain quote.");
     if (!isAddress(result.spender)
