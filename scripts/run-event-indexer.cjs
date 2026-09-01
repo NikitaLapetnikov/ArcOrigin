@@ -581,7 +581,7 @@ async function main() {
     || "0x3600000000000000000000000000000000000000");
   const fromBlock = BigInt(required("NEXT_PUBLIC_MAINNET_FACTORY_FROM_BLOCK"));
   const confirmations = BigInt(positiveInteger("INDEXER_CONFIRMATIONS", 2));
-  const batchSize = BigInt(positiveInteger("INDEXER_BATCH_SIZE", 10_000));
+  const batchSize = BigInt(positiveInteger("INDEXER_BATCH_SIZE", 5_000));
   const pollInterval = positiveInteger("INDEXER_POLL_INTERVAL_MS", 2_000);
   const addressChunkSize = positiveInteger("INDEXER_ADDRESS_CHUNK_SIZE", 20);
   const reorgDepth = positiveInteger("INDEXER_REORG_DEPTH", 64);
