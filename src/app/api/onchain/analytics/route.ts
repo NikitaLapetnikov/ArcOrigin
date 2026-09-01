@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAnalyticsRange, type AnalyticsRange, type ProtocolAnalyticsSnapshot } from "@/lib/analytics";
+import {
+  DEFAULT_ANALYTICS_RANGE,
+  isAnalyticsRange,
+  type AnalyticsRange,
+  type ProtocolAnalyticsSnapshot,
+} from "@/lib/analytics";
 import { getProtocolAnalyticsSnapshot } from "@/lib/server/protocol-analytics-snapshot";
 
 export const dynamic = "force-dynamic";
@@ -97,7 +102,7 @@ function previewSnapshot(range: AnalyticsRange): ProtocolAnalyticsSnapshot {
 
 export async function GET(request: NextRequest) {
   const requestedRange = request.nextUrl.searchParams.get("range");
-  const range: AnalyticsRange = isAnalyticsRange(requestedRange) ? requestedRange : "24h";
+  const range: AnalyticsRange = isAnalyticsRange(requestedRange) ? requestedRange : DEFAULT_ANALYTICS_RANGE;
   const forceRefresh = request.nextUrl.searchParams.get("refresh") === "1";
   const result = await getProtocolAnalyticsSnapshot(range, forceRefresh);
   if (result) {

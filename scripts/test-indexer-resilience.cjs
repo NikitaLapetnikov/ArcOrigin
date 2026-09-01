@@ -50,6 +50,7 @@ const {
   snapshotCacheControl,
 } = loadTypeScriptModule("src/lib/onchain/snapshot-http-cache.ts");
 const {
+  DEFAULT_ANALYTICS_RANGE,
   isProtocolAnalyticsSnapshot,
 } = loadTypeScriptModule("src/lib/analytics.ts");
 const {
@@ -200,6 +201,10 @@ test("stale and forced snapshots cannot be retained by an HTTP cache", () => {
   assert.equal(snapshotCacheControl({ forceRefresh: false, stale: false, freshPolicy }), freshPolicy);
   assert.equal(snapshotCacheControl({ forceRefresh: false, stale: true, freshPolicy }), "no-store");
   assert.equal(snapshotCacheControl({ forceRefresh: true, stale: false, freshPolicy }), "no-store");
+});
+
+test("protocol analytics opens on the lifetime view", () => {
+  assert.equal(DEFAULT_ANALYTICS_RANGE, "all");
 });
 
 test("protocol analytics cache accepts only complete versioned snapshots", () => {

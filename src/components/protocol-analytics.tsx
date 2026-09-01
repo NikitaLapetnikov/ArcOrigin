@@ -21,6 +21,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ANALYTICS_RANGES,
+  DEFAULT_ANALYTICS_RANGE,
   type AnalyticsMarket,
   type AnalyticsRange,
   type AnalyticsSeriesPoint,
@@ -39,7 +40,7 @@ const RANGE_LABELS: Record<AnalyticsRange, string> = {
 };
 
 export function ProtocolAnalytics({ initialSnapshot = null, initialStale = false }: Props) {
-  const [range, setRange] = useState<AnalyticsRange>(initialSnapshot?.range ?? "24h");
+  const [range, setRange] = useState<AnalyticsRange>(initialSnapshot?.range ?? DEFAULT_ANALYTICS_RANGE);
   const [snapshot, setSnapshot] = useState<ProtocolAnalyticsSnapshot | null>(initialSnapshot);
   const [loading, setLoading] = useState(!initialSnapshot);
   const [refreshing, setRefreshing] = useState(false);

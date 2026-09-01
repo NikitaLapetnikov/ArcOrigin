@@ -2,6 +2,8 @@ export const ANALYTICS_RANGES = ["24h", "7d", "30d", "all"] as const;
 
 export type AnalyticsRange = typeof ANALYTICS_RANGES[number];
 
+export const DEFAULT_ANALYTICS_RANGE: AnalyticsRange = "all";
+
 export type AnalyticsSeriesPoint = {
   timestamp: number;
   volumeUsdc: number;
