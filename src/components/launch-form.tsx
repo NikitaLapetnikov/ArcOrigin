@@ -66,7 +66,7 @@ const defaults: FormData = {
   automaticBuyback: false,
 };
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const DEFAULT_LAUNCH_FEE = 10n * 10n ** 6n;
+const DEFAULT_LAUNCH_FEE = 1n * 10n ** 6n;
 const DISPLAY_NUMBER_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
 function formatDisplayNumber(value: number) {

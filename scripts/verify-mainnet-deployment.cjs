@@ -118,7 +118,7 @@ async function main() {
   assertEqual("Factory PositionManager", await factory.positionManager(), manifest.contracts.uniswapV3PositionManager);
   assertEqual("Factory SwapRouter", await factory.swapRouter(), manifest.contracts.uniswapV3SwapRouter);
   assertEqual("Factory Locker", await factory.liquidityLocker(), lockerAddress);
-  assertEqual("Factory launch fee", await factory.launchFee(), 10n * 10n ** 6n);
+  assertEqual("Factory launch fee", await factory.launchFee(), 1n * 10n ** 6n);
   assertEqual("Locker Factory", await locker.factory(), factoryAddress);
   assertEqual("Locker PositionManager", await locker.positionManager(), manifest.contracts.uniswapV3PositionManager);
   assertEqual("Locker SwapRouter", await locker.swapRouter(), manifest.contracts.uniswapV3SwapRouter);

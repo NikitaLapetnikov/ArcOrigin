@@ -37,7 +37,7 @@ export default function DocsPage() {
           <p className="mt-5 text-xs text-slate-500">{arcChain.name} · Chain ID {arcChain.id}</p>
         </div>
         <div className="grid overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2">
-          <Fact label="Launch fee" value="10 USDC" />
+          <Fact label="Launch fee" value="1 USDC" />
           <Fact label="Initial market cap" value={`${ARCORIGIN_START_MARKET_CAP_USDC.toLocaleString()} USDC`} />
           <Fact label="Trading fee" value="1%" />
           <Fact label="Crossed mark" value={`${ARCORIGIN_CROSS_MARKET_CAP_USDC.toLocaleString()} USDC`} />

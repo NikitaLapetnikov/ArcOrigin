@@ -7,7 +7,7 @@ const ARC_USDC = "0x3600000000000000000000000000000000000000";
 const UNISWAP_V3_FACTORY = "0xf0db7b58379503491d857db50ac9ece64c653918";
 const UNISWAP_V3_POSITION_MANAGER = "0x39654a85a4c05127f5fd6ed22caec077a0fb1377";
 const UNISWAP_V3_SWAP_ROUTER = "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77";
-const LAUNCH_FEE = 10n * 10n ** 6n;
+const LAUNCH_FEE = 1n * 10n ** 6n;
 const outputPath = path.join(__dirname, "..", "deployment", "arc-mainnet.local.json");
 const safeBatchPath = path.join(
   __dirname,

@@ -4,7 +4,7 @@ const { ethers } = require("hardhat");
 const USDC = 10n ** 6n;
 const TOKEN = 10n ** 18n;
 const TOTAL_SUPPLY = 1_000_000_000n * TOKEN;
-const LAUNCH_FEE = 10n * USDC;
+const LAUNCH_FEE = 1n * USDC;
 const Q192 = 1n << 192n;
 
 function sqrt(value) {

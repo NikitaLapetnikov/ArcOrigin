@@ -16,5 +16,8 @@
     "router": "0x53bf6b0684ec7ef91e1387da3d1a1769bc5a6f77",
     "fee": 10000
   },
+  "economics": {
+    "launchFeeUsdc": 1
+  },
   "deploymentBlock": 0
 }
