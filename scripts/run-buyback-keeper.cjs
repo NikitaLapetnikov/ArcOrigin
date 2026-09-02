@@ -11,6 +11,8 @@ const { privateKeyToAccount } = require("viem/accounts");
 
 const ARC_MAINNET_CHAIN_ID = 5_042;
 const PAGE_SIZE = 100n;
+const DEFAULT_RPC_MINIMUM_SPACING_MS = 500;
+const DEFAULT_RPC_ATTEMPTS = 6;
 const arcMainnet = defineChain({
   id: ARC_MAINNET_CHAIN_ID,
   name: "Arc",
@@ -94,15 +96,32 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function withRpcRetry(operation, attempts = 4) {
+let nextRpcRequestAt = 0;
+
+function rpcMinimumSpacingMs() {
+  const configured = Number.parseInt(process.env.BUYBACK_KEEPER_RPC_MINIMUM_SPACING_MS || "", 10);
+  return Number.isFinite(configured) && configured >= 0
+    ? configured
+    : DEFAULT_RPC_MINIMUM_SPACING_MS;
+}
+
+async function waitForRpcSlot() {
+  const now = Date.now();
+  const delay = Math.max(0, nextRpcRequestAt - now);
+  nextRpcRequestAt = Math.max(now, nextRpcRequestAt) + rpcMinimumSpacingMs();
+  if (delay > 0) await wait(delay);
+}
+
+async function withRpcRetry(operation, attempts = DEFAULT_RPC_ATTEMPTS) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
+      await waitForRpcSlot();
       return await operation();
     } catch (error) {
       lastError = error;
       if (!transientRpcFailure(error) || attempt === attempts) throw error;
-      await wait(attempt * 1_500);
+      await wait(Math.min(12_000, attempt * attempt * 750));
     }
   }
   throw lastError;
@@ -139,7 +158,7 @@ async function main() {
   }
   const factoryAddress = requiredAddress("BUYBACK_KEEPER_FACTORY_ADDRESS");
   const transport = fallback(
-    rpcUrls.map((url) => http(url, { timeout: 12_000, retryCount: 1, retryDelay: 300 })),
+    rpcUrls.map((url) => http(url, { timeout: 12_000, retryCount: 0 })),
     { rank: false, retryCount: 0 },
   );
   const publicClient = createPublicClient({ chain: arcMainnet, transport });
@@ -197,10 +216,10 @@ async function main() {
         functionName: "collectAndExecuteBuyback",
         args: [info.positionId],
       }));
-      const transactionHash = await walletClient.writeContract({
+      const transactionHash = await withRpcRetry(() => walletClient.writeContract({
         ...simulation.request,
         gas: estimatedGas * 120n / 100n,
-      });
+      }));
       const receipt = await withRpcRetry(() => publicClient.waitForTransactionReceipt({ hash: transactionHash }));
       if (receipt.status !== "success") throw new Error("Buyback transaction failed.");
       executed += 1;
