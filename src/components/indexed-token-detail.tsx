@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Check, Copy, ExternalLink } from "lucide-react";
+import { ArrowLeft, AtSign, Check, Copy, ExternalLink, Globe2, Send } from "lucide-react";
 import { BuySellPanel } from "@/components/buy-sell-panel";
 import { BuybackTransparencyPanel } from "@/components/buyback-transparency-panel";
 import { OnchainTokenDashboard } from "@/components/onchain-token-dashboard";
@@ -75,6 +75,11 @@ export function IndexedTokenDetail({
     ["Pool inventory", holderSnapshot ? `${holderSnapshot.poolPercent.toFixed(2)}%` : "—"],
     ["Supply", token.totalSupply ? number(token.totalSupply) : "—"],
   ];
+  const socialLinks = [
+    token.socials.website ? { href: token.socials.website, label: "Website", icon: Globe2 } : null,
+    token.socials.x ? { href: token.socials.x, label: "X", icon: AtSign } : null,
+    token.socials.telegram ? { href: token.socials.telegram, label: "Telegram", icon: Send } : null,
+  ].filter((link): link is NonNullable<typeof link> => link !== null);
 
   return <div className="mx-auto w-full max-w-[1800px] px-3 py-3 sm:px-4">
     <div className="mb-4 rounded-[28px] border border-line/70 bg-panel px-4 py-5 shadow-[0_22px_60px_rgba(0,0,0,.12)] sm:px-6 sm:py-6">
@@ -116,6 +121,22 @@ export function IndexedTokenDetail({
           <a href={`${EXPLORER_URL}/address/${token.address}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-full bg-white/[.045] px-4 text-sm text-slate-200 transition hover:bg-white/[.08] hover:text-white">Arcscan <ExternalLink className="size-4" /></a>
         </div>
       </div>
+      {(token.description || socialLinks.length > 0) && <div className="mt-5 flex flex-col gap-4 border-t border-line/60 pt-4 lg:flex-row lg:items-center lg:justify-between">
+        {token.description && <p className="max-w-4xl text-sm leading-6 text-slate-400">{token.description}</p>}
+        {socialLinks.length > 0 && <nav aria-label={`${token.name} links`} className="flex shrink-0 flex-wrap items-center gap-2">
+          {socialLinks.map(({ href, label, icon: Icon }) => <a
+            key={label}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-10 items-center gap-2 rounded-full border border-line/70 bg-white/[.035] px-4 text-sm font-medium text-slate-200 transition hover:border-cyan/35 hover:bg-cyan/[.07] hover:text-cyan"
+          >
+            <Icon className="size-4" />
+            {label}
+            <ExternalLink className="size-3 text-slate-600" />
+          </a>)}
+        </nav>}
+      </div>}
     </div>
 
     <OnchainTokenDashboard
