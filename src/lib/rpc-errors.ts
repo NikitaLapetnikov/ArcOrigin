@@ -18,7 +18,7 @@ export function isRpcCapacityError(error: unknown) {
 
 export function isRetryableRpcError(error: unknown) {
   return isRpcCapacityError(error)
-    || /RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|rate limit|timeout|timed out|network error|socket|could not complete this request|No answer was obtained|\b429\b|\b50[234]\b/i.test(rpcErrorText(error));
+    || /RPC Request failed|HTTP request failed|fetch failed|Too Many Requests|rate limit|timeout|timed out|network error|socket|could not complete this request|No answer was obtained|all upstreams? unavailable|upstream RPC failed|temporarily unavailable|not able to process your request|\b429\b|\b50[234]\b/i.test(rpcErrorText(error));
 }
 
 export function isUnauthorizedBlockdaemonRpc(error: unknown) {

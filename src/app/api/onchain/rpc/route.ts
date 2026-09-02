@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { arcRpcUrls } from "@/lib/onchain/arc-rpc";
+import { isRetryableRpcError } from "@/lib/rpc-errors";
 import { readLimitedText, requestClientKey } from "@/lib/server/request-security";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +82,9 @@ async function requestUpstream(url: string, body: string) {
   const record = payload as Record<string, unknown>;
   if (record.jsonrpc !== "2.0" || (!("result" in record) && !("error" in record))) {
     throw new Error("RPC response is invalid.");
+  }
+  if ("error" in record && isRetryableRpcError(record.error)) {
+    throw new Error("RPC upstream is temporarily unavailable.");
   }
   return payload;
 }

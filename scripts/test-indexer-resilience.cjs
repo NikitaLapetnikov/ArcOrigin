@@ -265,6 +265,8 @@ test("Arc capacity errors remain retryable through nested RPC causes", () => {
   };
   assert.equal(isRpcCapacityError(error), true);
   assert.equal(isRetryableRpcError(error), true);
+  assert.equal(isRetryableRpcError({ message: "arc rpc: all upstreams unavailable" }), true);
+  assert.equal(isRetryableRpcError({ message: "Upstream RPC failed: fetch failed" }), true);
   assert.equal(isRetryableRpcError(new Error("execution reverted")), false);
 });
 

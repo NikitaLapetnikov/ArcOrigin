@@ -74,6 +74,8 @@ The deploy script writes `deployment/arc-mainnet.local.json` and an unsigned Saf
 
 Never commit private keys, RPC credentials, Pinata tokens, Redis credentials, or Safe signer material.
 
+Production RPC traffic is routed through the ArcOrigin relay first. The configured public upstream must support contract reads, logs, gas estimation, transaction counts, and raw transaction submission; keep an independently operated endpoint as a fallback and re-test both before changing production.
+
 The optional platform keeper is a permissionless executor, not an administrator. Run `npm run keeper:buyback` as a one-shot job with `BUYBACK_KEEPER_RPC_URL`, `BUYBACK_KEEPER_RPC_FALLBACK_URLS`, `BUYBACK_KEEPER_PRIVATE_KEY`, and `BUYBACK_KEEPER_FACTORY_ADDRESS` supplied through a protected VPS environment file. `BUYBACK_KEEPER_RPC_MINIMUM_SPACING_MS` may be set to pace calls when a provider enforces strict rate limits (the safe default is 500 ms). Only healthy, authenticated fallback endpoints should be configured. The included systemd timer runs it every five minutes and bounds each attempt to four minutes. The keeper key must be a dedicated, minimally funded operational account and must never be a Safe owner.
 
 ## Security
