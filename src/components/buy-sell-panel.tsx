@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings2 } from "lucide-react";
-import { createPublicClient, decodeEventLog, formatUnits, http, isAddress, maxUint256, parseUnits, type Address, type Hash, type PublicClient } from "viem";
+import { createPublicClient, custom, decodeEventLog, formatUnits, http, isAddress, maxUint256, parseUnits, type Address, type Hash, type PublicClient, type WalletClient } from "viem";
 import { useAccount, usePublicClient, useSwitchChain, useWalletClient, useWriteContract } from "wagmi";
-import { nativeUsdcToPrecompileBalance, requiredNativeUsdcBalance } from "@/lib/arc-usdc";
+import { nativeUsdcToPrecompileBalance } from "@/lib/arc-usdc";
 import { ARC_ACTIVE_CONTRACTS, ARC_UNISWAP_V3, arcChain } from "@/lib/chains";
 import { erc20Abi, uniswapV3PoolAbi, uniswapV3QuoterAbi, uniswapV3RouterAbi } from "@/lib/contracts";
 import { isRetryableRpcError, isRpcCapacityError, isUnauthorizedBlockdaemonRpc, rpcErrorText } from "@/lib/rpc-errors";
@@ -15,7 +15,6 @@ import { tickerLabel } from "@/lib/utils";
 import { ArcscanLink, Badge, Button } from "./ui";
 
 type Side = "Buy" | "Sell";
-type Priority = "Low" | "Medium" | "High";
 type LiveQuote = {
   input: bigint;
   output: bigint;
@@ -36,12 +35,8 @@ type WalletBalanceResponse = {
 };
 type TransactionStatus = "idle" | "checking-rpc" | "quoting" | "preparing" | "approving" | "trading";
 type WalletBalances = { usdc: bigint; token: bigint; native: bigint };
-type TransactionFeeOverrides =
-  | { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
-  | { gasPrice: bigint };
 const percentageOptions = [10, 25, 50, 75, 100] as const;
 const slippageOptions = [10, 20, 40] as const;
-const priorityOptions: Priority[] = ["Low", "Medium", "High"];
 const MAX_SLIPPAGE_PERCENT = 50;
 const BALANCE_POLL_INTERVAL_MS = 10_000;
 const QUOTE_POLL_INTERVAL_MS = 4_000;
@@ -50,8 +45,6 @@ const DIRECT_QUOTE_TIMEOUT_MS = 6_000;
 const DIRECT_QUOTE_HEDGE_DELAY_MS = 125;
 const DIRECT_QUOTE_START_DELAY_MS = 350;
 const FAST_RPC_READ_TIMEOUT_MS = 10_000;
-const APPROVAL_GAS_FALLBACK = 100_000n;
-const TRADE_GAS_FALLBACK = 500_000n;
 const ARC_WALLET_RPC_URL = ARC_RPC_RELAY_URL;
 const MAX_INPUT_CHARACTERS = 80;
 const directQuoteClients = arcChain.rpcUrls.default.http.map((url) => createPublicClient({
@@ -125,19 +118,6 @@ function acceptsTradeInput(value: string, decimals: number) {
   return new RegExp(`^\\d*(?:\\.\\d{0,${decimals}})?$`).test(value);
 }
 
-function gasWithSafetyMargin(estimate: bigint) {
-  return estimate * 120n / 100n + 5_000n;
-}
-
-async function gasLimitWithCapacityFallback(operation: Promise<bigint>, fallback: bigint) {
-  try {
-    return gasWithSafetyMargin(await withReadTimeout(operation));
-  } catch (error) {
-    if (!(error instanceof RpcReadTimeoutError) && !isRetryableRpcError(error)) throw error;
-    return fallback;
-  }
-}
-
 function displayUnits(value: bigint, decimals: number, maximumFractionDigits = decimals === 6 ? 6 : 4) {
   const parsed = Number(formatUnits(value, decimals));
   return Number.isFinite(parsed) ? parsed.toLocaleString("en-US", { maximumFractionDigits }) : "—";
@@ -174,9 +154,9 @@ async function readWalletBalances(wallet: Address, token: Address): Promise<Wall
   return { usdc: usdcBalance, token: BigInt(rawTokenBalance), native: nativeBalance };
 }
 
-async function readAllowance(token: Address, owner: Address, spender: Address) {
+async function readAllowance(client: PublicClient, token: Address, owner: Address, spender: Address) {
   try {
-    return await withReadTimeout(resilientReadClient.readContract({
+    return await withReadTimeout(client.readContract({
       address: token,
       abi: erc20Abi,
       functionName: "allowance",
@@ -186,6 +166,22 @@ async function readAllowance(token: Address, owner: Address, spender: Address) {
     if (error instanceof RpcReadTimeoutError || isRetryableRpcError(error)) return null;
     throw error;
   }
+}
+
+function createWalletReadClient(walletClient: WalletClient) {
+  return createPublicClient({
+    chain: arcChain,
+    transport: custom(walletClient.transport),
+  });
+}
+
+async function readWalletBalancesDirect(client: PublicClient, wallet: Address, token: Address): Promise<WalletBalances> {
+  const [nativeBalance, usdcBalance, tokenBalance] = await Promise.all([
+    client.getBalance({ address: wallet }),
+    client.readContract({ address: ARC_ACTIVE_CONTRACTS.usdc, abi: erc20Abi, functionName: "balanceOf", args: [wallet] }),
+    client.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [wallet] }),
+  ]);
+  return { native: nativeBalance, usdc: usdcBalance, token: tokenBalance };
 }
 
 async function readDirectQuote(token: Address, pool: Address, side: Side, input: bigint): Promise<QuoteResponse> {
@@ -214,39 +210,6 @@ async function readDirectQuote(token: Address, pool: Address, side: Side, input:
   }
 }
 
-async function estimatePriorityFees(client: PublicClient, priority: Priority): Promise<TransactionFeeOverrides> {
-  const multiplier = priority === "Low" ? 100n : priority === "High" ? 150n : 110n;
-  try {
-    const fees = await withReadTimeout(client.estimateFeesPerGas());
-    if (fees.maxFeePerGas !== undefined && fees.maxPriorityFeePerGas !== undefined) {
-      return {
-        maxPriorityFeePerGas: fees.maxPriorityFeePerGas * multiplier / 100n,
-        maxFeePerGas: fees.maxFeePerGas * multiplier / 100n,
-      };
-    }
-  } catch (error) {
-    if (!(error instanceof RpcReadTimeoutError) && !isRetryableRpcError(error)) throw error;
-  }
-  return {
-    gasPrice: await withRpcRetry(() => withReadTimeout(resilientReadClient.getGasPrice()), 2) * multiplier / 100n,
-  };
-}
-
-function ensureGasBalance(
-  nativeBalance: bigint,
-  gas: bigint,
-  fees: TransactionFeeOverrides,
-  requiredUsdc = 0n,
-) {
-  const feePerGas = "gasPrice" in fees ? fees.gasPrice : fees.maxFeePerGas;
-  const requiredNativeBalance = requiredNativeUsdcBalance(gas, feePerGas, requiredUsdc);
-  if (nativeBalance < requiredNativeBalance) {
-    throw new Error(requiredUsdc > 0n
-      ? "Insufficient USDC balance for the amount and network gas."
-      : "Insufficient native USDC balance for gas.");
-  }
-}
-
 export function BuySellPanel({ token }: { token: TokenData }) {
   if (!token.poolAddress) return <div id="trade-panel" className="panel scroll-mt-28 p-5"><Badge tone="warn">Onchain data unavailable</Badge><p className="mt-4 text-sm leading-6 text-slate-400">The verified Factory event did not include a usable Uniswap pool. Trading is disabled.</p></div>;
   return <LiveBuySellPanel token={token} poolAddress={token.poolAddress as Address} />;
@@ -256,7 +219,6 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
   const [side, setSide] = useState<Side>("Buy");
   const [amount, setAmount] = useState("1");
   const [slippageInput, setSlippageInput] = useState("10");
-  const [priority, setPriority] = useState<Priority>("Medium");
   const [status, setStatus] = useState<TransactionStatus>("idle");
   const [notice, setNotice] = useState("");
   const [noticeIsError, setNoticeIsError] = useState(false);
@@ -410,8 +372,9 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
     if (submissionLockRef.current) return;
     submissionLockRef.current = true; setStatus("checking-rpc"); setNotice(""); setTransactionHash(null);
     try {
-      const client = await getClient();
+      await getClient();
       if (!walletClient) throw new Error("The connected wallet is not ready. Reconnect it and retry.");
+      const walletReadClient = createWalletReadClient(walletClient);
       const currentSlippageBps = BigInt(Math.round(slippage * 100));
       let executionQuote = liveQuote
         && liveQuote.input === parsedAmount
@@ -422,40 +385,20 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         : await (async () => { setStatus("quoting"); return readQuote(); })();
       setStatus("preparing");
       const approvalToken = (side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token.address) as Address;
-      let freshBalances = await readWalletBalances(address, token.address as Address);
+      let freshBalances = await readWalletBalancesDirect(walletReadClient, address, token.address as Address);
       setBalances(freshBalances);
       const currentBalance = side === "Buy" ? freshBalances.usdc : freshBalances.token;
-      const allowance = await readAllowance(approvalToken, address, executionQuote.spender);
+      const allowance = await readAllowance(walletReadClient, approvalToken, address, executionQuote.spender);
       if (currentBalance < executionQuote.input) throw new Error(`Insufficient ${inputSymbol} balance.`);
       if (allowance === null || allowance < executionQuote.input) {
         setStatus("approving");
         const approvalArgs = [executionQuote.spender, executionQuote.input] as const;
-        const transactionReadClient = resilientReadClient;
-        const [approvalGas, approvalFees, approvalNonce] = await Promise.all([
-          gasLimitWithCapacityFallback(transactionReadClient.estimateContractGas({
-            account: address,
-            address: approvalToken,
-            abi: erc20Abi,
-            functionName: "approve",
-            args: approvalArgs,
-          }), APPROVAL_GAS_FALLBACK),
-          estimatePriorityFees(transactionReadClient as PublicClient, priority),
-          withRpcRetry(() => withReadTimeout(transactionReadClient.getTransactionCount({ address, blockTag: "pending" })), 2),
-        ]);
-        // Reserve enough native USDC for both the approval and the swap. The
-        // balance endpoint may be briefly cached while the approval confirms.
-        ensureGasBalance(
-          freshBalances.native,
-          approvalGas + TRADE_GAS_FALLBACK,
-          approvalFees,
-          side === "Buy" ? executionQuote.input : 0n,
-        );
-        const approvalHash = await writeContractAsync({ address: approvalToken, abi: erc20Abi, functionName: "approve", args: approvalArgs, gas: approvalGas, nonce: approvalNonce, ...approvalFees });
+        const approvalHash = await writeContractAsync({ address: approvalToken, abi: erc20Abi, functionName: "approve", args: approvalArgs });
         setTransactionHash(approvalHash);
-        if ((await withRpcRetry(() => client.waitForTransactionReceipt({ hash: approvalHash }))).status !== "success") throw new Error(`${inputSymbol} approval reverted onchain.`);
+        if ((await withRpcRetry(() => walletReadClient.waitForTransactionReceipt({ hash: approvalHash }))).status !== "success") throw new Error(`${inputSymbol} approval reverted onchain.`);
         setStatus("quoting");
         executionQuote = await readQuote();
-        freshBalances = await readWalletBalances(address, token.address as Address);
+        freshBalances = await readWalletBalancesDirect(walletReadClient, address, token.address as Address);
         setBalances(freshBalances);
       }
       setStatus("preparing");
@@ -468,31 +411,15 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         amountOutMinimum: executionQuote.minimumOutput,
         sqrtPriceLimitX96: 0n,
       }] as const;
-      const transactionReadClient = resilientReadClient;
-      const [tradeGas, tradeFees, tradeNonce] = await Promise.all([
-        gasLimitWithCapacityFallback(transactionReadClient.estimateContractGas({
-          account: address,
-          address: ARC_UNISWAP_V3.router,
-          abi: uniswapV3RouterAbi,
-          functionName: "exactInputSingle",
-          args: tradeArgs,
-        }), TRADE_GAS_FALLBACK),
-        estimatePriorityFees(transactionReadClient as PublicClient, priority),
-        withRpcRetry(() => withReadTimeout(transactionReadClient.getTransactionCount({ address, blockTag: "pending" })), 2),
-      ]);
-      ensureGasBalance(freshBalances.native, tradeGas, tradeFees, side === "Buy" ? executionQuote.input : 0n);
       setStatus("trading");
       const tradeHash = await writeContractAsync({
         address: ARC_UNISWAP_V3.router,
         abi: uniswapV3RouterAbi,
         functionName: "exactInputSingle",
         args: tradeArgs,
-        gas: tradeGas,
-        nonce: tradeNonce,
-        ...tradeFees,
       });
       setTransactionHash(tradeHash);
-      const receipt = await withRpcRetry(() => client.waitForTransactionReceipt({ hash: tradeHash }));
+      const receipt = await withRpcRetry(() => walletReadClient.waitForTransactionReceipt({ hash: tradeHash }));
       if (receipt.status !== "success") throw new Error(`${side} transaction reverted onchain.`);
       let confirmed: { usdc: bigint; tokens: bigint } | null = null;
       for (const log of receipt.logs) {
@@ -522,12 +449,12 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
   return <div id="trade-panel" className="panel scroll-mt-28 rounded-[28px] p-5 shadow-none">
     <p className="mb-4 text-lg font-semibold tracking-[-.03em] text-white">Trade {tickerLabel(token.ticker)}</p>
     <div className="grid grid-cols-2 gap-1 rounded-full bg-black/20 p-1">{(["Buy", "Sell"] as const).map((item) => <button key={item} disabled={isPending} onClick={() => setSide(item)} className={`h-10 rounded-full text-sm font-semibold transition disabled:opacity-50 ${side === item ? item === "Buy" ? "bg-emerald-400/15 text-emerald-300" : "bg-rose-400/15 text-rose-300" : "text-slate-500"}`}>{item}</button>)}</div>
-    <div className="mt-5 flex items-center justify-between gap-3"><label className="label mb-0 text-[15px]">You pay</label><div className="flex items-center gap-3"><button type="button" disabled={!balanceError || balanceLoading} onClick={() => void refreshBalances()} className={balanceError ? "text-sm text-cyan" : "text-sm text-slate-400"}>{balanceLabel}</button><span className="flex items-center gap-1 text-sm text-slate-400"><Settings2 className="size-4" />{slippageValid ? `${slippage}%` : "Invalid"} · {priority}</span></div></div>
+    <div className="mt-5 flex items-center justify-between gap-3"><label className="label mb-0 text-[15px]">You pay</label><div className="flex items-center gap-3"><button type="button" disabled={!balanceError || balanceLoading} onClick={() => void refreshBalances()} className={balanceError ? "text-sm text-cyan" : "text-sm text-slate-400"}>{balanceLabel}</button><span className="flex items-center gap-1 text-sm text-slate-400"><Settings2 className="size-4" />{slippageValid ? `${slippage}%` : "Invalid"} · Wallet gas</span></div></div>
     <div className="mt-2 flex items-center rounded-2xl bg-black/20 px-4 ring-1 ring-inset ring-line/70"><input inputMode="decimal" value={amount} disabled={isPending} onChange={(event) => acceptsTradeInput(event.target.value, inputDecimals) && setAmount(event.target.value)} className="h-14 min-w-0 flex-1 bg-transparent text-xl font-semibold outline-none" /><Badge tone="neutral">{inputSymbol}</Badge></div>
     {amountExceedsBalance && <p className="mt-2 text-sm text-rose-300">Amount exceeds your available {inputSymbol} balance.</p>}
     <div className="mt-2 grid grid-cols-5 gap-1">{percentageOptions.map((percent) => <button key={percent} type="button" disabled={isPending || !activeBalance} onClick={() => activeBalance !== undefined && setAmount(inputUnits(activeBalance * BigInt(percent) / 100n, inputDecimals))} className="h-9 rounded-full font-mono text-sm text-slate-400 disabled:opacity-60">{percent}%</button>)}</div>
     <div className="mt-4 border-y border-line/70 py-3"><div className="flex justify-between"><span className="text-slate-300">You receive</span><span className="font-mono font-semibold">{quoteLoading ? "Reading…" : liveQuote ? `${displayUnits(liveQuote.output, outputDecimals, side === "Buy" ? 0 : 6)} ${outputSymbol}` : `— ${outputSymbol}`}</span></div><div className="mt-2 flex justify-between text-sm text-slate-400"><span>Minimum received</span><span className="font-mono">{liveQuote ? `${displayUnits(liveQuote.minimumOutput, outputDecimals)} ${outputSymbol}` : "—"}</span></div>{quoteError && <p className="mt-2 text-sm text-amber-300">{quoteError}</p>}</div>
-    <div className="mt-3 grid gap-3 py-2"><div className="flex items-start justify-between gap-3"><span className="pt-2 text-slate-300">Slippage</span><div className="flex flex-wrap justify-end gap-1">{slippageOptions.map((value) => <button key={value} type="button" disabled={isPending} onClick={() => setSlippageInput(String(value))} className={`h-9 rounded-full px-3 font-mono text-sm disabled:opacity-50 ${slippage === value ? "bg-cyan/12 text-cyan" : "text-slate-400"}`}>{value}%</button>)}<label className="flex h-9 w-[86px] items-center rounded-full border border-line px-2"><input aria-label="Custom slippage percentage" inputMode="decimal" value={slippageInput} disabled={isPending} onChange={(event) => /^\d{0,2}(?:\.\d{0,2})?$/.test(event.target.value) && setSlippageInput(event.target.value)} className="min-w-0 flex-1 bg-transparent text-right outline-none disabled:opacity-50" /><span>%</span></label></div></div><div className="flex items-center justify-between"><span className="text-slate-300">Priority</span><div className="flex gap-1">{priorityOptions.map((value) => <button key={value} type="button" onClick={() => setPriority(value)} className={`h-9 rounded-full px-3 text-sm ${priority === value ? "bg-cyan/12 text-cyan" : "text-slate-400"}`}>{value}</button>)}</div></div></div>
+    <div className="mt-3 py-2"><div className="flex items-start justify-between gap-3"><span className="pt-2 text-slate-300">Slippage</span><div className="flex flex-wrap justify-end gap-1">{slippageOptions.map((value) => <button key={value} type="button" disabled={isPending} onClick={() => setSlippageInput(String(value))} className={`h-9 rounded-full px-3 font-mono text-sm disabled:opacity-50 ${slippage === value ? "bg-cyan/12 text-cyan" : "text-slate-400"}`}>{value}%</button>)}<label className="flex h-9 w-[86px] items-center rounded-full border border-line px-2"><input aria-label="Custom slippage percentage" inputMode="decimal" value={slippageInput} disabled={isPending} onChange={(event) => /^\d{0,2}(?:\.\d{0,2})?$/.test(event.target.value) && setSlippageInput(event.target.value)} className="min-w-0 flex-1 bg-transparent text-right outline-none disabled:opacity-50" /><span>%</span></label></div></div></div>
     <Button className="mt-4 w-full" disabled={tradeDisabled} onClick={() => void submitTrade()}>{actionLabel}</Button>
     {notice && <p role={noticeIsError ? "alert" : "status"} className={`mt-3 rounded-lg border p-3 text-sm ${noticeIsError ? "border-rose-400/20 text-rose-200" : "border-emerald-400/15 text-emerald-300"}`}>{notice}{transactionHash && <span className="ml-2"><ArcscanLink hash={transactionHash} label="View transaction" /></span>}</p>}
     <p className="mt-4 text-sm leading-6 text-slate-400">Trades execute through the canonical Uniswap V3 pool. The LP position cannot be withdrawn.</p>
