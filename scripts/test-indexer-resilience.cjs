@@ -64,6 +64,7 @@ const {
   requiredNativeUsdcBalance,
 } = loadTypeScriptModule("src/lib/arc-usdc.ts");
 const {
+  rpcRetryDelayMs,
   transientRpcFailure,
 } = require("./run-buyback-keeper.cjs");
 const {
@@ -304,6 +305,8 @@ test("keeper recognizes Arc provider capacity failures before retrying", () => {
   assert.equal(transientRpcFailure({ code: -32005, details: "Request exceeds defined limit." }), true);
   assert.equal(transientRpcFailure({ details: "all upstream temporarily out of capacity" }), true);
   assert.equal(transientRpcFailure(new Error("execution reverted")), false);
+  assert.equal(rpcRetryDelayMs({ details: 'retry_after_seconds":11' }, 1), 11_000);
+  assert.equal(rpcRetryDelayMs({ details: "temporarily out of capacity" }, 1), 15_000);
 });
 
 test("dedicated indexer derives a stable log identity and Arc swap direction", () => {

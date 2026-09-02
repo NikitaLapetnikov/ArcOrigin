@@ -12,7 +12,7 @@ const { privateKeyToAccount } = require("viem/accounts");
 const ARC_MAINNET_CHAIN_ID = 5_042;
 const PAGE_SIZE = 100n;
 const DEFAULT_RPC_MINIMUM_SPACING_MS = 500;
-const DEFAULT_RPC_ATTEMPTS = 6;
+const DEFAULT_RPC_ATTEMPTS = 12;
 const arcMainnet = defineChain({
   id: ARC_MAINNET_CHAIN_ID,
   name: "Arc",
@@ -92,6 +92,16 @@ function transientRpcFailure(error) {
   return /Request exceeds defined limit|temporarily out of capacity|all upstream|Too Many Requests|rate limit|timeout|timed out|fetch failed|network error|\b429\b|\b50[234]\b|\b-32005\b/i.test(message);
 }
 
+function rpcRetryDelayMs(error, attempt) {
+  const message = `${error?.shortMessage ?? ""} ${error?.details ?? ""} ${error?.message ?? ""} ${error?.cause?.details ?? ""} ${error?.cause?.message ?? ""}`;
+  const retryAfter = message.match(/retry_after_seconds["']?\s*[:=]\s*(\d+)/i);
+  if (retryAfter) return Math.min(30_000, Math.max(1_000, Number(retryAfter[1]) * 1_000));
+  if (/temporarily out of capacity|capacity_exhausted|Request exceeds defined limit|Too Many Requests|rate limit|\b429\b|\b-32005\b/i.test(message)) {
+    return 15_000;
+  }
+  return Math.min(12_000, attempt * attempt * 750);
+}
+
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -121,7 +131,7 @@ async function withRpcRetry(operation, attempts = DEFAULT_RPC_ATTEMPTS) {
     } catch (error) {
       lastError = error;
       if (!transientRpcFailure(error) || attempt === attempts) throw error;
-      await wait(Math.min(12_000, attempt * attempt * 750));
+      await wait(rpcRetryDelayMs(error, attempt));
     }
   }
   throw lastError;
@@ -262,4 +272,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { transientRpcFailure, withRpcRetry };
+module.exports = { rpcRetryDelayMs, transientRpcFailure, withRpcRetry };
