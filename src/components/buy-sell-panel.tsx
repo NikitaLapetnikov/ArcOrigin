@@ -175,15 +175,6 @@ function createWalletReadClient(walletClient: WalletClient) {
   });
 }
 
-async function readWalletBalancesDirect(client: PublicClient, wallet: Address, token: Address): Promise<WalletBalances> {
-  const [nativeBalance, usdcBalance, tokenBalance] = await Promise.all([
-    client.getBalance({ address: wallet }),
-    client.readContract({ address: ARC_ACTIVE_CONTRACTS.usdc, abi: erc20Abi, functionName: "balanceOf", args: [wallet] }),
-    client.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [wallet] }),
-  ]);
-  return { native: nativeBalance, usdc: usdcBalance, token: tokenBalance };
-}
-
 async function readDirectQuote(token: Address, pool: Address, side: Side, input: bigint): Promise<QuoteResponse> {
   if (directQuoteClients.length === 0) throw new Error(`No ${arcChain.name} quote RPC is configured.`);
   const hedgeController = new AbortController();
@@ -385,21 +376,26 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         : await (async () => { setStatus("quoting"); return readQuote(); })();
       setStatus("preparing");
       const approvalToken = (side === "Buy" ? ARC_ACTIVE_CONTRACTS.usdc : token.address) as Address;
-      let freshBalances = await readWalletBalancesDirect(walletReadClient, address, token.address as Address);
-      setBalances(freshBalances);
-      const currentBalance = side === "Buy" ? freshBalances.usdc : freshBalances.token;
+      const currentBalance = side === "Buy" ? balances?.usdc : balances?.token;
       const allowance = await readAllowance(walletReadClient, approvalToken, address, executionQuote.spender);
-      if (currentBalance < executionQuote.input) throw new Error(`Insufficient ${inputSymbol} balance.`);
+      if (currentBalance !== undefined && currentBalance < executionQuote.input) throw new Error(`Insufficient ${inputSymbol} balance.`);
       if (allowance === null || allowance < executionQuote.input) {
         setStatus("approving");
         const approvalArgs = [executionQuote.spender, executionQuote.input] as const;
         const approvalHash = await writeContractAsync({ address: approvalToken, abi: erc20Abi, functionName: "approve", args: approvalArgs });
         setTransactionHash(approvalHash);
-        if ((await withRpcRetry(() => walletReadClient.waitForTransactionReceipt({ hash: approvalHash }))).status !== "success") throw new Error(`${inputSymbol} approval reverted onchain.`);
+        let approvalReceipt;
+        try {
+          approvalReceipt = await withRpcRetry(() => walletReadClient.waitForTransactionReceipt({ hash: approvalHash }));
+        } catch (error) {
+          if (!isRetryableRpcError(error)) throw error;
+          setNotice(`${inputSymbol} approval submitted. Wait for confirmation in Rabby, then press Buy again.`);
+          setNoticeIsError(false);
+          return;
+        }
+        if (approvalReceipt.status !== "success") throw new Error(`${inputSymbol} approval reverted onchain.`);
         setStatus("quoting");
         executionQuote = await readQuote();
-        freshBalances = await readWalletBalancesDirect(walletReadClient, address, token.address as Address);
-        setBalances(freshBalances);
       }
       setStatus("preparing");
       const tradeArgs = [{
@@ -419,7 +415,16 @@ function LiveBuySellPanel({ token, poolAddress }: { token: TokenData; poolAddres
         args: tradeArgs,
       });
       setTransactionHash(tradeHash);
-      const receipt = await withRpcRetry(() => walletReadClient.waitForTransactionReceipt({ hash: tradeHash }));
+      let receipt;
+      try {
+        receipt = await withRpcRetry(() => walletReadClient.waitForTransactionReceipt({ hash: tradeHash }));
+      } catch (error) {
+        if (!isRetryableRpcError(error)) throw error;
+        setNotice(`${side} submitted to ${arcChain.name}. Follow the transaction in Rabby or Arcscan.`);
+        setNoticeIsError(false);
+        void refreshBalances();
+        return;
+      }
       if (receipt.status !== "success") throw new Error(`${side} transaction reverted onchain.`);
       let confirmed: { usdc: bigint; tokens: bigint } | null = null;
       for (const log of receipt.logs) {
