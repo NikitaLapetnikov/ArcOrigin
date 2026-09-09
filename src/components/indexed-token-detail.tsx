@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, AtSign, Check, Copy, ExternalLink, Globe2, Send } from "lucide-react";
+import { ArrowLeft, AtSign, Check, Copy, ExternalLink, Flame, Globe2, Send } from "lucide-react";
 import { BuySellPanel } from "@/components/buy-sell-panel";
 import { BuybackTransparencyPanel } from "@/components/buyback-transparency-panel";
 import { OnchainTokenDashboard } from "@/components/onchain-token-dashboard";
@@ -68,12 +68,21 @@ export function IndexedTokenDetail({
   }
 
   const holderCount = holderSnapshot?.holders ?? token.holders;
+  // The active ArcOrigin factory mints exactly one billion tokens at launch.
+  const initialSupply = 1_000_000_000;
+  const currentSupply = holderSnapshot?.totalSupply ?? token.totalSupply;
+  const supplyAvailable = currentSupply !== undefined && Number.isFinite(currentSupply)
+    && currentSupply >= 0 && currentSupply <= initialSupply;
+  const burnedTokens = supplyAvailable ? initialSupply - currentSupply : null;
+  const burnedPercent = burnedTokens === null ? null : burnedTokens / initialSupply * 100;
+  const burnedLabel = burnedPercent === null ? "—"
+    : burnedPercent > 0 && burnedPercent < 0.01 ? "<0.01%" : `${burnedPercent.toFixed(2)}%`;
   const heroStats = [
     ["Holders", holderCount > 0 ? number(holderCount) : "—"],
     ["Creator holding", `${(holderSnapshot?.creatorPercent ?? token.creatorAllocationPercent ?? 0).toFixed(2)}%`],
     ["Top 10", holderSnapshot ? `${holderSnapshot.topTenExcludingPoolPercent.toFixed(2)}%` : "—"],
     ["Pool inventory", holderSnapshot ? `${holderSnapshot.poolPercent.toFixed(2)}%` : "—"],
-    ["Supply", token.totalSupply ? number(token.totalSupply) : "—"],
+    ["Supply", supplyAvailable ? number(currentSupply) : "—"],
   ];
   const socialLinks = [
     token.socials.website ? { href: token.socials.website, label: "Website", icon: Globe2 } : null,
@@ -110,11 +119,21 @@ export function IndexedTokenDetail({
             </div>
           </div>
         </div>
-        <dl className="grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-5 xl:grid-cols-3 2xl:grid-cols-5">
+        <dl className="grid grid-cols-2 items-center gap-x-4 gap-y-5 sm:grid-cols-3">
           {heroStats.map(([label, value]) => <div key={label} className="min-w-0">
             <dt className="truncate text-[11px] font-medium uppercase tracking-[.075em] text-slate-500">{label}</dt>
             <dd className="mt-1.5 truncate text-[16px] font-semibold text-slate-100" title={value}>{value}</dd>
           </div>)}
+          <div className="min-w-0 rounded-xl border border-cyan/30 bg-cyan/[.08] px-3 py-2.5">
+            <dt className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[.075em] text-cyan">
+              <Flame aria-hidden="true" className="size-3.5 shrink-0" />
+              <span>Supply burned</span>
+            </dt>
+            <dd className="mt-1.5 text-[22px] font-semibold leading-none tracking-tight text-cyan" title={burnedTokens === null ? "Loading confirmed supply" : `${burnedTokens.toLocaleString("en-US", { maximumFractionDigits: 2 })} tokens burned out of the original 1,000,000,000`}>
+              {burnedLabel}
+            </dd>
+            <dd className="mt-1.5 text-[10px] text-slate-400">of initial supply</dd>
+          </div>
         </dl>
         <div className="flex flex-wrap items-center gap-2 xl:justify-end">
           <WatchlistButton address={token.address} />

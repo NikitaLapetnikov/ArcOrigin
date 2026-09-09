@@ -51,6 +51,8 @@ export type FactoryLaunch = {
 };
 
 export type HolderSnapshot = {
+  /** Current supply reconstructed from all indexed transfers, excluding burns. */
+  totalSupply?: number;
   holders: number;
   topHolders: HolderEntry[];
   creatorPercent: number;
@@ -491,6 +493,7 @@ async function loadHolderSnapshot(tokenAddress: Address, hint?: HolderLaunchHint
       }
     : await createCanonicalCheckpoint(indexedBlock, readCanonicalBlock);
   return {
+    totalSupply: Number(formatUnits(totalSupply, 18)),
     holders: visibleHolders.length,
     topHolders,
     creatorPercent: percentOf(creatorBalance, totalSupply),
