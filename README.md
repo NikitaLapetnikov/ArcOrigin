@@ -64,7 +64,9 @@ own provider; the generic injected fallback is shown only when none are
 discovered. Safe remains available inside its embedded app. Connection requests
 are single-flight across controls and remain pending until the wallet responds;
 after ten seconds the UI shows guidance instead of cancelling the request.
-Stale Wagmi sessions are repaired without revoking wallet permissions. Network
+Stale Wagmi sessions are repaired without revoking wallet permissions. Page
+reloads restore only the last selected wallet (or the embedded Safe), so another
+extension cannot stall the active session. Network
 switch errors are displayed with a disconnect escape hatch. Run
 `npm run test:wallet-connection` for connection recovery regression tests.
 

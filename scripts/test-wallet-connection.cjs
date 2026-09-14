@@ -11,7 +11,7 @@ const source = ts.transpileModule(fs.readFileSync("src/lib/wallet/connect-sessio
 }).outputText;
 const loaded = { exports: {} };
 Function("require", "module", "exports", source)(require, loaded, loaded.exports);
-const { connectWalletSession, walletConnectionError } = loaded.exports;
+const { connectWalletSession, restoreWalletSession, walletConnectionError } = loaded.exports;
 const address = "0x1111111111111111111111111111111111111111";
 
 function fixture(connectOperation) {
@@ -94,4 +94,31 @@ test("stale session recovery does not duplicate event listeners", async () => {
 test("pending and rejected requests have actionable messages", () => {
   assert.match(walletConnectionError(new Error("Request already pending")), /Open your wallet/);
   assert.match(walletConnectionError(new Error("User rejected the request")), /Connection declined/);
+});
+
+test("restore only probes the selected wallet, not unrelated extensions", async () => {
+  const { config, connector } = fixture();
+  let unrelatedProbes = 0;
+  const unrelated = createConnector(() => ({
+    ...connector, id: "unrelated", name: "Unrelated wallet",
+    async getProvider() { unrelatedProbes += 1; throw new Error("Unrelated wallet must not be probed"); },
+  }));
+  // Register another extension as discovery would, with a provider that cannot respond.
+  config._internal.connectors.setState((items) => [...items, config._internal.connectors.setup(unrelated)]);
+  await restoreWalletSession(config, connector);
+  assert.equal(getAccount(config).isConnected, true);
+  assert.equal(getAccount(config).connector.uid, connector.uid);
+  assert.equal(unrelatedProbes, 0);
+});
+
+test("automatic restore does not interrupt a manual connection", async () => {
+  let approve;
+  const confirmation = new Promise((resolve) => { approve = resolve; });
+  const { config, connector, prompts } = fixture(() => confirmation);
+  const manual = connectWalletSession(config, connector);
+  await restoreWalletSession(config, connector);
+  assert.equal(prompts(), 1);
+  approve();
+  await manual;
+  assert.equal(getAccount(config).isConnected, true);
 });

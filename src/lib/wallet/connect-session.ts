@@ -1,9 +1,16 @@
-import { connect, ConnectorAlreadyConnectedError, type Config, type Connector } from "@wagmi/core";
+import { connect, reconnect, ConnectorAlreadyConnectedError, type Config, type Connector } from "@wagmi/core";
 
 // A wallet approval is a user interaction, not a ten-second network request.
 // Share the pending operation between desktop/mobile controls; never issue a
 // second permissions request while the first wallet popup is still open.
 const pendingConnections = new WeakMap<Config, Promise<void>>();
+
+export async function restoreWalletSession(config: Config, connector: Connector) {
+  if (pendingConnections.has(config) || config.state.status === "connected") return;
+  // Do not scan every installed extension: a locked/unresponsive unrelated
+  // provider must not prevent the selected wallet from becoming connected.
+  await reconnect(config, { connectors: [connector] });
+}
 
 export function connectWalletSession(config: Config, connector: Connector): Promise<void> {
   const pending = pendingConnections.get(config);

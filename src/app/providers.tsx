@@ -2,13 +2,14 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fallback, http } from "viem";
-import { WagmiProvider, createConfig } from "wagmi";
+import { WagmiProvider, createConfig, useConnectors } from "wagmi";
 import { injected } from "@wagmi/core";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LiveIndexerBridge } from "@/components/live-indexer-bridge";
 import { arcMainnet } from "@/lib/chains";
 import { ARC_RPC_RELAY_URL } from "@/lib/onchain/browser-arc-rpc";
 import { getSafeAppContext, safeAppConnector } from "@/lib/wallet/safe-app-connector";
+import { restoreWalletSession } from "@/lib/wallet/connect-session";
 
 function connectors() {
   return [
@@ -41,6 +42,33 @@ const config = createConfig({
   ssr: true,
 });
 
+function WalletSessionRestore() {
+  const available = useConnectors();
+  const started = useRef(false);
+  useEffect(() => {
+    let cancelled = false;
+    // Hydrate completes its local-storage microtasks before this timer. The
+    // effect also reruns if EIP-6963 discovers the saved extension later.
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const recentId = await config.storage?.getItem("recentConnectorId");
+        if (cancelled || started.current) return;
+        const insideSafe = window.parent !== window;
+        const connector = available.find((item) => insideSafe
+          ? item.id === "safe"
+          : item.id === recentId && item.id !== "safe");
+        if (!connector) return;
+        started.current = true;
+        await restoreWalletSession(config, connector);
+      })().catch(() => {
+        // Manual connection remains available if the saved wallet cannot restore.
+      });
+    }, 0);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [available]);
+  return null;
+}
+
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
   useEffect(() => {
@@ -52,5 +80,5 @@ export function Providers({ children }: { children: ReactNode }) {
       // interrupted or the Safe parent was not ready yet.
     });
   }, []);
-  return <WagmiProvider config={config}><QueryClientProvider client={queryClient}><LiveIndexerBridge />{children}</QueryClientProvider></WagmiProvider>;
+  return <WagmiProvider config={config} reconnectOnMount={false}><QueryClientProvider client={queryClient}><WalletSessionRestore /><LiveIndexerBridge />{children}</QueryClientProvider></WagmiProvider>;
 }
