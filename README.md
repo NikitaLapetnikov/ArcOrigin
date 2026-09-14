@@ -57,6 +57,17 @@ pnpm audit --prod
 
 ## Configuration
 
+### Wallet sessions
+
+Wallet discovery uses EIP-6963 so named extensions (including Rabby) use their
+own provider; the generic injected fallback is shown only when none are
+discovered. Safe remains available inside its embedded app. Connection requests
+are single-flight across controls and remain pending until the wallet responds;
+after ten seconds the UI shows guidance instead of cancelling the request.
+Stale Wagmi sessions are repaired without revoking wallet permissions. Network
+switch errors are displayed with a disconnect escape hatch. Run
+`npm run test:wallet-connection` for connection recovery regression tests.
+
 The application requires exactly one active Factory per selected network. Configure its address and deployment block together with Fee Vault, Creator Registry, canonical USDC, and Uniswap endpoints. Do not add previous factories as fallbacks.
 
 Arc mainnet uses chain ID `5042` and canonical USDC `0x3600000000000000000000000000000000000000`. Official Uniswap addresses are validated by the deployment preflight.

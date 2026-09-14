@@ -7,15 +7,15 @@ import { ChevronDown, Copy, LogOut, Menu, UserRound, Wallet, X } from "lucide-re
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  ConnectorAlreadyConnectedError,
   useAccount,
-  useConnect,
+  useConfig,
+  useConnectors,
   useDisconnect,
-  useReconnect,
   useSwitchChain,
   type Connector,
 } from "wagmi";
 import { arcChain } from "@/lib/chains";
+import { connectWalletSession, walletConnectionError } from "@/lib/wallet/connect-session";
 import { cn, shortAddress } from "@/lib/utils";
 import { Button } from "./ui";
 import { ThemeToggle } from "./theme-toggle";
@@ -28,37 +28,32 @@ const nav = [
   ["Docs", "/docs"],
 ] as const;
 
-const WALLET_CONNECTION_TIMEOUT_MS = 10_000;
-
 function WalletButton() {
   const [mounted, setMounted] = useState(false);
   const [restoreTimedOut, setRestoreTimedOut] = useState(false);
-  const [connectTimedOut, setConnectTimedOut] = useState(false);
+  const [waitingForWallet, setWaitingForWallet] = useState(false);
+  const [isPending, setIsPending] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [connectionError, setConnectionError] = useState("");
-  const connectionAttemptRef = useRef(0);
+  const connectionInFlight = useRef(false);
   const { address, isConnected, chainId, status: accountStatus } = useAccount();
-  const { connectors, connectAsync, isPending, error, reset: resetConnect } = useConnect();
-  const { reconnectAsync, isPending: isReconnectPending } = useReconnect();
+  const config = useConfig();
+  const connectors = useConnectors();
   const { disconnect } = useDisconnect();
-  const { switchChain } = useSwitchChain();
-  const automaticRestorePending = accountStatus === "reconnecting"
-    || isReconnectPending
-    || (accountStatus === "connecting" && !isPending);
+  const { switchChain, isPending: switchingChain, error: switchError } = useSwitchChain();
+  const automaticRestorePending = !isPending && (accountStatus === "reconnecting"
+    || accountStatus === "connecting");
   const restoringWallet = automaticRestorePending && !restoreTimedOut;
-  const manualConnectionPending = (isPending || (accountStatus === "connecting" && !automaticRestorePending))
-    && !connectTimedOut;
+  const manualConnectionPending = isPending;
   const connectionPending = manualConnectionPending || restoringWallet;
-  const visibleError = connectionError || (
-    error && !(error instanceof ConnectorAlreadyConnectedError)
-      ? error.message.split("\n")[0]
-      : ""
-  );
+  const visibleError = connectionError;
   const insideIframe = mounted && window.parent !== window;
   const availableConnectors = connectors
     .filter((connector) => connector.id !== "safe" || insideIframe)
+    .filter((connector) => connector.id !== "injected"
+      || !connectors.some((item) => item.type === "injected" && item.id !== "injected"))
     .filter((connector, index, items) =>
       items.findIndex((item) => item.uid === connector.uid || item.name === connector.name) === index,
     );
@@ -73,19 +68,11 @@ function WalletButton() {
     return () => window.clearTimeout(timeout);
   }, [automaticRestorePending]);
   useEffect(() => {
-    if (!isPending && accountStatus !== "connecting") {
-      setConnectTimedOut(false);
-      return;
-    }
-    if (automaticRestorePending) return;
-    const timeout = window.setTimeout(() => {
-      connectionAttemptRef.current += 1;
-      setConnectTimedOut(true);
-      setConnectionError("Wallet connection timed out. Unlock your wallet and try again.");
-      resetConnect();
-    }, WALLET_CONNECTION_TIMEOUT_MS);
+    setWaitingForWallet(false);
+    if (!isPending) return;
+    const timeout = window.setTimeout(() => setWaitingForWallet(true), 10_000);
     return () => window.clearTimeout(timeout);
-  }, [accountStatus, automaticRestorePending, isPending, resetConnect]);
+  }, [isPending]);
   useEffect(() => {
     if (!selectorOpen && !accountOpen) return;
     const close = (event: KeyboardEvent) => {
@@ -113,7 +100,11 @@ function WalletButton() {
   }
 
   if (isConnected && chainId !== arcChain.id) {
-    return <Button variant="secondary" onClick={() => switchChain({ chainId: arcChain.id })}>Switch to {arcChain.name}</Button>;
+    return <div className="flex max-w-xs flex-col gap-1">
+      <Button variant="secondary" disabled={switchingChain} onClick={() => switchChain({ chainId: arcChain.id })}>{switchingChain ? "Confirm network in wallet…" : `Switch to ${arcChain.name}`}</Button>
+      {switchError && <p role="alert" className="text-xs text-rose-300">{walletConnectionError(switchError)}</p>}
+      <button type="button" className="text-xs text-slate-400 underline" onClick={() => disconnect()}>Disconnect wallet</button>
+    </div>;
   }
   if (isConnected) return <div className="relative">
     <button
@@ -157,39 +148,18 @@ function WalletButton() {
   </div>;
 
   async function connectWallet(connector: Connector) {
-    const attempt = ++connectionAttemptRef.current;
+    if (connectionInFlight.current) return;
+    connectionInFlight.current = true;
+    setIsPending(true);
     setConnectionError("");
-    setConnectTimedOut(false);
-    resetConnect();
     try {
-      await connectAsync({ connector });
-      if (attempt !== connectionAttemptRef.current) return;
+      await connectWalletSession(config, connector);
       setSelectorOpen(false);
     } catch (connectError) {
-      if (attempt !== connectionAttemptRef.current) return;
-      resetConnect();
-      if (
-        connectError instanceof ConnectorAlreadyConnectedError
-        || (connectError instanceof Error && /already connected/i.test(connectError.message))
-      ) {
-        // The injected provider can finish connecting before Wagmi's persisted
-        // account state has hydrated. Reconcile that session instead of asking
-        // the wallet to connect a second time.
-        setSelectorOpen(false);
-        try {
-          await reconnectAsync({ connectors: [connector] });
-          if (attempt !== connectionAttemptRef.current) return;
-        } catch {
-          if (attempt !== connectionAttemptRef.current) return;
-          setConnectionError("Could not restore the wallet session. Unlock your wallet and try again.");
-        }
-        return;
-      }
-      setConnectionError(
-        connectError instanceof Error
-          ? connectError.message.split("\n")[0]
-          : "Could not connect this wallet.",
-      );
+      setConnectionError(walletConnectionError(connectError));
+    } finally {
+      connectionInFlight.current = false;
+      setIsPending(false);
     }
   }
 
@@ -197,13 +167,9 @@ function WalletButton() {
     <Button
       title={visibleError || undefined}
       onClick={() => {
-        connectionAttemptRef.current += 1;
         setConnectionError("");
-        setConnectTimedOut(false);
-        resetConnect();
         setSelectorOpen(true);
       }}
-      disabled={connectionPending}
     >
       <Wallet className="size-4" />{manualConnectionPending ? "Confirm in wallet…" : "Connect wallet"}
     </Button>
@@ -238,6 +204,7 @@ function WalletButton() {
           </button>)}
           {availableConnectors.length === 0 && <p className="rounded-xl border border-line p-4 text-xs leading-5 text-slate-400">Install or enable an EVM-compatible wallet extension, then reload this page.</p>}
         </div>
+        {manualConnectionPending && <p role="status" className="mt-3 rounded-xl border border-cyan/20 bg-cyan/[.05] px-3 py-2 text-xs leading-5 text-slate-200">{waitingForWallet ? "Still waiting for your wallet. Open the extension and approve or reject the connection request. No transaction or payment is required." : "Confirm the connection in your wallet extension."}</p>}
         {visibleError && <p role="alert" className="mt-3 rounded-xl border border-rose-400/20 bg-rose-400/[.06] px-3 py-2 text-xs leading-5 text-rose-200">{visibleError}</p>}
       </div>
     </div>, document.body)}

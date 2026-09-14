@@ -21,11 +21,12 @@
     "test:indexer-resilience": "node --test scripts/test-indexer-resilience.cjs",
     "test:quote-math": "node --test scripts/test-indexed-v3-quote.cjs",
     "test:production-health": "node --test scripts/test-production-health.cjs",
+    "test:wallet-connection": "node --test scripts/test-wallet-connection.cjs",
     "monitor:production": "node scripts/monitor-production-health.cjs",
     "indexer:events": "node scripts/run-event-indexer.cjs",
     "backfill:trader-wallets": "node scripts/backfill-trader-wallets.cjs",
     "keeper:buyback": "node scripts/run-buyback-keeper.cjs",
-    "test": "npm run contracts:test && npm run test:indexer-resilience && npm run test:quote-math && npm run test:production-health"
+    "test": "npm run contracts:test && npm run test:indexer-resilience && npm run test:quote-math && npm run test:production-health && npm run test:wallet-connection"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
