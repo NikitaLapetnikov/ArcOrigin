@@ -118,7 +118,6 @@ const defaults: FormData = {
   initialBuyUsdc: "",
 };
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
-const DEFAULT_LAUNCH_FEE = 1n * 10n ** 6n;
 const MAX_INITIAL_BUY_USDC = 100n * 10n ** 6n;
 const INITIAL_BUY_SLIPPAGE_BPS = 1_000n;
 const INITIAL_BUY_PRESETS = [10, 25, 50, 100] as const;
@@ -446,7 +445,7 @@ export function LaunchForm() {
   const [status, setStatus] = useState<TransactionStatus>("idle");
   const [storageStatus, setStorageStatus] = useState<"unknown" | "available" | "unavailable">("unknown");
   const [uploadedMetadata, setUploadedMetadata] = useState<UploadedMetadata | null>(null);
-  const [launchFee, setLaunchFee] = useState(DEFAULT_LAUNCH_FEE);
+  const [launchFee, setLaunchFee] = useState<bigint | null>(null);
   const [error, setError] = useState("");
   const [result, setResult] = useState<LaunchResult | null>(null);
   const previewUrl = useRef("");
@@ -470,17 +469,25 @@ export function LaunchForm() {
 
   useEffect(() => {
     let cancelled = false;
-    void withReadTimeout(primaryReadClient.readContract({
-      address: ARC_ACTIVE_CONTRACTS.factory,
-      abi: factoryAbi,
-      functionName: "launchFee",
-    })).then((nextLaunchFee) => {
-      if (!cancelled) setLaunchFee(nextLaunchFee);
-    }).catch(() => {
-      // The verified mainnet fee remains the safe fallback while eth_call is capacity-limited.
-    });
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    async function refreshFee() {
+      try {
+        const nextLaunchFee = await withReadTimeout(primaryReadClient.readContract({
+          address: ARC_ACTIVE_CONTRACTS.factory,
+          abi: factoryAbi,
+          functionName: "launchFee",
+        }));
+        if (!cancelled) setLaunchFee(nextLaunchFee);
+      } catch {
+        // Do not advertise a fee until it has been read from the active Factory.
+      } finally {
+        if (!cancelled) refreshTimer = setTimeout(refreshFee, 30_000);
+      }
+    }
+    void refreshFee();
     return () => {
       cancelled = true;
+      clearTimeout(refreshTimer);
     };
   }, []);
 
@@ -502,8 +509,9 @@ export function LaunchForm() {
     }
   }, [metadataInput, storageStatus]);
   const safeLaunch = connector?.id === "safe";
-  const launchFeeAmount = Number(formatUnits(launchFee, 6));
-  const launchFeeLabel = `${formatDisplayNumber(launchFeeAmount)} USDC`;
+  const launchFeeLabel = launchFee === null
+    ? "Checking…"
+    : `${formatDisplayNumber(Number(formatUnits(launchFee, 6)))} USDC`;
   const initialBuyAmount = parseInitialBuyUsdc(form.initialBuyUsdc);
   const initialBuyValid = initialBuyAmount !== null;
   const initialBuyLabel = initialBuyAmount && initialBuyAmount > 0n
@@ -782,16 +790,11 @@ export function LaunchForm() {
       if (!walletClient) throw new Error("The connected wallet is not ready. Reconnect it and retry.");
       const transactionClient = primaryReadClient;
       const balance = await readNativeUsdcBalance(address);
-      let currentLaunchFee = launchFee;
-      try {
-        currentLaunchFee = await withReadTimeout(primaryReadClient.readContract({
-          address: ARC_ACTIVE_CONTRACTS.factory,
-          abi: factoryAbi,
-          functionName: "launchFee",
-        }));
-      } catch (feeError) {
-        if (!(feeError instanceof RpcReadTimeoutError) && !isRetryableRpcError(feeError)) throw feeError;
-      }
+      const currentLaunchFee = await withReadTimeout(primaryReadClient.readContract({
+        address: ARC_ACTIVE_CONTRACTS.factory,
+        abi: factoryAbi,
+        functionName: "launchFee",
+      }));
       setLaunchFee(currentLaunchFee);
       const selectedInitialBuy = parseInitialBuyUsdc(form.initialBuyUsdc);
       if (selectedInitialBuy === null) {
@@ -803,7 +806,7 @@ export function LaunchForm() {
       }
 
       const metadata = await ensureMetadata(address);
-      const allowance = await readAllowance(
+      const allowance = currentLaunchFee === 0n ? 0n : await readAllowance(
         ARC_ACTIVE_CONTRACTS.usdc,
         address,
         ARC_ACTIVE_CONTRACTS.factory,

@@ -135,6 +135,27 @@ async function predictNextToken(factory, creator, params) {
 }
 
 describe("ArcOrigin direct Uniswap V3 launches", function () {
+  it("allows the owner to disable launch fees and launch without USDC or approval", async function () {
+    const { factory, usdc, vault, stranger, owner } = await deployFixture();
+    await expect(factory.connect(stranger).setLaunchFee(0))
+      .to.be.revertedWithCustomError(factory, "OwnableUnauthorizedAccount");
+    await factory.connect(owner).setLaunchFee(0);
+    expect(await factory.launchFee()).to.equal(0);
+    expect(await usdc.balanceOf(stranger.address)).to.equal(0);
+    expect(await usdc.allowance(stranger.address, await factory.getAddress())).to.equal(0);
+    const vaultBalance = await usdc.balanceOf(await vault.getAddress());
+    for (const automaticBuyback of [false, true]) {
+      await expect(factory.connect(stranger).launchToken({
+        name: "Free Launch",
+        symbol: "FREE",
+        metadataURI: "ipfs://free-launch",
+        automaticBuyback,
+      })).to.emit(factory, "TokenLaunched").and.not.to.emit(factory, "LaunchFeePaid");
+    }
+    expect(await usdc.balanceOf(await vault.getAddress())).to.equal(vaultBalance);
+    expect(await usdc.allowance(stranger.address, await factory.getAddress())).to.equal(0);
+  });
+
   it("computes single-sided ranges and market cap for either token ordering", async function () {
     const Harness = await ethers.getContractFactory("MockArcOriginUniswapV3MathHarness");
     const harness = await Harness.deploy();

@@ -1,0 +1,18 @@
+{
+  "version": "1.0",
+  "chainId": "5042",
+  "meta": {
+    "name": "ArcOrigin: zero launch fee",
+    "description": "Set the active Factory launch fee from 1 USDC to 0 USDC. Trading fees, buybacks, and network gas are unchanged.",
+    "createdFromSafeAddress": "0xa6eA2380F98700AD5CA8B9F74dC8861269513779"
+  },
+  "transactions": [
+    {
+      "to": "0xF41ee2BC71fC0AB47A56Abb078E53a02A9B39899",
+      "value": "0",
+      "data": "0x5313be2c0000000000000000000000000000000000000000000000000000000000000000",
+      "contractMethod": null,
+      "contractInputsValues": null
+    }
+  ]
+}

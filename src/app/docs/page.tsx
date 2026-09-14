@@ -37,7 +37,7 @@ export default function DocsPage() {
           <p className="mt-5 text-xs text-slate-500">{arcChain.name} · Chain ID {arcChain.id}</p>
         </div>
         <div className="grid overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2">
-          <Fact label="Launch fee" value="1 USDC" />
+          <Fact label="Launch fee" value="0 USDC" />
           <Fact label="Initial market cap" value={`${ARCORIGIN_START_MARKET_CAP_USDC.toLocaleString()} USDC`} />
           <Fact label="Trading fee" value="1%" />
           <Fact label="Crossed mark" value={`${ARCORIGIN_CROSS_MARKET_CAP_USDC.toLocaleString()} USDC`} />
@@ -59,7 +59,7 @@ export default function DocsPage() {
           <ol className="grid gap-3">
             <li>1. Add the token identity, public metadata, image, and optional links.</li>
             <li>2. Sign the metadata commitment and publish it to IPFS.</li>
-            <li>3. Approve the launch fee and call the Factory.</li>
+            <li>3. Review the current onchain launch fee and call the Factory. When the fee is 0 USDC, no fee approval is required. Network gas and any optional initial buy are separate.</li>
             <li>4. The Factory creates the token, pool, liquidity position, and permanent lock atomically.</li>
             <li>5. Optionally complete a separate creator buy of up to 100 USDC through the canonical Uniswap V3 Router. The app requests a fresh quote and enforces 10% minimum-output protection.</li>
             <li>6. Optionally enable automatic buyback and burn. This choice permanently redirects the creator fee share and cannot be changed later.</li>
